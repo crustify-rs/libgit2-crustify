@@ -61,11 +61,18 @@ impl<T: Copy + core::fmt::Debug> core::fmt::Debug for GitArray<T> {
 }
 
 impl<T: Copy> GitArray<T> {
-    const ELEM: () = assert!(size_of::<T>() > 0 && align_of::<T>() <= 8, "git_array of a ZST or over-aligned type");
+    const ELEM: () = assert!(
+        size_of::<T>() > 0 && align_of::<T>() <= 8,
+        "git_array of a ZST or over-aligned type"
+    );
 
     /// An empty array (`GIT_ARRAY_INIT`).
     pub const fn new() -> GitArray<T> {
-        GitArray { ptr: core::ptr::null_mut(), size: 0, asize: 0 }
+        GitArray {
+            ptr: core::ptr::null_mut(),
+            size: 0,
+            asize: 0,
+        }
     }
 
     /// `git_array_init_to_size`: an empty array with zeroed room for
@@ -76,7 +83,11 @@ impl<T: Copy> GitArray<T> {
         if p.is_null() && desired > 0 {
             return Err(ErrorCode::GENERIC);
         }
-        Ok(GitArray { ptr: p, size: 0, asize: if p.is_null() { 0 } else { desired } })
+        Ok(GitArray {
+            ptr: p,
+            size: 0,
+            asize: if p.is_null() { 0 } else { desired },
+        })
     }
 
     /// `git_array_size`.
@@ -155,7 +166,8 @@ impl<T: Copy> GitArray<T> {
         };
         // SAFETY: `ptr` is NULL or the array's own buffer from
         // `git__allocator`.
-        let p = unsafe { alloc::reallocarray(self.ptr.cast(), new_size, size_of::<T>()) }.cast::<T>();
+        let p =
+            unsafe { alloc::reallocarray(self.ptr.cast(), new_size, size_of::<T>()) }.cast::<T>();
         if p.is_null() {
             self.dispose();
             return Err(ErrorCode::GENERIC);
@@ -179,7 +191,7 @@ impl<T: Copy> GitArray<T> {
         self.grow()?;
         let i = self.size;
         // SAFETY: after `grow`, `i < asize`, a slot of the array's buffer.
-        unsafe { self.ptr.add(i).write(value) };
+        unsafe { self.ptr.wrapping_add(i).write(value) };
         self.size = i + 1;
         Ok(&mut self.as_mut_slice()[i])
     }

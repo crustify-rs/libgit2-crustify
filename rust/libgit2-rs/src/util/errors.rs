@@ -119,7 +119,11 @@ impl ErrorCode {
     /// The code for a non-zero C status; `None` for 0 (success).
     #[inline]
     pub const fn from_raw(code: c_int) -> Option<ErrorCode> {
-        if code == 0 { None } else { Some(ErrorCode(code)) }
+        if code == 0 {
+            None
+        } else {
+            Some(ErrorCode(code))
+        }
     }
 
     /// The C status.
@@ -132,7 +136,11 @@ impl ErrorCode {
     /// as the error for a negative one (libgit2's usual convention).
     #[inline]
     pub const fn check(code: c_int) -> Result<c_int> {
-        if code < 0 { Err(ErrorCode(code)) } else { Ok(code) }
+        if code < 0 {
+            Err(ErrorCode(code))
+        } else {
+            Ok(code)
+        }
     }
 
     /// A C status as a `Result`: `Ok(())` for 0, the code as the error for
@@ -140,7 +148,11 @@ impl ErrorCode {
     /// also stops the operation).
     #[inline]
     pub const fn check_zero(code: c_int) -> Result<()> {
-        if code == 0 { Ok(()) } else { Err(ErrorCode(code)) }
+        if code == 0 {
+            Ok(())
+        } else {
+            Err(ErrorCode(code))
+        }
     }
 }
 
@@ -255,11 +267,14 @@ unsafe impl Sync for StaticError {}
 
 impl StaticError {
     const fn new(message: &'static CStr, klass: ErrorClass) -> StaticError {
-        StaticError(GitError { message: message.as_ptr().cast_mut(), klass: klass.0 })
+        StaticError(GitError {
+            message: message.as_ptr().cast_mut(),
+            klass: klass.0,
+        })
     }
 
     fn as_ptr(&'static self) -> *const GitError {
-        &self.0
+        &raw const self.0
     }
 
     fn message(&'static self) -> &'static CStr {
@@ -272,8 +287,10 @@ impl StaticError {
 static OOM_ERROR: StaticError = StaticError::new(c"Out of memory", ErrorClass::NOMEMORY);
 static UNINITIALIZED_ERROR: StaticError =
     StaticError::new(c"library has not been initialized", ErrorClass::INVALID);
-static TLSDATA_ERROR: StaticError =
-    StaticError::new(c"thread-local data initialization failure", ErrorClass::THREAD);
+static TLSDATA_ERROR: StaticError = StaticError::new(
+    c"thread-local data initialization failure",
+    ErrorClass::THREAD,
+);
 static NO_ERROR: StaticError = StaticError::new(c"no error", ErrorClass::NONE);
 
 fn static_error(p: *const GitError) -> Option<&'static StaticError> {
@@ -333,17 +350,23 @@ impl ThreadState {
         let error = self.error.get();
         // SAFETY: `error` is this thread's; no reference to it exists (C
         // only reads it between calls, and this module forms none), so the
-        // writes do not alias.
+        // write does not alias.
         unsafe {
-            (*error).message = message.as_mut_ptr().cast();
-            (*error).klass = class;
-        }
+            error.write(GitError {
+                message: message.as_mut_ptr().cast(),
+                klass: class,
+            })
+        };
         self.last.set(Last::Own);
     }
 
     /// Replace the message with what `fill` writes, as class `class`; on
     /// allocation failure the error becomes the out-of-memory one.
     fn set_with(&self, class: c_int, fill: impl FnOnce(&mut Vec<u8>) -> bool) {
+        if self.formatting.get() {
+            // Re-entered from an argument's `Display`: the outer call sets it.
+            return;
+        }
         let Ok(mut message) = self.message.try_borrow_mut() else {
             // Re-entered while formatting a message: the outer call sets it.
             return;
@@ -404,7 +427,11 @@ impl fmt::Write for MessageWriter<'_> {
         let Ok(mut m) = self.0.message.try_borrow_mut() else {
             return Err(fmt::Error);
         };
-        if try_extend(&mut m, s.as_bytes()) { Ok(()) } else { Err(fmt::Error) }
+        if try_extend(&mut m, s.as_bytes()) {
+            Ok(())
+        } else {
+            Err(fmt::Error)
+        }
     }
 }
 
@@ -420,11 +447,20 @@ fn set_fmt_raw(class: c_int, args: Option<fmt::Arguments<'_>>, os_errno: c_int) 
         }
         let mut ok = true;
         if let Some(args) = args {
+            /// Resets the flag even if an argument's `Display` panics.
+            struct Formatting<'a>(&'a Cell<bool>);
+            impl Drop for Formatting<'_> {
+                fn drop(&mut self) {
+                    self.0.set(false);
+                }
+            }
             s.formatting.set(true);
+            let _flag = Formatting(&s.formatting);
             ok = fmt::write(&mut MessageWriter(s), args).is_ok();
-            s.formatting.set(false);
         }
-        let Ok(mut m) = s.message.try_borrow_mut() else { return };
+        let Ok(mut m) = s.message.try_borrow_mut() else {
+            return;
+        };
         if ok && class == ErrorClass::OS.0 {
             if args.is_some() {
                 ok = try_extend(&mut m, b": ");
@@ -537,7 +573,10 @@ pub fn last() -> (ErrorClass, Vec<u8>) {
         }
     });
     r.unwrap_or_else(|| {
-        (ErrorClass(TLSDATA_ERROR.0.klass), TLSDATA_ERROR.message().to_bytes().to_vec())
+        (
+            ErrorClass(TLSDATA_ERROR.0.klass),
+            TLSDATA_ERROR.message().to_bytes().to_vec(),
+        )
     })
 }
 
@@ -561,14 +600,20 @@ pub fn last_class() -> Option<ErrorClass> {
 /// `invalid argument: '<expr>'`, class `GIT_ERROR_INVALID`.
 #[cold]
 pub fn assert_arg_failed(expr: &str) -> ErrorCode {
-    set_fmt(ErrorClass::INVALID, format_args!("invalid argument: '{expr}'"))
+    set_fmt(
+        ErrorClass::INVALID,
+        format_args!("invalid argument: '{expr}'"),
+    )
 }
 
 /// Set the error for an internal check that failed (`GIT_ASSERT`):
 /// `unrecoverable internal error: '<expr>'`, class `GIT_ERROR_INTERNAL`.
 #[cold]
 pub fn assert_failed(expr: &str) -> ErrorCode {
-    set_fmt(ErrorClass::INTERNAL, format_args!("unrecoverable internal error: '{expr}'"))
+    set_fmt(
+        ErrorClass::INTERNAL,
+        format_args!("unrecoverable internal error: '{expr}'"),
+    )
 }
 
 /// Set the error after a callback returned non-zero
@@ -577,29 +622,39 @@ pub fn assert_failed(expr: &str) -> ErrorCode {
 /// Returns `code`.
 pub fn set_after_callback(code: c_int, action: &str) -> c_int {
     if code != 0 && !exists() {
-        let _ = set_fmt(ErrorClass::CALLBACK, format_args!("{action} callback returned {code}"));
+        let _ = set_fmt(
+            ErrorClass::CALLBACK,
+            format_args!("{action} callback returned {code}"),
+        );
     }
     code
 }
 
 #[cold]
 pub(crate) fn set_panic_error() {
-    let _ = set_str(ErrorClass::INTERNAL, "unrecoverable internal error: a Rust panic was caught");
+    let _ = set_str(
+        ErrorClass::INTERNAL,
+        "unrecoverable internal error: a Rust panic was caught",
+    );
 }
 
 /// `errno` (`git_error_system_last`).
 #[inline]
 pub fn errno() -> c_int {
-    // SAFETY: `__errno_location` returns this thread's `errno`, valid for the
-    // thread's lifetime.
-    unsafe { *libc::__errno_location() }
+    // SAFETY: `__errno_location` has no preconditions.
+    let p = unsafe { libc::__errno_location() };
+    // SAFETY: it returns this thread's `errno`, valid for the thread's
+    // lifetime.
+    unsafe { *p }
 }
 
 /// Set `errno` (`git_error_system_set`).
 #[inline]
 pub fn set_errno(code: c_int) {
     // SAFETY: as in `errno`.
-    unsafe { *libc::__errno_location() = code };
+    let p = unsafe { libc::__errno_location() };
+    // SAFETY: as in `errno`.
+    unsafe { *p = code };
 }
 
 // ---------------------------------------------------------------------------
@@ -675,14 +730,22 @@ pub struct Error {
 impl Error {
     /// An error from its parts.
     pub fn new(code: ErrorCode, class: ErrorClass, message: impl Into<Vec<u8>>) -> Error {
-        Error { code, class, message: message.into().into_boxed_slice() }
+        Error {
+            code,
+            class,
+            message: message.into().into_boxed_slice(),
+        }
     }
 
     /// The error `code` with the class and message of this thread's error
     /// state (which is left as it is).
     pub fn last(code: ErrorCode) -> Error {
         let (class, message) = last();
-        Error { code, class, message: message.into_boxed_slice() }
+        Error {
+            code,
+            class,
+            message: message.into_boxed_slice(),
+        }
     }
 
     /// The code.
@@ -902,7 +965,11 @@ pub mod ffi {
             } else {
                 // SAFETY: the caller passes `len` readable bytes at `message`.
                 let bytes = unsafe { crate::util::export::bytes(message, len) };
-                set_fmt_raw(error_class, Some(format_args!("{}", Bytes(bytes))), os_errno);
+                set_fmt_raw(
+                    error_class,
+                    Some(format_args!("{}", Bytes(bytes))),
+                    os_errno,
+                );
             }
         })
     }
@@ -991,12 +1058,17 @@ pub mod ffi {
             unsafe { alloc::free(dup.cast()) };
             return (OOM_ERROR.as_ptr(), -1);
         }
-        // SAFETY: `copy` is a fresh allocation of `msg.len()` bytes, `dup`
-        // one of a `GitError`, aligned by the allocator's guarantee (8).
+        // SAFETY: `copy` is a fresh allocation of `msg.len()` bytes,
+        // disjoint from `msg`.
+        unsafe { core::ptr::copy_nonoverlapping(msg.as_ptr(), copy, msg.len()) };
+        // SAFETY: `dup` is a fresh allocation of a `GitError`, aligned by the
+        // allocator's guarantee (8 bytes).
         unsafe {
-            core::ptr::copy_nonoverlapping(msg.as_ptr(), copy, msg.len());
-            dup.write(GitError { message: copy.cast(), klass });
-        }
+            dup.write(GitError {
+                message: copy.cast(),
+                klass,
+            })
+        };
         (dup, 0)
     }
 
@@ -1013,13 +1085,13 @@ pub mod ffi {
                 let _ = assert_arg_failed("error");
                 return -1;
             }
-            if let Some(st) = static_error(error) {
-                if with_state(|s| s.last.set(Last::Static(st))).is_some() {
-                    return 0;
-                }
+            if let Some(st) = static_error(error)
+                && with_state(|s| s.last.set(Last::Static(st))).is_some()
+            {
+                return 0;
             }
             // SAFETY: `error` is a live `git_error` (the caller's contract).
-            let (klass, message) = unsafe { ((*error).klass, (*error).message) };
+            let GitError { message, klass } = unsafe { error.read() };
             // SAFETY: a saved error's message is NULL or NUL-terminated.
             match unsafe { cstr(message) } {
                 Some(m) => set_bytes_raw(klass, m.to_bytes()),
@@ -1045,12 +1117,13 @@ pub mod ffi {
             if error.is_null() || static_error(error).is_some() {
                 return;
             }
-            // SAFETY: `error` was allocated by `git_error_save` with
-            // `git__allocator`, as was its message; each is freed once.
-            unsafe {
-                alloc::free((*error).message.cast());
-                alloc::free(error.cast());
-            }
+            // SAFETY: a live `git_error` from `git_error_save`.
+            let message = unsafe { (*error).message };
+            // SAFETY: `git_error_save` allocated the message with
+            // `git__allocator`; it is freed once.
+            unsafe { alloc::free(message.cast()) };
+            // SAFETY: and the struct, freed once.
+            unsafe { alloc::free(error.cast()) };
         })
     }
 }

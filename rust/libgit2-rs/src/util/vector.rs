@@ -35,6 +35,10 @@ use super::tsort::tsort;
 use super::util::bsearch;
 use crate::{git_assert, git_assert_arg};
 
+/// A Rust duplicate handler for [`GitVector::insert_sorted_by`]: given the
+/// equal element's slot and the new element; a negative result cancels.
+pub type OnDup<'a> = &'a mut dyn FnMut(&mut *mut c_void, *mut c_void) -> c_int;
+
 /// `git_vector_cmp`.
 pub type VectorCmp = unsafe extern "C" fn(*const c_void, *const c_void) -> c_int;
 
@@ -60,6 +64,14 @@ pub struct GitVector {
     length: usize,
     flags: u32,
 }
+
+// SAFETY: the vector owns its array, which `git__allocator` frees from any
+// thread; it never dereferences its elements (the methods that call the C
+// comparison are `unsafe`, and their contract covers the elements).
+unsafe impl Send for GitVector {}
+// SAFETY: shared access only reads the array of pointers; every method that
+// writes takes `&mut self`.
+unsafe impl Sync for GitVector {}
 
 impl Drop for GitVector {
     fn drop(&mut self) {
@@ -97,13 +109,25 @@ impl GitVector {
     /// An empty vector with no array and no comparison (`GIT_VECTOR_INIT`,
     /// all zero; not marked sorted).
     pub const fn new() -> GitVector {
-        GitVector { alloc_size: 0, cmp: None, contents: ptr::null_mut(), length: 0, flags: 0 }
+        GitVector {
+            alloc_size: 0,
+            cmp: None,
+            contents: ptr::null_mut(),
+            length: 0,
+            flags: 0,
+        }
     }
 
     /// `git_vector_init`: an empty, sorted vector with room for
     /// `max(initial_size, 8)` elements.
     pub fn with_capacity(initial_size: usize, cmp: Option<VectorCmp>) -> Result<GitVector> {
-        let mut v = GitVector { alloc_size: 0, cmp, contents: ptr::null_mut(), length: 0, flags: GIT_VECTOR_SORTED };
+        let mut v = GitVector {
+            alloc_size: 0,
+            cmp,
+            contents: ptr::null_mut(),
+            length: 0,
+            flags: GIT_VECTOR_SORTED,
+        };
         v.resize_vector(initial_size.max(MIN_ALLOCSIZE))?;
         Ok(v)
     }
@@ -233,7 +257,9 @@ impl GitVector {
         }
         // SAFETY: `contents` is NULL or the vector's own array from
         // `git__allocator`; on failure it is left as it was.
-        let p = unsafe { alloc::reallocarray(self.contents.cast(), new_size, size_of::<*mut c_void>()) };
+        let p = unsafe {
+            alloc::reallocarray(self.contents.cast(), new_size, size_of::<*mut c_void>())
+        };
         if p.is_null() {
             return Err(ErrorCode::GENERIC);
         }
@@ -337,7 +363,7 @@ impl GitVector {
         &mut self,
         element: *mut c_void,
         mut cmp: impl FnMut(*mut c_void, *mut c_void) -> c_int,
-        on_dup: Option<&mut dyn FnMut(&mut *mut c_void, *mut c_void) -> c_int>,
+        on_dup: Option<OnDup<'_>>,
     ) -> Result<()> {
         if !self.is_sorted() {
             tsort(self.as_mut_slice(), &mut cmp);
@@ -537,7 +563,10 @@ impl GitVector {
     /// Binary search with a Rust comparator (`cmp(element)` is the key's
     /// order against `element`), without sorting first: `Ok(index)` or
     /// `Err(insertion index)`.
-    pub fn bsearch_by(&self, cmp: impl FnMut(*mut c_void) -> c_int) -> core::result::Result<usize, usize> {
+    pub fn bsearch_by(
+        &self,
+        cmp: impl FnMut(*mut c_void) -> c_int,
+    ) -> core::result::Result<usize, usize> {
         let mut cmp = cmp;
         bsearch(self.as_slice(), |e| cmp(*e))
     }
@@ -551,7 +580,12 @@ impl GitVector {
     ///
     /// The vector's comparison function is sound to call with any two
     /// elements, and `key_lookup` with `key` and any element.
-    pub unsafe fn bsearch2(&mut self, pos: Option<&mut usize>, key_lookup: VectorCmp, key: *const c_void) -> Result<()> {
+    pub unsafe fn bsearch2(
+        &mut self,
+        pos: Option<&mut usize>,
+        key_lookup: VectorCmp,
+        key: *const c_void,
+    ) -> Result<()> {
         git_assert_arg!(!key.is_null(), "key");
         if self.cmp.is_none() {
             return Err(ErrorCode::GENERIC);
@@ -594,7 +628,9 @@ impl GitVector {
     pub unsafe fn search2(&self, key_lookup: VectorCmp, key: *const c_void) -> Result<usize> {
         git_assert_arg!(!key.is_null(), "key");
         // SAFETY: the caller vouches for `key_lookup`.
-        self.iter().position(|e| unsafe { key_lookup(key, e) } == 0).ok_or(ErrorCode::NOT_FOUND)
+        self.iter()
+            .position(|e| unsafe { key_lookup(key, e) } == 0)
+            .ok_or(ErrorCode::NOT_FOUND)
     }
 
     /// `git_vector_search`: [`search2`](Self::search2) with the vector's
@@ -659,7 +695,11 @@ impl GitVector {
         let Some(cmp) = self.cmp else { return 0 };
         let s = self.as_slice();
         // SAFETY: the caller vouches for `cmp`.
-        if s.windows(2).any(|w| unsafe { cmp(w[0], w[1]) } > 0) { -1 } else { 0 }
+        if s.windows(2).any(|w| unsafe { cmp(w[0], w[1]) } > 0) {
+            -1
+        } else {
+            0
+        }
     }
 }
 
@@ -687,10 +727,20 @@ pub mod ffi {
     ///
     /// `v` is NULL or writable (its old contents are overwritten).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_init(vec: *mut GitVector, initial_size: usize, cmp: Option<VectorCmp>) -> c_int {
+    pub unsafe extern "C" fn git_vector_init(
+        vec: *mut GitVector,
+        initial_size: usize,
+        cmp: Option<VectorCmp>,
+    ) -> c_int {
         barrier(|| {
             git_assert_arg!(!vec.is_null(), "v", -1);
-            let mut nv = GitVector { alloc_size: 0, cmp, contents: ptr::null_mut(), length: 0, flags: GIT_VECTOR_SORTED };
+            let mut nv = GitVector {
+                alloc_size: 0,
+                cmp,
+                contents: ptr::null_mut(),
+                length: 0,
+                flags: GIT_VECTOR_SORTED,
+            };
             let r = nv.resize_vector(initial_size.max(MIN_ALLOCSIZE));
             // SAFETY: a writable `git_vector`; C does not free the old one.
             unsafe { vec.write(nv) };
@@ -723,8 +773,11 @@ pub mod ffi {
     pub unsafe extern "C" fn git_vector_dispose_deep(vec: *mut GitVector) {
         barrier(|| {
             if !vec.is_null() {
-                // SAFETY: the module's contract and the elements'.
-                unsafe { v(vec).dispose_deep() }
+                // SAFETY: the module's contract: a valid, unaliased vector.
+                let vv = unsafe { v(vec) };
+                // SAFETY: the elements are distinct `git__malloc`
+                // allocations or NULL (this export's contract).
+                unsafe { vv.dispose_deep() }
             }
         })
     }
@@ -746,7 +799,11 @@ pub mod ffi {
     ///
     /// `vec` is NULL or writable; `src` is NULL or a valid `git_vector`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_dup(vec: *mut GitVector, src: *const GitVector, cmp: Option<VectorCmp>) -> c_int {
+    pub unsafe extern "C" fn git_vector_dup(
+        vec: *mut GitVector,
+        src: *const GitVector,
+        cmp: Option<VectorCmp>,
+    ) -> c_int {
         barrier(|| {
             git_assert_arg!(!vec.is_null(), "v", -1);
             git_assert_arg!(!src.is_null(), "src", -1);
@@ -803,14 +860,18 @@ pub mod ffi {
     ///
     /// See the [module](self); `size` and `asize` are NULL or writable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_detach(size: *mut usize, asize: *mut usize, vec: *mut GitVector) -> *mut *mut c_void {
+    pub unsafe extern "C" fn git_vector_detach(
+        size: *mut usize,
+        asize: *mut usize,
+        vec: *mut GitVector,
+    ) -> *mut *mut c_void {
         barrier(|| {
-            // SAFETY: the module's contract; optional out-parameters.
+            // SAFETY: the module's contract: a valid, unaliased vector.
             let (p, n, a) = unsafe { v(vec) }.detach();
-            unsafe {
-                write_opt(size, n);
-                write_opt(asize, a);
-            }
+            // SAFETY: `size` is NULL or writable.
+            unsafe { write_opt(size, n) };
+            // SAFETY: `asize` is NULL or writable.
+            unsafe { write_opt(asize, a) };
             p
         })
     }
@@ -822,8 +883,12 @@ pub mod ffi {
     /// See the [module](self).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_sort(vec: *mut GitVector) {
-        // SAFETY: the module's contract covers the comparison function.
-        barrier(|| unsafe { v(vec).sort() })
+        barrier(|| {
+            // SAFETY: the module's contract: a valid, unaliased vector.
+            let vv = unsafe { v(vec) };
+            // SAFETY: the module's contract covers the comparison function.
+            unsafe { vv.sort() }
+        })
     }
 
     /// `git_vector_search`.
@@ -832,11 +897,17 @@ pub mod ffi {
     ///
     /// See the [module](self); `at_pos` is NULL or writable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_search(at_pos: *mut usize, vec: *const GitVector, entry: *const c_void) -> c_int {
+    pub unsafe extern "C" fn git_vector_search(
+        at_pos: *mut usize,
+        vec: *const GitVector,
+        entry: *const c_void,
+    ) -> c_int {
         barrier(|| {
             git_assert_arg!(!vec.is_null(), "v", -1);
-            // SAFETY: the module's contract.
-            match unsafe { (*vec).search(entry) } {
+            // SAFETY: the module's contract: a valid vector, only read.
+            let vv = unsafe { &*vec };
+            // SAFETY: the module's contract covers the comparison function.
+            match unsafe { vv.search(entry) } {
                 Ok(i) => {
                     // SAFETY: optional out-parameter.
                     unsafe { write_opt(at_pos, i) };
@@ -866,8 +937,10 @@ pub mod ffi {
                 git_assert!(false, "key_lookup", -1);
                 unreachable!()
             };
-            // SAFETY: the module's contract.
-            match unsafe { (*vec).search2(f, key) } {
+            // SAFETY: the module's contract: a valid vector, only read.
+            let vv = unsafe { &*vec };
+            // SAFETY: the module's contract covers `key_lookup`.
+            match unsafe { vv.search2(f, key) } {
                 Ok(i) => {
                     // SAFETY: optional out-parameter.
                     unsafe { write_opt(at_pos, i) };
@@ -897,9 +970,12 @@ pub mod ffi {
                 git_assert!(false, "key_lookup", -1);
                 unreachable!()
             };
-            // SAFETY: the module's contract; optional out-parameter.
+            // SAFETY: `at_pos` is NULL or writable, and distinct from the vector.
             let pos = unsafe { at_pos.as_mut() };
-            status(unsafe { v(vec).bsearch2(pos, f, key) })
+            // SAFETY: the module's contract: a valid, unaliased vector.
+            let vv = unsafe { v(vec) };
+            // SAFETY: the module's contract covers both functions.
+            status(unsafe { vv.bsearch2(pos, f, key) })
         })
     }
 
@@ -930,8 +1006,10 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!vec.is_null(), "v", -1);
+            // SAFETY: the module's contract: a valid, unaliased vector.
+            let vv = unsafe { v(vec) };
             // SAFETY: the module's contract covers the comparison and `on_dup`.
-            status(unsafe { v(vec).insert_sorted(element, on_dup) })
+            status(unsafe { vv.insert_sorted(element, on_dup) })
         })
     }
 
@@ -966,9 +1044,16 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_uniq(vec: *mut GitVector, git_free_cb: Option<unsafe extern "C" fn(*mut c_void)>) {
-        // SAFETY: the module's contract covers the comparison and `git_free_cb`.
-        barrier(|| unsafe { v(vec).uniq(git_free_cb) })
+    pub unsafe extern "C" fn git_vector_uniq(
+        vec: *mut GitVector,
+        git_free_cb: Option<unsafe extern "C" fn(*mut c_void)>,
+    ) {
+        barrier(|| {
+            // SAFETY: the module's contract: a valid, unaliased vector.
+            let vv = unsafe { v(vec) };
+            // SAFETY: the module's contract covers the comparison and `git_free_cb`.
+            unsafe { vv.uniq(git_free_cb) }
+        })
     }
 
     /// `git_vector_remove_matching`. The callback receives the vector, so
@@ -987,20 +1072,29 @@ pub mod ffi {
         barrier(|| {
             let mut i = 0usize;
             let mut j = 0usize;
-            // SAFETY: `vec` is valid; no Rust reference to it is held across
-            // the callback, which may read it; the indices stay below
-            // `length <= _alloc_size`, read afresh each time.
-            unsafe {
-                while j < (*vec).length {
-                    let c = (*vec).contents;
-                    *c.add(i) = *c.add(j);
-                    if match_(vec, i, payload) == 0 {
-                        i += 1;
-                    }
-                    j += 1;
+            // No Rust reference to the vector is held across the callback,
+            // which may read it; `length` and `contents` are read afresh.
+            loop {
+                // SAFETY: `vec` is a valid vector (the module's contract).
+                let len = unsafe { (*vec).length };
+                // SAFETY: as above.
+                let c = unsafe { (*vec).contents };
+                if j >= len {
+                    break;
                 }
-                (*vec).length = i;
+                // SAFETY: `i <= j < length <= _alloc_size`: both slots are
+                // initialized elements of the vector's array.
+                let e = unsafe { c.wrapping_add(j).read() };
+                // SAFETY: as above.
+                unsafe { c.wrapping_add(i).write(e) };
+                // SAFETY: the module's contract covers `match_`.
+                if unsafe { match_(vec, i, payload) } == 0 {
+                    i += 1;
+                }
+                j += 1;
             }
+            // SAFETY: `vec` is valid; `i` is at most its length.
+            unsafe { (*vec).length = i };
         })
     }
 
@@ -1021,7 +1115,11 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_insert_null(vec: *mut GitVector, idx: usize, insert_len: usize) -> c_int {
+    pub unsafe extern "C" fn git_vector_insert_null(
+        vec: *mut GitVector,
+        idx: usize,
+        insert_len: usize,
+    ) -> c_int {
         // SAFETY: the module's contract.
         barrier(|| status(unsafe { v(vec) }.insert_null(idx, insert_len)))
     }
@@ -1032,7 +1130,11 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_remove_range(vec: *mut GitVector, idx: usize, remove_len: usize) -> c_int {
+    pub unsafe extern "C" fn git_vector_remove_range(
+        vec: *mut GitVector,
+        idx: usize,
+        remove_len: usize,
+    ) -> c_int {
         // SAFETY: the module's contract.
         barrier(|| status(unsafe { v(vec) }.remove_range(idx, remove_len)))
     }
@@ -1043,7 +1145,12 @@ pub mod ffi {
     ///
     /// See the [module](self); `old` is NULL or writable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_set(old: *mut *mut c_void, vec: *mut GitVector, position: usize, value: *mut c_void) -> c_int {
+    pub unsafe extern "C" fn git_vector_set(
+        old: *mut *mut c_void,
+        vec: *mut GitVector,
+        position: usize,
+        value: *mut c_void,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: the module's contract.
             match unsafe { v(vec) }.set(position, value) {
@@ -1064,8 +1171,12 @@ pub mod ffi {
     /// See the [module](self).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_verify_sorted(vec: *const GitVector) -> c_int {
-        // SAFETY: the module's contract.
-        barrier(|| unsafe { (*vec).verify_sorted() })
+        barrier(|| {
+            // SAFETY: the module's contract: a valid vector, only read.
+            let vv = unsafe { &*vec };
+            // SAFETY: the module's contract covers the comparison function.
+            unsafe { vv.verify_sorted() }
+        })
     }
 
     /// `git_vector_reverse`.

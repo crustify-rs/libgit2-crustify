@@ -37,8 +37,12 @@ use super::errors::{self, Result};
 /// `gmalloc`: allocate `n` bytes.
 pub type MallocFn = unsafe extern "C" fn(n: usize, file: *const c_char, line: c_int) -> *mut c_void;
 /// `grealloc`: C's `realloc`.
-pub type ReallocFn =
-    unsafe extern "C" fn(ptr: *mut c_void, size: usize, file: *const c_char, line: c_int) -> *mut c_void;
+pub type ReallocFn = unsafe extern "C" fn(
+    ptr: *mut c_void,
+    size: usize,
+    file: *const c_char,
+    line: c_int,
+) -> *mut c_void;
 /// `gfree`: C's `free`.
 pub type FreeFn = unsafe extern "C" fn(ptr: *mut c_void);
 
@@ -80,22 +84,28 @@ impl AllocatorCell {
         let m = self.gmalloc.load(Ordering::Acquire);
         let r = self.grealloc.load(Ordering::Acquire);
         let f = self.gfree.load(Ordering::Acquire);
-        // SAFETY: the cells only ever hold NULL or a pointer made from a
-        // function of the matching type (`new` and `set` are the only
-        // writers), and a function pointer and a data pointer have the same
-        // size and representation on the platforms the port supports.
-        unsafe {
-            GitAllocator {
-                gmalloc: core::mem::transmute::<*mut c_void, Option<MallocFn>>(m),
-                grealloc: core::mem::transmute::<*mut c_void, Option<ReallocFn>>(r),
-                gfree: core::mem::transmute::<*mut c_void, Option<FreeFn>>(f),
-            }
+        // SAFETY: (for all three) the cells only ever hold NULL or a pointer
+        // made from a function of the matching type (`new` and `set` are
+        // the only writers), and a function pointer and a data pointer have
+        // the same size and representation on the platforms the port
+        // supports.
+        let gmalloc = unsafe { core::mem::transmute::<*mut c_void, Option<MallocFn>>(m) };
+        // SAFETY: as above.
+        let grealloc = unsafe { core::mem::transmute::<*mut c_void, Option<ReallocFn>>(r) };
+        // SAFETY: as above.
+        let gfree = unsafe { core::mem::transmute::<*mut c_void, Option<FreeFn>>(f) };
+        GitAllocator {
+            gmalloc,
+            grealloc,
+            gfree,
         }
     }
 
     fn set(&self, a: GitAllocator) {
-        self.gmalloc.store(fn_to_ptr_malloc(a.gmalloc), Ordering::Release);
-        self.grealloc.store(fn_to_ptr_realloc(a.grealloc), Ordering::Release);
+        self.gmalloc
+            .store(fn_to_ptr_malloc(a.gmalloc), Ordering::Release);
+        self.grealloc
+            .store(fn_to_ptr_realloc(a.grealloc), Ordering::Release);
         self.gfree.store(fn_to_ptr_free(a.gfree), Ordering::Release);
     }
 
@@ -254,10 +264,9 @@ pub fn substrdup(s: &[u8]) -> *mut c_char {
     if !p.is_null() {
         // SAFETY: `p` is a fresh allocation of `s.len() + 1` bytes, disjoint
         // from `s`.
-        unsafe {
-            ptr::copy_nonoverlapping(s.as_ptr(), p, s.len());
-            p.add(s.len()).write(0);
-        }
+        unsafe { ptr::copy_nonoverlapping(s.as_ptr(), p, s.len()) };
+        // SAFETY: the last of those bytes.
+        unsafe { p.wrapping_add(s.len()).write(0) };
     }
     p.cast()
 }
@@ -340,7 +349,12 @@ unsafe impl CLenAlloc for GitAllocFamily {
     }
 
     #[inline]
-    unsafe fn c_realloc_len(&self, ptr: *mut u8, _old_len: usize, new_len: usize) -> Option<NonNull<u8>> {
+    unsafe fn c_realloc_len(
+        &self,
+        ptr: *mut u8,
+        _old_len: usize,
+        new_len: usize,
+    ) -> Option<NonNull<u8>> {
         // SAFETY: the caller passes a live allocation of this family.
         NonNull::new(unsafe { realloc(ptr.cast(), new_len) }.cast())
     }
@@ -379,7 +393,11 @@ pub mod ffi {
     ///
     /// `ptr` is NULL or a live allocation of the global allocator.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__reallocarray(ptr: *mut c_void, nelem: usize, elsize: usize) -> *mut c_void {
+    pub unsafe extern "C" fn git__reallocarray(
+        ptr: *mut c_void,
+        nelem: usize,
+        elsize: usize,
+    ) -> *mut c_void {
         // SAFETY: forwarded.
         barrier(|| unsafe { reallocarray(ptr, nelem, elsize) })
     }
@@ -452,15 +470,17 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_allocator_setup(allocator: *mut GitAllocator) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes NULL or a valid allocator, and
-            // vouches for its functions.
-            unsafe { set_allocator(allocator.as_ref()) };
+            // SAFETY: the caller passes NULL or a valid allocator.
+            let a = unsafe { allocator.as_ref() };
+            // SAFETY: the caller vouches for its functions.
+            unsafe { set_allocator(a) };
             0
         })
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::multiple_unsafe_ops_per_block)] // each block's SAFETY covers its sequence
 mod tests {
     use super::*;
     use crate::util::errors::ErrorClass;
@@ -500,7 +520,10 @@ mod tests {
         let _g = test_support::init();
         crate::util::errors::clear();
         assert!(calloc(usize::MAX, 2).is_null());
-        assert_eq!(crate::util::errors::last_class(), Some(ErrorClass::NOMEMORY));
+        assert_eq!(
+            crate::util::errors::last_class(),
+            Some(ErrorClass::NOMEMORY)
+        );
         assert!(mallocarray(usize::MAX / 2, 3).is_null());
     }
 
@@ -521,7 +544,10 @@ mod tests {
         test_support::with_alloc_limit(&g, 10, || {
             crate::util::errors::clear();
             assert!(malloc(11).is_null());
-            assert_eq!(crate::util::errors::last_class(), Some(ErrorClass::NOMEMORY));
+            assert_eq!(
+                crate::util::errors::last_class(),
+                Some(ErrorClass::NOMEMORY)
+            );
             let p = malloc(10);
             assert!(!p.is_null());
             assert!(malloc(1).is_null());

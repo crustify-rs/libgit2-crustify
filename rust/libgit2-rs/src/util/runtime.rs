@@ -42,7 +42,10 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 impl Runtime {
     /// A runtime with a count of 0 and no callbacks.
     pub const fn new() -> Runtime {
-        Runtime { count: Mutex::new(0), shutdown: Mutex::new(Vec::new()) }
+        Runtime {
+            count: Mutex::new(0),
+            shutdown: Mutex::new(Vec::new()),
+        }
     }
 
     /// `git_runtime_init`: increment the count; on the 0 → 1 transition run
@@ -83,7 +86,9 @@ impl Runtime {
         *count -= 1;
         if *count == 0 {
             loop {
-                let Some(cb) = lock(&self.shutdown).pop() else { break };
+                let Some(cb) = lock(&self.shutdown).pop() else {
+                    break;
+                };
                 // SAFETY: whoever registered `cb` vouched that it may run at
                 // shutdown (`shutdown_register`'s contract).
                 unsafe { cb() };
@@ -102,7 +107,10 @@ impl Runtime {
         let mut cbs = lock(&self.shutdown);
         if cbs.len() >= MAX_SHUTDOWN_CALLBACKS {
             drop(cbs);
-            return Err(crate::git_error_set!(ErrorClass::INVALID, "too many shutdown callbacks registered"));
+            return Err(crate::git_error_set!(
+                ErrorClass::INVALID,
+                "too many shutdown callbacks registered"
+            ));
         }
         if cbs.try_reserve(1).is_err() {
             return Err(super::errors::oom());
@@ -159,7 +167,10 @@ pub mod ffi {
     /// `init_fns` points to `cnt` function pointers (or `cnt` is 0), each
     /// sound to call during initialization.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_runtime_init(init_fns: *const Option<InitFn>, cnt: usize) -> c_int {
+    pub unsafe extern "C" fn git_runtime_init(
+        init_fns: *const Option<InitFn>,
+        cnt: usize,
+    ) -> c_int {
         barrier(|| {
             let fns: &[Option<InitFn>] = if cnt == 0 || init_fns.is_null() {
                 &[]
@@ -211,6 +222,7 @@ pub mod ffi {
 }
 
 #[cfg(test)]
+#[allow(clippy::multiple_unsafe_ops_per_block)] // each block's SAFETY covers its sequence
 mod tests {
     use super::*;
     use crate::util::errors::ErrorCode;

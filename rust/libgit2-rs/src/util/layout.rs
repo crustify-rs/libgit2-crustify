@@ -95,8 +95,7 @@ macro_rules! c_layout_test {
     ) => {
         #[cfg(test)]
         #[test]
-        #[cfg_attr(miri, ignore = "runs clang")]
-        #[cfg_attr(not(feature = "link-c"), ignore = "needs LIBGIT2_BUILD_DIR: run with --features link-c")]
+        #[cfg_attr(any(miri, not(feature = "link-c")), ignore = "runs clang on LIBGIT2_BUILD_DIR: needs --features link-c, not Miri")]
         fn c_layout() {
             $crate::util::layout::check(
                 &[$($h),*],
@@ -115,12 +114,28 @@ pub fn c_source(headers: &[&str], types: &[TypeLayout], asserts: &[&str]) -> Str
     }
     for t in types {
         let c = t.c_type;
-        let _ = writeln!(s, "_Static_assert(sizeof({c}) == {}, \"{c}: sizeof is {} in Rust ({})\");", t.size, t.size, t.rust);
-        let _ = writeln!(s, "_Static_assert(_Alignof({c}) == {}, \"{c}: _Alignof is {} in Rust\");", t.align, t.align);
+        let _ = writeln!(
+            s,
+            "_Static_assert(sizeof({c}) == {}, \"{c}: sizeof is {} in Rust ({})\");",
+            t.size, t.size, t.rust
+        );
+        let _ = writeln!(
+            s,
+            "_Static_assert(_Alignof({c}) == {}, \"{c}: _Alignof is {} in Rust\");",
+            t.align, t.align
+        );
         for f in &t.fields {
             let n = f.c_name;
-            let _ = writeln!(s, "_Static_assert(offsetof({c}, {n}) == {}, \"{c}.{n}: offset is {} in Rust\");", f.offset, f.offset);
-            let _ = writeln!(s, "_Static_assert(sizeof((({c} *)0)->{n}) == {}, \"{c}.{n}: size is {} in Rust\");", f.size, f.size);
+            let _ = writeln!(
+                s,
+                "_Static_assert(offsetof({c}, {n}) == {}, \"{c}.{n}: offset is {} in Rust\");",
+                f.offset, f.offset
+            );
+            let _ = writeln!(
+                s,
+                "_Static_assert(sizeof((({c} *)0)->{n}) == {}, \"{c}.{n}: size is {} in Rust\");",
+                f.size, f.size
+            );
         }
     }
     for a in asserts {
@@ -143,30 +158,52 @@ fn build_flags(dir: &std::path::Path) -> Vec<String> {
         }
         if in_edge {
             let l = line.trim_start();
-            if let Some(v) = l.strip_prefix("DEFINES = ").or_else(|| l.strip_prefix("INCLUDES = ")) {
+            if let Some(v) = l
+                .strip_prefix("DEFINES = ")
+                .or_else(|| l.strip_prefix("INCLUDES = "))
+            {
                 flags.extend(v.split_whitespace().map(String::from));
             } else if let Some(v) = l.strip_prefix("FLAGS = ") {
-                flags.extend(v.split_whitespace().filter(|f| f.starts_with("-D")).map(String::from));
+                flags.extend(
+                    v.split_whitespace()
+                        .filter(|f| f.starts_with("-D"))
+                        .map(String::from),
+                );
             } else if !line.starts_with(' ') {
                 break;
             }
         }
     }
-    assert!(!flags.is_empty(), "no compile flags for src/libgit2 found in {}/build.ninja", dir.display());
+    assert!(
+        !flags.is_empty(),
+        "no compile flags for src/libgit2 found in {}/build.ninja",
+        dir.display()
+    );
     flags
 }
 
 /// Compile the assertions for `types` with clang against the build in
 /// `LIBGIT2_BUILD_DIR`; panic with the compiler's output on a mismatch.
 pub fn check(headers: &[&str], types: &[TypeLayout], asserts: &[&str]) {
-    let dir = std::env::var_os("LIBGIT2_BUILD_DIR").expect("LIBGIT2_BUILD_DIR must name a libgit2 CMake build directory");
+    let dir = std::env::var_os("LIBGIT2_BUILD_DIR")
+        .expect("LIBGIT2_BUILD_DIR must name a libgit2 CMake build directory");
     let dir = std::path::PathBuf::from(dir);
     let src = c_source(headers, types, asserts);
     let cc = std::env::var("CC").unwrap_or_else(|_| "clang".into());
     let mut cmd = std::process::Command::new(&cc);
-    cmd.current_dir(&dir).args(build_flags(&dir)).args(["-std=gnu11", "-fsyntax-only", "-x", "c", "-"]);
-    cmd.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
-    let mut child = cmd.spawn().unwrap_or_else(|e| panic!("cannot run {cc}: {e}"));
+    cmd.current_dir(&dir).args(build_flags(&dir)).args([
+        "-std=gnu11",
+        "-fsyntax-only",
+        "-x",
+        "c",
+        "-",
+    ]);
+    cmd.stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd
+        .spawn()
+        .unwrap_or_else(|e| panic!("cannot run {cc}: {e}"));
     {
         use std::io::Write;
         let mut stdin = child.stdin.take().expect("stdin");
@@ -191,7 +228,10 @@ mod tests {
     #[test]
     fn generates_assertions() {
         let t = crate::c_layout!(Pair => "struct pair" { a, b as "second" });
-        assert_eq!((t.size, t.align, t.fields[1].offset, t.fields[1].size), (8, 4, 4, 4));
+        assert_eq!(
+            (t.size, t.align, t.fields[1].offset, t.fields[1].size),
+            (8, 4, 4, 4)
+        );
         let src = super::c_source(&["x.h"], &[t], &["1 == 1"]);
         assert!(src.contains("_Static_assert(offsetof(struct pair, second) == 4"));
         assert!(src.contains("#include \"x.h\""));
@@ -199,8 +239,10 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(miri, ignore = "runs clang")]
-    #[cfg_attr(not(feature = "link-c"), ignore = "needs LIBGIT2_BUILD_DIR: run with --features link-c")]
+    #[cfg_attr(
+        any(miri, not(feature = "link-c")),
+        ignore = "runs clang on LIBGIT2_BUILD_DIR"
+    )]
     fn detects_a_mismatch() {
         let t = crate::c_layout!(Pair => "git_str" { a as "ptr" });
         let r = std::panic::catch_unwind(|| super::check(&["str.h"], &[t], &[]));

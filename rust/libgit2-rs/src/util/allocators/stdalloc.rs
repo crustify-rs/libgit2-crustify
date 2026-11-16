@@ -12,12 +12,21 @@ pub const ALLOCATOR: GitAllocator = GitAllocator {
     gfree: Some(stdalloc_free),
 };
 
-unsafe extern "C" fn stdalloc_malloc(len: usize, _file: *const c_char, _line: c_int) -> *mut c_void {
+unsafe extern "C" fn stdalloc_malloc(
+    len: usize,
+    _file: *const c_char,
+    _line: c_int,
+) -> *mut c_void {
     // SAFETY: `malloc` may be called with any size.
     unsafe { libc::malloc(len) }
 }
 
-unsafe extern "C" fn stdalloc_realloc(ptr: *mut c_void, size: usize, _file: *const c_char, _line: c_int) -> *mut c_void {
+unsafe extern "C" fn stdalloc_realloc(
+    ptr: *mut c_void,
+    size: usize,
+    _file: *const c_char,
+    _line: c_int,
+) -> *mut c_void {
     // SAFETY: the allocator's contract: `ptr` is NULL or from this allocator.
     unsafe { libc::realloc(ptr, size) }
 }

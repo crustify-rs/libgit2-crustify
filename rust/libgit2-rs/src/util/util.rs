@@ -122,11 +122,17 @@ pub fn strntol64(s: &[u8], base: c_int) -> Result<(i64, usize)> {
 }
 
 fn not_a_number() -> ErrorCode {
-    git_error_set!(ErrorClass::INVALID, "failed to convert string to long: not a number")
+    git_error_set!(
+        ErrorClass::INVALID,
+        "failed to convert string to long: not a number"
+    )
 }
 
 fn overflow() -> ErrorCode {
-    git_error_set!(ErrorClass::INVALID, "failed to convert string to long: overflow error")
+    git_error_set!(
+        ErrorClass::INVALID,
+        "failed to convert string to long: overflow error"
+    )
 }
 
 /// `git__strntol32`: as [`strntol64`], and `failed to convert: '<text>' is
@@ -413,15 +419,21 @@ pub fn memzero(data: &mut [u8]) {
 
 /// `git_time_monotonic`: milliseconds of `CLOCK_MONOTONIC`.
 pub fn time_monotonic() -> u64 {
-    let mut tp = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    let mut tp = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
     // SAFETY: `tp` is valid for writes.
-    if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut tp) } == 0 {
+    if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &raw mut tp) } == 0 {
         // C computes `tv_sec * 1000 + tv_nsec / 1.0E6` in floating point.
         return ((tp.tv_sec as f64) * 1000.0 + (tp.tv_nsec as f64) / 1.0e6) as u64;
     }
-    let mut tv = libc::timeval { tv_sec: 0, tv_usec: 0 };
+    let mut tv = libc::timeval {
+        tv_sec: 0,
+        tv_usec: 0,
+    };
     // SAFETY: `tv` is valid for writes; a NULL timezone is allowed.
-    unsafe { libc::gettimeofday(&mut tv, core::ptr::null_mut()) };
+    unsafe { libc::gettimeofday(&raw mut tv, core::ptr::null_mut()) };
     (tv.tv_sec as u64) * 1000 + (tv.tv_usec as u64) / 1000
 }
 
@@ -442,8 +454,8 @@ pub fn hash(key: &[u8], seed: u32) -> u32 {
         c1 = c1.wrapping_mul(5).wrapping_add(0x7b7d_159c);
         c2 = c2.wrapping_mul(5).wrapping_add(0x6bce_6396);
     };
-    for chunk in key[..nblocks * 4].chunks_exact(4) {
-        block(u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]), &mut h1);
+    for chunk in key.as_chunks::<4>().0 {
+        block(u32::from_ne_bytes(*chunk), &mut h1);
     }
     let tail = &key[nblocks * 4..];
     let mut k1: u32 = 0;
@@ -479,7 +491,13 @@ pub fn hexdump_string(buf: &[u8]) -> String {
     use core::fmt::Write;
     const W: usize = 16;
     let mut out = String::new();
-    let printable = |c: u8| if (32..=126).contains(&c) { c as char } else { '.' };
+    let printable = |c: u8| {
+        if (32..=126).contains(&c) {
+            c as char
+        } else {
+            '.'
+        }
+    };
     let lines = buf.len() / W;
     let last = buf.len() % W;
     for i in 0..lines {
@@ -521,7 +539,10 @@ pub fn hexdump_string(buf: &[u8]) -> String {
 /// `git__bsearch`: binary search for the element `cmp` (called with each
 /// probed element, returning the key's order against it) reports equal.
 /// `Ok(position)` when found, `Err(insertion position)` otherwise.
-pub fn bsearch<T>(array: &[T], mut cmp: impl FnMut(&T) -> c_int) -> core::result::Result<usize, usize> {
+pub fn bsearch<T>(
+    array: &[T],
+    mut cmp: impl FnMut(&T) -> c_int,
+) -> core::result::Result<usize, usize> {
     let mut base = 0usize;
     let mut lim = array.len();
     while lim != 0 {
@@ -569,7 +590,8 @@ pub fn ordering(c: c_int) -> Ordering {
 
 /// `git__strtok` on a byte buffer: skip separators from `*pos`, and return
 /// the token's range, writing a NUL after it (if it is not at the end) and
-/// moving `*pos` past it. The buffer ends at its first NUL or its end.
+/// moving `*pos` past it; `None` (and `*pos` unchanged) when only
+/// separators remain. The buffer ends at its first NUL or its end.
 pub fn strtok(buf: &mut [u8], pos: &mut usize, sep: &[u8]) -> Option<core::ops::Range<usize>> {
     let end_of = |b: &[u8], i: usize| i >= b.len() || b[i] == 0;
     let mut p = *pos;
@@ -577,7 +599,6 @@ pub fn strtok(buf: &mut [u8], pos: &mut usize, sep: &[u8]) -> Option<core::ops::
         p += 1;
     }
     if end_of(buf, p) {
-        *pos = p;
         return None;
     }
     let start = p;
@@ -657,11 +678,10 @@ pub mod ffi {
                     status(Err(overflow()))
                 }
                 ParseOutcome::Value(n) => {
-                    // SAFETY: as above, and `result` is writable.
-                    unsafe {
-                        write_opt(endptr, endp);
-                        result.write(n);
-                    }
+                    // SAFETY: the caller passes NULL or a writable `endptr`.
+                    unsafe { write_opt(endptr, endp) };
+                    // SAFETY: the caller passes a writable `result`.
+                    unsafe { result.write(n) };
                     0
                 }
             }
@@ -686,11 +706,10 @@ pub mod ffi {
             let s = unsafe { bytes(nptr, nptr_len) };
             match strntol32(s, base) {
                 Ok((v, end)) => {
-                    // SAFETY: `result` is writable, `endptr` NULL or writable.
-                    unsafe {
-                        result.write(v);
-                        write_opt(endptr, nptr.wrapping_add(end));
-                    }
+                    // SAFETY: the caller passes a writable `result`.
+                    unsafe { result.write(v) };
+                    // SAFETY: the caller passes NULL or a writable `endptr`.
+                    unsafe { write_opt(endptr, nptr.wrapping_add(end)) };
                     0
                 }
                 Err(e) => e.raw(),
@@ -740,12 +759,18 @@ pub mod ffi {
     ///
     /// Both are NUL-terminated, or readable for `sz` bytes.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__strncasecmp(a: *const c_char, b: *const c_char, sz: usize) -> c_int {
+    pub unsafe extern "C" fn git__strncasecmp(
+        a: *const c_char,
+        b: *const c_char,
+        sz: usize,
+    ) -> c_int {
         barrier(|| {
             // `sz == 0` compares whole strings (see `strncasecmp`).
             let bound = if sz == 0 { usize::MAX - 1 } else { sz };
             // SAFETY: the caller's strings end at a NUL or after `sz` bytes.
-            let (a, b) = unsafe { (bounded(a, bound), bounded(b, bound)) };
+            let a = unsafe { bounded(a, bound) };
+            // SAFETY: as for `a`.
+            let b = unsafe { bounded(b, bound) };
             strncasecmp(a, b, sz)
         })
     }
@@ -780,9 +805,10 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git__prefixcmp(s: *const c_char, prefix: *const c_char) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes NUL-terminated strings; only the
-            // first `strlen(prefix) + 1` bytes of `s` can be compared.
+            // SAFETY: the caller passes a NUL-terminated `prefix`.
             let p = unsafe { cstr_bytes(prefix) };
+            // SAFETY: `s` is NUL-terminated; only its first `strlen(prefix)
+            // + 1` bytes can be compared.
             let s = unsafe { bounded(s, p.len()) };
             prefixcmp(s, p)
         })
@@ -794,10 +820,14 @@ pub mod ffi {
     ///
     /// Both arguments are NUL-terminated strings.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__prefixcmp_icase(s: *const c_char, prefix: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git__prefixcmp_icase(
+        s: *const c_char,
+        prefix: *const c_char,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: as in `git__prefixcmp`.
             let p = unsafe { cstr_bytes(prefix) };
+            // SAFETY: as in `git__prefixcmp`.
             let s = unsafe { bounded(s, p.len()) };
             prefixcmp_icase(s, p)
         })
@@ -810,12 +840,18 @@ pub mod ffi {
     /// `prefix` is NUL-terminated; `s` is readable for `str_n` bytes or up
     /// to a NUL.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__prefixncmp(s: *const c_char, str_n: usize, prefix: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git__prefixncmp(
+        s: *const c_char,
+        str_n: usize,
+        prefix: *const c_char,
+    ) -> c_int {
         barrier(|| {
-            // SAFETY: as in `git__prefixcmp`; `s` is read for at most
-            // `str_n` bytes, which C reads whatever they hold.
+            // SAFETY: the caller passes a NUL-terminated `prefix`.
             let p = unsafe { cstr_bytes(prefix) };
-            let n = str_n.min(p.len() + 1);
+            // SAFETY: `s` is read up to its NUL or the bytes C could
+            // compare, whichever comes first.
+            let n = unsafe { libc::strnlen(s, str_n.min(p.len() + 1)) };
+            // SAFETY: the `n` bytes just measured are readable.
             let s = unsafe { bytes(s, n) };
             prefixncmp(s, str_n, p)
         })
@@ -827,11 +863,17 @@ pub mod ffi {
     ///
     /// As `git__prefixncmp`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__prefixncmp_icase(s: *const c_char, str_n: usize, prefix: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git__prefixncmp_icase(
+        s: *const c_char,
+        str_n: usize,
+        prefix: *const c_char,
+    ) -> c_int {
         barrier(|| {
             // SAFETY: as in `git__prefixncmp`.
             let p = unsafe { cstr_bytes(prefix) };
-            let n = str_n.min(p.len() + 1);
+            // SAFETY: as in `git__prefixncmp`.
+            let n = unsafe { libc::strnlen(s, str_n.min(p.len() + 1)) };
+            // SAFETY: as in `git__prefixncmp`.
             let s = unsafe { bytes(s, n) };
             prefixncmp_icase(s, str_n, p)
         })
@@ -886,17 +928,21 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git__strtok(end: *mut *mut c_char, sep: *const c_char) -> *mut c_char {
         barrier(|| {
-            // SAFETY: the caller passes a valid `end` and strings.
+            // SAFETY: the caller passes a valid `end`.
             let base = unsafe { *end };
+            // SAFETY: `*end` is a writable NUL-terminated string.
             let buf = unsafe { cstr_mut(base) };
+            // SAFETY: `sep` is NUL-terminated.
             let sep = unsafe { cstr_bytes(sep) };
             let mut pos = 0;
-            let tok = strtok(buf, &mut pos, sep);
-            // SAFETY: `pos` is within the string or at its NUL.
-            unsafe { *end = base.add(pos) };
-            match tok {
-                // SAFETY: `start` is within the string.
-                Some(r) => unsafe { base.add(r.start) },
+            match strtok(buf, &mut pos, sep) {
+                Some(r) => {
+                    // SAFETY: `end` is writable; `pos` is within the string
+                    // or at its NUL.
+                    unsafe { *end = base.wrapping_add(pos) };
+                    base.wrapping_add(r.start)
+                }
+                // C leaves `*end` as it was when there is no token.
                 None => core::ptr::null_mut(),
             }
         })
@@ -910,15 +956,17 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git__strsep(end: *mut *mut c_char, sep: *const c_char) -> *mut c_char {
         barrier(|| {
-            // SAFETY: the caller passes a valid `end` and strings.
+            // SAFETY: the caller passes a valid `end`.
             let base = unsafe { *end };
+            // SAFETY: `*end` is a writable NUL-terminated string.
             let buf = unsafe { cstr_mut(base) };
+            // SAFETY: `sep` is NUL-terminated.
             let sep = unsafe { cstr_bytes(sep) };
             let mut pos = 0;
             match strsep(buf, &mut pos, sep) {
                 Some(_) => {
-                    // SAFETY: `pos` is within the string or at its NUL.
-                    unsafe { *end = base.add(pos) };
+                    // SAFETY: `end` is writable; `pos` is within the string.
+                    unsafe { *end = base.wrapping_add(pos) };
                     base
                 }
                 None => core::ptr::null_mut(),
@@ -950,8 +998,9 @@ pub mod ffi {
         needlelen: usize,
     ) -> *const c_void {
         barrier(|| {
-            // SAFETY: the caller passes readable ranges.
+            // SAFETY: the caller passes a readable haystack.
             let h = unsafe { bytes(haystack.cast(), haystacklen) };
+            // SAFETY: and a readable needle.
             let n = unsafe { bytes(needle.cast(), needlelen) };
             match memmem(h, n) {
                 Some(i) => haystack.cast::<u8>().wrapping_add(i).cast(),
@@ -970,7 +1019,9 @@ pub mod ffi {
         barrier(|| {
             // SAFETY: the caller passes `len` readable bytes.
             let text = hexdump_string(unsafe { bytes(buffer, len) });
-            let Ok(text) = std::ffi::CString::new(text) else { return };
+            let Ok(text) = std::ffi::CString::new(text) else {
+                return;
+            };
             // SAFETY: a valid format and a NUL-terminated argument.
             unsafe { libc::printf(c"%s".as_ptr(), text.as_ptr()) };
         })
@@ -983,8 +1034,12 @@ pub mod ffi {
     /// `key` is readable for `len` bytes (`len >= 0`).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git__hash(key: *const c_void, len: c_int, seed: u32) -> u32 {
-        // SAFETY: the caller passes `len` readable bytes.
-        barrier(|| hash(unsafe { bytes(key.cast(), usize::try_from(len).unwrap_or(0)) }, seed))
+        barrier(|| {
+            let len = usize::try_from(len).unwrap_or(0);
+            // SAFETY: the caller passes `len` readable bytes.
+            let key = unsafe { bytes(key.cast(), len) };
+            hash(key, seed)
+        })
     }
 
     /// The comparison `git__bsearch` takes.
@@ -1112,7 +1167,13 @@ pub mod ffi {
     /// `els` holds `nel` elements of `elsize` bytes; `cmp` is sound to call
     /// with pointers to any two of them and `payload`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__qsort_r(els: *mut c_void, nel: usize, elsize: usize, cmp: SortRCmp, payload: *mut c_void) {
+    pub unsafe extern "C" fn git__qsort_r(
+        els: *mut c_void,
+        nel: usize,
+        elsize: usize,
+        cmp: SortRCmp,
+        payload: *mut c_void,
+    ) {
         // SAFETY: forwarded to the caller's contract.
         barrier(|| unsafe { libc::qsort_r(els, nel, elsize, Some(cmp), payload) })
     }
@@ -1125,9 +1186,10 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git__getenv(out: *mut GitStr, name: *const c_char) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes a valid, unaliased `git_str` and a
-            // NUL-terminated `name`.
-            let (out, name) = unsafe { (&mut *out, CStr::from_ptr(name)) };
+            // SAFETY: the caller passes a valid, unaliased `git_str`.
+            let out = unsafe { &mut *out };
+            // SAFETY: the caller passes a NUL-terminated `name`.
+            let name = unsafe { CStr::from_ptr(name) };
             status(getenv(out, name))
         })
     }
@@ -1166,9 +1228,15 @@ mod tests {
             crate::util::errors::last_message().unwrap(),
             b"failed to convert string to long: not a number"
         );
-        assert_eq!(parse_i64(b"99999999999999999999z", 10), (ParseOutcome::Overflow, 20));
+        assert_eq!(
+            parse_i64(b"99999999999999999999z", 10),
+            (ParseOutcome::Overflow, 20)
+        );
         assert!(strntol32(b" 2147483648", 10).is_err());
-        assert_eq!(crate::util::errors::last_message().unwrap(), b"failed to convert: ' 2147483648' is too large");
+        assert_eq!(
+            crate::util::errors::last_message().unwrap(),
+            b"failed to convert: ' 2147483648' is too large"
+        );
         assert_eq!(strntol32(b"-2147483648", 10), Ok((i32::MIN, 11)));
     }
 
@@ -1213,7 +1281,10 @@ mod tests {
         assert_eq!(memmem(b"aab", b"ab"), Some(1));
         assert_eq!(size_t_powerof2(5), 8);
         assert_eq!(size_t_powerof2(8), 8);
-        assert_eq!(next_line(b"ab\r\n\ncd"), b"\r\n\ncd".split_at(0).1.get(3..).unwrap());
+        assert_eq!(
+            next_line(b"ab\r\n\ncd"),
+            b"\r\n\ncd".split_at(0).1.get(3..).unwrap()
+        );
         assert_eq!(bsearch(&[1, 3, 5], |e| 3 - e), Ok(1));
         assert_eq!(bsearch(&[1, 3, 5], |e| 4 - e), Err(2));
         assert_eq!(bsearch::<i32>(&[], |e| 4 - e), Err(0));

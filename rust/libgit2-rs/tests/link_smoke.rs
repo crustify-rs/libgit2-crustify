@@ -6,9 +6,8 @@ unsafe extern "C" {
 }
 #[test]
 fn links_c() {
-    // SAFETY: init/shutdown pair.
-    unsafe {
-        assert!(git_libgit2_init() > 0);
-        git_libgit2_shutdown();
-    }
+    // SAFETY: `git_libgit2_init` may be called at any time.
+    assert!(unsafe { git_libgit2_init() } > 0);
+    // SAFETY: pairs with the init above.
+    unsafe { git_libgit2_shutdown() };
 }

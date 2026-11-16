@@ -299,7 +299,9 @@ impl Atomic32 {
     /// `git_atomic32_add`: the new value.
     #[inline]
     pub fn add(&self, addend: i32) -> i32 {
-        self.0.fetch_add(addend, Ordering::SeqCst).wrapping_add(addend)
+        self.0
+            .fetch_add(addend, Ordering::SeqCst)
+            .wrapping_add(addend)
     }
 }
 
@@ -326,7 +328,9 @@ impl Atomic64 {
     /// `git_atomic64_add`: the new value.
     #[inline]
     pub fn add(&self, addend: i64) -> i64 {
-        self.0.fetch_add(addend, Ordering::SeqCst).wrapping_add(addend)
+        self.0
+            .fetch_add(addend, Ordering::SeqCst)
+            .wrapping_add(addend)
     }
 }
 
@@ -368,7 +372,10 @@ pub struct GitRefcount {
 impl GitRefcount {
     /// A count of `n` with no owner.
     pub const fn new(n: i32) -> GitRefcount {
-        GitRefcount { refcount: Atomic32::new(n), owner: AtomicPtr::new(core::ptr::null_mut()) }
+        GitRefcount {
+            refcount: Atomic32::new(n),
+            owner: AtomicPtr::new(core::ptr::null_mut()),
+        }
     }
     /// `GIT_REFCOUNT_INC`.
     #[inline]
@@ -423,10 +430,17 @@ pub mod ffi {
     /// `key` is valid for a write; `destroy_fn` is NULL or sound to call at
     /// thread exit with each value set for the key.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tlsdata_init(key: *mut TlsdataKey, destroy_fn: Option<TlsdataDestroyFn>) -> c_int {
+    pub unsafe extern "C" fn git_tlsdata_init(
+        key: *mut TlsdataKey,
+        destroy_fn: Option<TlsdataDestroyFn>,
+    ) -> c_int {
         // SAFETY: the caller passes a writable `key` and vouches for
         // `destroy_fn`.
-        if unsafe { libc::pthread_key_create(key, destroy_fn) } != 0 { -1 } else { 0 }
+        if unsafe { libc::pthread_key_create(key, destroy_fn) } != 0 {
+            -1
+        } else {
+            0
+        }
     }
 
     /// `git_tlsdata_set`.
@@ -437,7 +451,11 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tlsdata_set(key: TlsdataKey, value: *mut c_void) -> c_int {
         // SAFETY: the caller passes a live key.
-        if unsafe { libc::pthread_setspecific(key, value) } != 0 { -1 } else { 0 }
+        if unsafe { libc::pthread_setspecific(key, value) } != 0 {
+            -1
+        } else {
+            0
+        }
     }
 
     /// `git_tlsdata_get`.
@@ -459,11 +477,16 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tlsdata_dispose(key: TlsdataKey) -> c_int {
         // SAFETY: the caller passes a live key, not used after.
-        if unsafe { libc::pthread_key_delete(key) } != 0 { -1 } else { 0 }
+        if unsafe { libc::pthread_key_delete(key) } != 0 {
+            -1
+        } else {
+            0
+        }
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)] // each block's SAFETY covers its sequence
 mod tests {
     use super::*;
     use std::sync::Arc;
@@ -475,7 +498,11 @@ mod tests {
             c: GitCond,
             n: Atomic32,
         }
-        let s = Arc::new(Shared { m: GitMutex::new(), c: GitCond::new(), n: Atomic32::new(0) });
+        let s = Arc::new(Shared {
+            m: GitMutex::new(),
+            c: GitCond::new(),
+            n: Atomic32::new(0),
+        });
         let t = {
             let s = Arc::clone(&s);
             std::thread::spawn(move || {

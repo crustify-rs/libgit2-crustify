@@ -231,12 +231,11 @@ fn collapse<T: Copy>(
         if stack_curr <= 1 {
             break;
         }
-        if stack_curr == 2 && stack[0].length + stack[1].length == size {
-            merge(dst, stack, stack_curr, store, cmp);
-            stack[0].length += stack[1].length;
-            stack_curr -= 1;
-            break;
-        } else if stack_curr == 2 && stack[0].length <= stack[1].length {
+        // The last merge, or a stack of two that breaks the invariant (two
+        // branches with the same body in C).
+        if stack_curr == 2
+            && (stack[0].length + stack[1].length == size || stack[0].length <= stack[1].length)
+        {
             merge(dst, stack, stack_curr, store, cmp);
             stack[0].length += stack[1].length;
             stack_curr -= 1;
@@ -293,13 +292,23 @@ impl<T: Copy, F: FnMut(T, T) -> c_int> Sort<'_, T, F> {
             bisort(&mut self.dst[curr..curr + run], len, &mut self.cmp);
             len = run;
         }
-        self.run_stack[self.stack_curr] = Run { start: curr, length: len };
+        self.run_stack[self.stack_curr] = Run {
+            start: curr,
+            length: len,
+        };
         self.stack_curr += 1;
         self.curr += len;
         if self.curr == size {
             while self.stack_curr > 1 {
-                merge(self.dst, &self.run_stack, self.stack_curr, &mut self.store, &mut self.cmp);
-                self.run_stack[self.stack_curr - 2].length += self.run_stack[self.stack_curr - 1].length;
+                merge(
+                    self.dst,
+                    &self.run_stack,
+                    self.stack_curr,
+                    &mut self.store,
+                    &mut self.cmp,
+                );
+                self.run_stack[self.stack_curr - 2].length +=
+                    self.run_stack[self.stack_curr - 1].length;
                 self.stack_curr -= 1;
             }
             return true;
@@ -319,7 +328,9 @@ pub fn tsort<T: Copy>(dst: &mut [T], mut cmp: impl FnMut(T, T) -> c_int) {
     let mut s = Sort {
         dst,
         cmp,
-        store: Store { storage: Vec::new_in(GIT_ALLOC) },
+        store: Store {
+            storage: Vec::new_in(GIT_ALLOC),
+        },
         run_stack: [Run::default(); 128],
         stack_curr: 0,
         curr: 0,
@@ -332,7 +343,14 @@ pub fn tsort<T: Copy>(dst: &mut [T], mut cmp: impl FnMut(T, T) -> c_int) {
     }
     loop {
         if !check_invariant(&s.run_stack, s.stack_curr) {
-            s.stack_curr = collapse(s.dst, &mut s.run_stack, s.stack_curr, &mut s.store, size, &mut s.cmp);
+            s.stack_curr = collapse(
+                s.dst,
+                &mut s.run_stack,
+                s.stack_curr,
+                &mut s.store,
+                size,
+                &mut s.cmp,
+            );
             continue;
         }
         if s.push_next() {
@@ -371,7 +389,12 @@ pub mod ffi {
     /// included) accesses during the call; `cmp` is sound to call with any
     /// two of them and `payload`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__tsort_r(dst: *mut *mut c_void, size: usize, cmp: SortRCmp, payload: *mut c_void) {
+    pub unsafe extern "C" fn git__tsort_r(
+        dst: *mut *mut c_void,
+        size: usize,
+        cmp: SortRCmp,
+        payload: *mut c_void,
+    ) {
         barrier(|| {
             // SAFETY: forwarded to the caller's contract.
             let v = unsafe { slice(dst, size) };

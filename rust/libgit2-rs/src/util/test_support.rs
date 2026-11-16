@@ -72,14 +72,18 @@ fn ensure_init() {
 /// keeps [`exclusive`] tests out while this one runs.
 pub fn init() -> TestGuard {
     ensure_init();
-    TestGuard { _g: ALLOCATOR_LOCK.read().unwrap_or_else(|e| e.into_inner()) }
+    TestGuard {
+        _g: ALLOCATOR_LOCK.read().unwrap_or_else(|e| e.into_inner()),
+    }
 }
 
 /// Initialize the library, and wait until no other test runs: for tests
 /// that replace the global allocator.
 pub fn exclusive() -> ExclusiveGuard {
     ensure_init();
-    ExclusiveGuard { _g: ALLOCATOR_LOCK.write().unwrap_or_else(|e| e.into_inner()) }
+    ExclusiveGuard {
+        _g: ALLOCATOR_LOCK.write().unwrap_or_else(|e| e.into_inner()),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -103,42 +107,51 @@ unsafe extern "C" fn cl_malloc(len: usize, _file: *const c_char, _line: c_int) -
     }
     BYTES_AVAILABLE.fetch_sub(len, Ordering::SeqCst);
     // SAFETY: `p` holds `HDR + len` bytes; the header is written unaligned.
-    unsafe {
-        p.cast::<usize>().write_unaligned(len);
-        p.add(HDR).cast()
-    }
+    unsafe { p.cast::<usize>().write_unaligned(len) };
+    p.wrapping_add(HDR).cast()
 }
 
 unsafe extern "C" fn cl_free(ptr: *mut c_void) {
     if ptr.is_null() {
         return;
     }
-    // SAFETY: `ptr` comes from `cl_malloc`: its block starts `HDR` bytes
-    // before it, with the length.
-    unsafe {
-        let block = ptr.cast::<u8>().sub(HDR);
-        let len = block.cast::<usize>().read_unaligned();
-        libc::free(block.cast());
-        BYTES_AVAILABLE.fetch_add(len, Ordering::SeqCst);
-    }
+    // `ptr` comes from `cl_malloc`: its block starts `HDR` bytes before it,
+    // with the length.
+    let block = ptr.cast::<u8>().wrapping_sub(HDR);
+    // SAFETY: the block's header.
+    let len = unsafe { block.cast::<usize>().read_unaligned() };
+    // SAFETY: the block, freed once.
+    unsafe { libc::free(block.cast()) };
+    BYTES_AVAILABLE.fetch_add(len, Ordering::SeqCst);
 }
 
-unsafe extern "C" fn cl_realloc(ptr: *mut c_void, size: usize, file: *const c_char, line: c_int) -> *mut c_void {
+unsafe extern "C" fn cl_realloc(
+    ptr: *mut c_void,
+    size: usize,
+    file: *const c_char,
+    line: c_int,
+) -> *mut c_void {
     let copy = if ptr.is_null() {
         0
     } else {
         // SAFETY: as in `cl_free`.
-        unsafe { ptr.cast::<u8>().sub(HDR).cast::<usize>().read_unaligned() }
+        unsafe {
+            ptr.cast::<u8>()
+                .wrapping_sub(HDR)
+                .cast::<usize>()
+                .read_unaligned()
+        }
     };
     // SAFETY: `cl_malloc` may be called with any size.
     let new = unsafe { cl_malloc(size, file, line) };
     if !new.is_null() && !ptr.is_null() {
         // SAFETY: `ptr` holds `copy` bytes, `new` at least `size`; they are
-        // distinct blocks. `ptr` is then freed once.
+        // distinct blocks.
         unsafe {
-            core::ptr::copy_nonoverlapping(ptr.cast::<u8>(), new.cast::<u8>(), copy.min(size));
-            cl_free(ptr);
-        }
+            core::ptr::copy_nonoverlapping(ptr.cast::<u8>(), new.cast::<u8>(), copy.min(size))
+        };
+        // SAFETY: `ptr` is freed once.
+        unsafe { cl_free(ptr) };
     }
     new
 }
@@ -156,7 +169,11 @@ pub fn with_alloc_limit<R>(_g: &ExclusiveGuard, bytes: usize, f: impl FnOnce() -
         }
     }
     BYTES_AVAILABLE.store(bytes, Ordering::SeqCst);
-    let limited = GitAllocator { gmalloc: Some(cl_malloc), grealloc: Some(cl_realloc), gfree: Some(cl_free) };
+    let limited = GitAllocator {
+        gmalloc: Some(cl_malloc),
+        grealloc: Some(cl_realloc),
+        gfree: Some(cl_free),
+    };
     // SAFETY: the limited allocator behaves as `malloc`/`realloc`/`free`
     // with 8-byte alignment; the exclusive guard keeps every other test,
     // and so every other allocation, out until `Reset` reinstalls the

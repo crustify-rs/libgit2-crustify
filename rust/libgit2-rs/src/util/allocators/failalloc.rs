@@ -18,7 +18,11 @@ pub const ALLOCATOR: GitAllocator = GitAllocator {
 ///
 /// None: it reads none of its arguments.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_failalloc_malloc(_len: usize, _file: *const c_char, _line: c_int) -> *mut c_void {
+pub unsafe extern "C" fn git_failalloc_malloc(
+    _len: usize,
+    _file: *const c_char,
+    _line: c_int,
+) -> *mut c_void {
     core::ptr::null_mut()
 }
 

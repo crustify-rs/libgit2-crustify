@@ -7,7 +7,7 @@
 //! `asize`; the user frees it with `git_buf_dispose`.
 //!
 //! The safe Rust API returns `Vec<u8>` where C returns a `git_buf`;
-//! [`GitBuf::into_vec`] and [`GitBuf::from_str`] convert.
+//! [`GitBuf::into_vec`] and [`GitBuf::from_git_str`] convert.
 
 use core::ffi::c_int;
 
@@ -63,7 +63,11 @@ fn is_sentinel(p: *mut core::ffi::c_char) -> bool {
 impl GitBuf {
     /// An empty buffer (`ptr` = `git_str__initstr`).
     pub const fn new() -> GitBuf {
-        GitBuf { ptr: git_str__initstr.as_ptr(), reserved: 0, size: 0 }
+        GitBuf {
+            ptr: git_str__initstr.as_ptr(),
+            reserved: 0,
+            size: 0,
+        }
     }
 
     /// The contents.
@@ -89,7 +93,7 @@ impl GitBuf {
     /// `git_buf_fromstr` for Rust: move `s`'s buffer into a `git_buf`. A
     /// borrowed string's contents are copied first; an out-of-memory one
     /// fails.
-    pub fn from_str(mut s: GitStr) -> Result<GitBuf> {
+    pub fn from_git_str(mut s: GitStr) -> Result<GitBuf> {
         if s.is_oom() {
             return Err(ErrorCode::GENERIC);
         }
@@ -173,8 +177,11 @@ pub mod ffi {
             let b = unsafe { &mut *buf };
             b.sanitize();
             // SAFETY: `b`'s allocation (with `reserved` bytes, now holding
-            // an empty string) becomes the string's; `out` is writable.
-            unsafe { out.write(GitStr::from_raw_parts(b.ptr, b.reserved, b.size)) };
+            // an empty string) becomes the string's: an owned (or empty)
+            // `git_str`.
+            let s = unsafe { GitStr::from_raw_parts(b.ptr, b.reserved, b.size) };
+            // SAFETY: `out` is writable.
+            unsafe { out.write(s) };
             b.ptr = git_str__initstr.as_ptr();
             b.reserved = 0;
             b.size = 0;
@@ -196,7 +203,13 @@ pub mod ffi {
             // SAFETY: a valid `git_str`, not otherwise accessed.
             let (ptr, reserved, size) = unsafe { &mut *str }.take_raw();
             // SAFETY: `out` is writable.
-            unsafe { out.write(GitBuf { ptr, reserved, size }) };
+            unsafe {
+                out.write(GitBuf {
+                    ptr,
+                    reserved,
+                    size,
+                })
+            };
             0
         })
     }
@@ -219,6 +232,7 @@ pub mod ffi {
 }
 
 #[cfg(test)]
+#[allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)] // each block's SAFETY covers its sequence
 mod tests {
     use super::*;
 
@@ -227,7 +241,7 @@ mod tests {
         let _g = crate::util::test_support::init();
         let s = GitStr::from_bytes(b"hello").unwrap();
         let cap = s.capacity();
-        let b = GitBuf::from_str(s).unwrap();
+        let b = GitBuf::from_git_str(s).unwrap();
         assert_eq!(b.as_bytes(), b"hello");
         assert_eq!(b.reserved, cap);
         let mut b2 = GitBuf::new();
@@ -244,7 +258,7 @@ mod tests {
         let mut s = GitStr::new();
         // SAFETY: `data` outlives `s`'s use of it (it is copied at once).
         unsafe { s.attach_notowned(data.as_ptr().cast(), 3) };
-        let b = GitBuf::from_str(s).unwrap();
+        let b = GitBuf::from_git_str(s).unwrap();
         assert_eq!(b.as_bytes(), b"xyz");
         assert_ne!(b.ptr.cast_const(), data.as_ptr().cast());
     }

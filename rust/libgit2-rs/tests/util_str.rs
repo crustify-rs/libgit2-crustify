@@ -1,6 +1,10 @@
 //! Tests of `git_str`: the safe API, and the exports called as C calls them.
 //! Expected values follow the C (`tests/util/str/*.c` and the C reference).
 
+// These tests call the exports in sequences, as C does; the SAFETY comment
+// of each block covers the calls in it.
+#![allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)]
+
 use core::ffi::{CStr, c_char};
 use libgit2_rs::util::errors::{self, ErrorClass, ErrorCode};
 use libgit2_rs::util::str::{Bom, GitStr, ffi};
@@ -94,15 +98,18 @@ fn joins() {
     s.join_n(b'/', &[Some(b"" as &[u8]), Some(b"a")]).unwrap();
     assert_eq!(s.as_bytes(), b"a");
     let mut s = GitStr::from_bytes(b"a").unwrap();
-    s.join_n(b'/', &[Some(b"/b" as &[u8]), Some(b"c/"), None, Some(b"d")]).unwrap();
+    s.join_n(b'/', &[Some(b"/b" as &[u8]), Some(b"c/"), None, Some(b"d")])
+        .unwrap();
     assert_eq!(s.as_bytes(), b"a/b/c/d");
     // Empty segments into an empty string write nothing (C only writes a
     // separator after something).
     let mut s = GitStr::new();
-    s.join_n(b';', &[Some(b"" as &[u8]), Some(b""), Some(b"")]).unwrap();
+    s.join_n(b';', &[Some(b"" as &[u8]), Some(b""), Some(b"")])
+        .unwrap();
     assert_eq!(s.as_bytes(), b"");
     let mut s = GitStr::from_bytes(b"a").unwrap();
-    s.join_n(b';', &[Some(b"" as &[u8]), Some(b""), Some(b"b")]).unwrap();
+    s.join_n(b';', &[Some(b"" as &[u8]), Some(b""), Some(b"b")])
+        .unwrap();
     assert_eq!(s.as_bytes(), b"a;b");
     let mut s = GitStr::new();
     s.join_n(b'/', &[]).unwrap();
@@ -125,7 +132,14 @@ fn encodings() {
     assert_eq!(d.decode_base64(b"ab!d"), Err(ErrorCode::GENERIC));
     assert_eq!(d.as_bytes(), b"this\0\0", "unchanged on error");
 
-    for input in [&b""[..], b"a", b"ab", b"abc", b"abcd", b"\x00\xff\x10\x20\x30\x40\x50"] {
+    for input in [
+        &b""[..],
+        b"a",
+        b"ab",
+        b"abc",
+        b"abcd",
+        b"\x00\xff\x10\x20\x30\x40\x50",
+    ] {
         let mut e = GitStr::new();
         e.encode_base85(input).unwrap();
         assert_eq!(e.len(), input.len().div_ceil(4) * 5);
@@ -218,7 +232,8 @@ fn escapes_splice_crlf() {
     assert_eq!(t.as_bytes(), b"no newline");
 
     let mut p = GitStr::new();
-    p.common_prefix(&[b"refs/heads/a", b"refs/heads/b", b"refs/tags"]).unwrap();
+    p.common_prefix(&[b"refs/heads/a", b"refs/heads/b", b"refs/tags"])
+        .unwrap();
     assert_eq!(p.as_bytes(), b"refs/");
     p.common_prefix(&[b"abc", b"xyz"]).unwrap();
     assert!(p.is_empty());
@@ -235,8 +250,14 @@ fn text_stats() {
     assert!(!bin);
     assert!(GitStr::borrowed(b"a\0b").is_binary());
     assert!(GitStr::borrowed(b"a\0b").contains_nul());
-    assert_eq!(GitStr::borrowed(b"\xff\xfe\0\0").detect_bom(), (Bom::Utf32Le, 4));
-    assert_eq!(GitStr::borrowed(b"\xff\xfea").detect_bom(), (Bom::Utf16Le, 2));
+    assert_eq!(
+        GitStr::borrowed(b"\xff\xfe\0\0").detect_bom(),
+        (Bom::Utf32Le, 4)
+    );
+    assert_eq!(
+        GitStr::borrowed(b"\xff\xfea").detect_bom(),
+        (Bom::Utf16Le, 2)
+    );
     assert!(GitStr::borrowed(b"\xfe\xff").is_binary());
     assert!(GitStr::borrowed(b"bare\rcr").gather_text_stats(false).1);
 }
@@ -255,7 +276,11 @@ fn borrowed_and_attached() {
     unsafe { s.attach_notowned(data.as_ptr().cast(), data.len()) };
     assert_eq!(s.grow(100), Err(ErrorCode::INVALID));
     assert_eq!(msg(), "cannot grow a borrowed buffer");
-    assert_eq!(s.put(b"x"), Err(ErrorCode::GENERIC), "ENSURE_SIZE maps the error to -1");
+    assert_eq!(
+        s.put(b"x"),
+        Err(ErrorCode::GENERIC),
+        "ENSURE_SIZE maps the error to -1"
+    );
     s.consume_bytes(3);
     assert_eq!(s.as_bytes(), b"rowed!");
     assert_eq!(data, b"borrowed!", "borrowed memory is not written");
@@ -304,15 +329,18 @@ fn fmt_write() {
     use core::fmt::Write;
     let _g = test_support::init();
     let mut s = GitStr::new();
-    write!(s, "{}/{:08x}", "a", 255).unwrap();
-    s.printf(3, format_args!("-{}", 7)).unwrap();
+    let a = "a";
+    write!(s, "{a}/{:08x}", 255).unwrap();
+    let seven = 7;
+    s.printf(3, format_args!("-{seven}")).unwrap();
     assert_eq!(s.as_bytes(), b"a/000000ff-7");
     // C's growth: room for 2 * strlen(format) first, then exactly enough.
     let mut s = GitStr::new();
     s.printf(2, format_args!("{}", "x".repeat(30))).unwrap();
     assert_eq!((s.len(), s.capacity()), (30, 32));
     let mut s = GitStr::new();
-    s.printf(4, format_args!("{}", 12345)).unwrap();
+    let n = 12345;
+    s.printf(4, format_args!("{n}")).unwrap();
     assert_eq!((s.len(), s.capacity()), (5, 8));
 }
 
@@ -380,15 +408,39 @@ fn ffi_aliasing_arguments() {
         assert_eq!(ffi::git_str_set(p, (*p).as_ptr().cast(), 2), 0);
         assert_eq!(bytes(&*p), b"ab");
         // join with str_a inside (the joinpath idiom), and at an offset.
-        assert_eq!(ffi::git_str_join(p, b'/' as c_char, (*p).as_ptr(), c"c".as_ptr()), 0);
+        assert_eq!(
+            ffi::git_str_join(p, b'/' as c_char, (*p).as_ptr(), c"c".as_ptr()),
+            0
+        );
         assert_eq!(bytes(&*p), b"ab/c");
-        assert_eq!(ffi::git_str_join(p, b'/' as c_char, (*p).as_ptr().add(1), c"d".as_ptr()), 0);
+        assert_eq!(
+            ffi::git_str_join(p, b'/' as c_char, (*p).as_ptr().add(1), c"d".as_ptr()),
+            0
+        );
         assert_eq!(bytes(&*p), b"b/c/d");
         // str_b inside is refused.
-        assert_eq!(ffi::git_str_join(p, b'/' as c_char, c"x".as_ptr(), (*p).as_ptr()), -1);
-        assert_eq!(msg(), "invalid argument: 'str_b < buf->ptr || str_b >= buf->ptr + buf->size'");
-        assert_eq!(ffi::git_str_join3(p, b'/' as c_char, (*p).as_ptr(), c"x".as_ptr(), c"y".as_ptr()), -1);
-        assert_eq!(msg(), "unrecoverable internal error: 'str_a < buf->ptr || str_a >= buf->ptr + buf->size'");
+        assert_eq!(
+            ffi::git_str_join(p, b'/' as c_char, c"x".as_ptr(), (*p).as_ptr()),
+            -1
+        );
+        assert_eq!(
+            msg(),
+            "invalid argument: 'str_b < buf->ptr || str_b >= buf->ptr + buf->size'"
+        );
+        assert_eq!(
+            ffi::git_str_join3(
+                p,
+                b'/' as c_char,
+                (*p).as_ptr(),
+                c"x".as_ptr(),
+                c"y".as_ptr()
+            ),
+            -1
+        );
+        assert_eq!(
+            msg(),
+            "unrecoverable internal error: 'str_a < buf->ptr || str_a >= buf->ptr + buf->size'"
+        );
         // join_n with a segment inside: C uses the rest of the original contents.
         let segs = [(*p).as_ptr().add(2), c"e".as_ptr()];
         assert_eq!(ffi::git_str__join_n(p, b'/' as c_char, 2, segs.as_ptr()), 0);
