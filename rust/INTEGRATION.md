@@ -6,6 +6,21 @@ The integration branch is `integ` (`/work/wt/integ`, build dir
 test` passes (with `-Zmiri-strict-provenance`), `cargo clippy --all-targets`
 (with and without `link-c`) and `cargo fmt --check` are clean.
 
+## Status (latest first)
+
+- **`18afb35`** (2026-11-16): merged on `integ`: l-repo, l-odb, l-config,
+  l-index, l-pack, l-commit, l-revwalk, l-refs, each with its review fixes
+  as of the coordinator's messages (l-config `de91683`, l-index `6aacd37`,
+  l-pack `1822f62`, l-commit `df73db3`, l-repo `2b5638b`, l-revwalk
+  `06cc18b`, l-odb `686da6b`/`32eaa1a`, l-refs `f58892b`). Not merged: l-obj
+  (not finished). Last fully green commits (clar 436/436, cargo test
+  link-c, Miri, clippy, fmt): `63818f6`, `4162edd`, `af822f1`, `076ca1b`;
+  later commits are green on clar/cargo test/clippy/fmt with Miri pending
+  (see the sections below). PENDING markers left in the crate: 81, of which
+  48 are PENDING(l-obj) (unmerged); the rest are the l-refs resolution in
+  progress (l-refs ↔ l-repo/l-config/l-commit/l-revwalk/l-index) and a few
+  comments.
+
 ## 1. l-repo + l-odb (already merged on master at `c7f5662`)
 
 State found: 3 clar suites failing (`odb::backend::mempack`,
