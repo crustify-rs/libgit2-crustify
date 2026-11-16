@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Run <bench>_c and <bench>_rust and print a comparison table
-# (BENCH=<bench>, default util_bench).
+# Run util_bench_c and util_bench_rust and print a comparison table.
 # Usage: run.sh [ITERS] [ROUNDS] [FILTER]
 #   ITERS   timed iterations per workload per process (default 7)
 #   ROUNDS  alternating C/Rust process runs per workload (default 5): the
@@ -16,9 +15,8 @@ ITERS="${1:-7}"
 ROUNDS="${2:-5}"
 FILTER="${3:-}"
 CPU="${BENCH_CPU-2}"
-BENCH="${BENCH:-util_bench}"
 
-for b in "${BENCH}_c" "${BENCH}_rust"; do
+for b in util_bench_c util_bench_rust; do
 	[ -x "$OUT/$b" ] || { echo "run.sh: $OUT/$b missing; run build.sh first" >&2; exit 1; }
 done
 
@@ -27,15 +25,15 @@ if [ -n "$CPU" ] && command -v taskset >/dev/null 2>&1; then
 	PIN=(taskset -c "$CPU")
 fi
 
-names=$("$OUT/${BENCH}_c" 1 $FILTER 2>/dev/null | awk '$1=="bench"{print $2}')
+names=$("$OUT/util_bench_c" 1 $FILTER 2>/dev/null | awk '$1=="bench"{print $2}')
 echo "# iters=$ITERS rounds=$ROUNDS pin=${PIN[*]:-none} load=$(cut -d' ' -f1 /proc/loadavg)" >&2
 printf "%-22s | %9s %9s | %9s %9s | %6s %6s\n" name "C med" "C min" "Rust med" "Rust min" "r med" "r min"
 printf -- "-----------------------+---------------------+---------------------+--------------\n"
 for n in $names; do
 	cs=(); rs=()
 	for ((i = 0; i < ROUNDS; i++)); do
-		cs+=("$("${PIN[@]}" "$OUT/${BENCH}_c" "$ITERS" "$n" 2>/dev/null | awk -v n="$n" '$1=="bench" && $2==n{print $4}')")
-		rs+=("$("${PIN[@]}" "$OUT/${BENCH}_rust" "$ITERS" "$n" 2>/dev/null | awk -v n="$n" '$1=="bench" && $2==n{print $4}')")
+		cs+=("$("${PIN[@]}" "$OUT/util_bench_c" "$ITERS" "$n" 2>/dev/null | awk -v n="$n" '$1=="bench" && $2==n{print $4}')")
+		rs+=("$("${PIN[@]}" "$OUT/util_bench_rust" "$ITERS" "$n" 2>/dev/null | awk -v n="$n" '$1=="bench" && $2==n{print $4}')")
 	done
 	printf "%s\n" "${cs[@]}" | sort -g > "$OUT/.c"; printf "%s\n" "${rs[@]}" | sort -g > "$OUT/.r"
 	cmed=$(awk '{a[NR]=$1} END{print a[int((NR+1)/2)]}' "$OUT/.c"); cmin=$(head -1 "$OUT/.c")

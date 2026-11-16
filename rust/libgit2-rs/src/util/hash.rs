@@ -21,6 +21,7 @@
 //! `GIT_ERROR_SHA` "SHA1 collision attack detected". A finished
 //! computation is not reset: `git_hash_init` restarts it.
 
+use core::cell::RefCell;
 use core::ffi::{c_char, c_int, c_void};
 use core::mem::MaybeUninit;
 
@@ -220,20 +221,56 @@ pub fn algorithm(raw: c_int) -> Result<HashAlgorithm> {
     HashAlgorithm::from_raw(raw).ok_or_else(unknown_algorithm)
 }
 
+std::thread_local! {
+    /// A computation per algorithm, which the one-shot functions restart
+    /// instead of building (and zeroing) sha1dc's 2.4 KiB of state each
+    /// time.
+    static ONESHOT: RefCell<[Option<Hasher>; 2]> = const { RefCell::new([None, None]) };
+}
+
+/// Run `f` on a new computation of `algorithm`.
+fn with_oneshot<R>(algorithm: HashAlgorithm, f: impl FnOnce(&mut Hasher) -> R) -> R {
+    let mut f = Some(f);
+    let slot = match algorithm {
+        HashAlgorithm::Sha1 => 0,
+        HashAlgorithm::Sha256 => 1,
+    };
+    let reused = ONESHOT.try_with(|cell| {
+        // Not re-entered (nothing here calls out), but be safe if it were.
+        let mut hashers = cell.try_borrow_mut().ok()?;
+        let h = match &mut hashers[slot] {
+            Some(h) => {
+                h.reset();
+                h
+            }
+            empty => empty.insert(Hasher::new(algorithm)),
+        };
+        f.take().map(|f| f(h))
+    });
+    match (reused, f) {
+        (Ok(Some(r)), _) => r,
+        // The thread's storage is gone or busy: a computation of our own.
+        (_, Some(f)) => f(&mut Hasher::new(algorithm)),
+        (_, None) => unreachable!("`f` ran but returned nothing"),
+    }
+}
+
 /// `git_hash_buf`.
 pub fn hash_buf(data: &[u8], algorithm: HashAlgorithm) -> Result<Digest> {
-    let mut h = Hasher::new(algorithm);
-    h.update(data);
-    h.finalize()
+    with_oneshot(algorithm, |h| {
+        h.update(data);
+        h.finalize()
+    })
 }
 
 /// `git_hash_vec`.
 pub fn hash_vec(data: &[&[u8]], algorithm: HashAlgorithm) -> Result<Digest> {
-    let mut h = Hasher::new(algorithm);
-    for d in data {
-        h.update(d);
-    }
-    h.finalize()
+    with_oneshot(algorithm, |h| {
+        for d in data {
+            h.update(d);
+        }
+        h.finalize()
+    })
 }
 
 /// `git_hash_fmt` without the NUL: write `hash` in lowercase hexadecimal
@@ -481,11 +518,13 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             let r = super::algorithm(algorithm).and_then(|a| {
-                let mut h = Hasher::new(a);
                 // SAFETY: the caller's contract on `data`.
-                h.update(unsafe { bytes(data.cast::<c_char>(), len) });
+                let data = unsafe { bytes(data.cast::<c_char>(), len) };
                 let mut d = [0; MAX_SIZE];
-                let collision = h.finalize_raw(&mut d);
+                let collision = with_oneshot(a, |h| {
+                    h.update(data);
+                    h.finalize_raw(&mut d)
+                });
                 let d = Digest {
                     bytes: d,
                     len: a.size() as u8,
@@ -523,13 +562,14 @@ pub mod ffi {
                     // SAFETY: the caller passes `n` entries.
                     unsafe { core::slice::from_raw_parts(vec, n) }
                 };
-                let mut h = Hasher::new(a);
-                for v in vec {
-                    // SAFETY: the caller's contract on each entry.
-                    h.update(unsafe { bytes(v.data.cast::<c_char>(), v.len) });
-                }
                 let mut d = [0; MAX_SIZE];
-                let collision = h.finalize_raw(&mut d);
+                let collision = with_oneshot(a, |h| {
+                    for v in vec {
+                        // SAFETY: the caller's contract on each entry.
+                        h.update(unsafe { bytes(v.data.cast::<c_char>(), v.len) });
+                    }
+                    h.finalize_raw(&mut d)
+                });
                 let d = Digest {
                     bytes: d,
                     len: a.size() as u8,

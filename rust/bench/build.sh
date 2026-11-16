@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Build <bench>_c (C reference) and <bench>_rust (Rust port) into out/, for
-# each <bench>.c given (default: every *_bench.c here).
+# Build util_bench_c (C reference) and util_bench_rust (Rust port) into out/.
 #   C_BUILD    C reference build dir   (default /work/build-c)
 #   RUST_BUILD USE_RUST=ON build dir   (default /work/builds/foundation)
 #   CC         compiler                (default clang)
@@ -31,8 +30,8 @@ mkdir -p "$OUT"
 CFLAGS=(-O2 -g -D_GNU_SOURCE -DNDEBUG
 	-I "$SRC_ROOT/src/util" -I "$SRC_ROOT/include" -I "$C_BUILD/gen_headers")
 
-benches=("$@")
-[ ${#benches[@]} -gt 0 ] || benches=("$HERE"/*_bench.c)
+echo "[bench] compiling util_bench.o"
+"$CC" "${CFLAGS[@]}" -c "$HERE/util_bench.c" -o "$OUT/util_bench.o"
 
 # ---- C reference: objects + libs from the util_tests link edge, minus tests/ ----
 link_line="$(awk '/^build util_tests: /{f=1} f{print} f&&/^$/{exit}' "$C_BUILD/build.ninja")"
@@ -44,6 +43,10 @@ mapfile -t C_OBJS < <(echo "$link_line" | head -n1 | sed 's/ | .*//' | tr ' ' '\
 for o in "${C_OBJS[@]}"; do [ -f "$o" ] || die "missing object $o (is $C_BUILD built?)"; done
 
 read -r -a C_LIBS <<<"$(echo "$link_line" | sed -n 's/^ *LINK_LIBRARIES = //p')"
+
+echo "[bench] linking util_bench_c (${#C_OBJS[@]} objects from $C_BUILD)"
+"$CC" -O2 -o "$OUT/util_bench_c" "$OUT/util_bench.o" "${C_OBJS[@]}" \
+	"${C_LIBS[@]}" -ldl -lm -lpthread
 
 # ---- Rust variant ----
 RUST_LIBS=()
@@ -57,16 +60,9 @@ while IFS= read -r l; do
 	esac
 done < "$RUST_LIBS_TXT"
 
-for src in "${benches[@]}"; do
-	b=$(basename "$src" .c)
-	echo "[bench] compiling $b.o"
-	"$CC" "${CFLAGS[@]}" -c "$src" -o "$OUT/$b.o"
-	echo "[bench] linking ${b}_c (${#C_OBJS[@]} objects from $C_BUILD)"
-	"$CC" -O2 -o "$OUT/${b}_c" "$OUT/$b.o" "${C_OBJS[@]}" \
-		"${C_LIBS[@]}" -ldl -lm -lpthread
-	echo "[bench] linking ${b}_rust (against $RUST_BUILD)"
-	"$CC" -O2 -o "$OUT/${b}_rust" "$OUT/$b.o" \
-		-Wl,--whole-archive "$RUST_C_REST" -Wl,--no-whole-archive \
-		"$RUST_LIB" "${RUST_LIBS[@]}" -ldl -lm -lpthread
-	echo "[bench] built: $OUT/${b}_c $OUT/${b}_rust"
-done
+echo "[bench] linking util_bench_rust (against $RUST_BUILD)"
+"$CC" -O2 -o "$OUT/util_bench_rust" "$OUT/util_bench.o" \
+	-Wl,--whole-archive "$RUST_C_REST" -Wl,--no-whole-archive \
+	"$RUST_LIB" "${RUST_LIBS[@]}" -ldl -lm -lpthread
+
+echo "[bench] built: $OUT/util_bench_c $OUT/util_bench_rust"

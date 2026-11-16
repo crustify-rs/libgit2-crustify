@@ -87,6 +87,13 @@ fn hash_detects_the_shattered_collision() {
     let mut hex = [0u8; 40];
     hash::fmt_into(&mut hex, &raw[..20]);
     assert_eq!(&hex, b"16e96b70000dd1e7c85b8368ee197754400e58ec");
+    // The thread's reused computation starts clean after a collision.
+    assert_eq!(
+        hash::hash_buf(b"abc", HashAlgorithm::Sha1)
+            .unwrap()
+            .to_hex(),
+        "a9993e364706816aba3e25717850c26c9cd0d89d"
+    );
     // SHA-256 has no such check.
     assert!(hash::hash_buf(&pdf, HashAlgorithm::Sha256).is_ok());
     let hello = resource("sha1/hello_c");

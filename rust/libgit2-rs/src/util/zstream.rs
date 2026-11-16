@@ -351,6 +351,11 @@ pub struct ZStream<'a> {
     _input: PhantomData<&'a [u8]>,
 }
 
+// SAFETY: the stream owns its zlib state (zlib-rs's or the system zlib's),
+// which has no tie to a thread; the input is a shared borrow of bytes,
+// readable from any thread.
+unsafe impl Send for ZStream<'_> {}
+
 impl core::fmt::Debug for ZStream<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ZStream")
