@@ -498,7 +498,8 @@ impl GitRefcount {
     /// `p` addresses a live count of an object nothing else reaches.
     #[inline]
     pub unsafe fn init(p: *const GitRefcount) {
-        // SAFETY: the caller's contract.
+        // SAFETY: `p` addresses a live count (this fn's contract), `count`'s
+        // requirement.
         unsafe { Self::count(p) }.set(1);
         // SAFETY: as above.
         unsafe { Self::owner_cell(p) }.store(core::ptr::null_mut(), Ordering::SeqCst);
@@ -513,7 +514,8 @@ impl GitRefcount {
     #[inline]
     #[must_use]
     pub unsafe fn inc(p: *const GitRefcount) -> bool {
-        // SAFETY: the caller's contract.
+        // SAFETY: `p` addresses a live count (this fn's contract; the
+        // caller's reference keeps it so), `count`'s requirement.
         let c = unsafe { Self::count(p) };
         let mut n = c.0.load(Ordering::SeqCst);
         while n < REFCOUNT_MAX {
@@ -539,7 +541,8 @@ impl GitRefcount {
     #[inline]
     #[must_use]
     pub unsafe fn dec(p: *const GitRefcount) -> bool {
-        // SAFETY: the caller's contract.
+        // SAFETY: `p` addresses a live count (this fn's contract: the
+        // caller still holds the reference it gives up here).
         let v = unsafe { Self::count(p) }.dec();
         // SAFETY: as above: the object is live until its last reference
         // is dropped, which is this one only if `v == 0` and no owner
@@ -558,7 +561,8 @@ impl GitRefcount {
     /// `p` addresses a live count on which the caller holds a reference.
     #[inline]
     pub unsafe fn sole(p: *const GitRefcount) -> bool {
-        // SAFETY: the caller's contract.
+        // SAFETY: `p` addresses a live count (this fn's contract; the
+        // caller's reference keeps it so).
         unsafe { Self::count(p) }.get() == 1
             // SAFETY: as above.
             && unsafe { Self::owner_cell(p) }.load(Ordering::SeqCst).is_null()
@@ -574,7 +578,9 @@ impl GitRefcount {
     /// dereferences the owner as that type).
     #[inline]
     pub unsafe fn own(p: *const GitRefcount, owner: *mut c_void) {
-        // SAFETY: the caller's contract.
+        // SAFETY: `p` addresses a live count (this fn's contract), what
+        // `owner_cell` requires; `owner`'s liveness is the caller's
+        // promise to the object's later readers, not needed here.
         unsafe { Self::owner_cell(p) }.swap(owner, Ordering::SeqCst);
     }
 
@@ -621,7 +627,8 @@ pub(crate) unsafe trait StartsWithRefcount: ffibox::CCounted {
     /// As [`GitRefcount::own`].
     #[inline]
     unsafe fn own(s: &ffibox::CShared<Self>, owner: *mut c_void) {
-        // SAFETY: the caller's contract; `s` keeps the object live and the
+        // SAFETY: `owner` is as `GitRefcount::own` requires (this fn's
+        // contract); `s` keeps the object live and the
         // count is at offset 0.
         unsafe { GitRefcount::own(ffibox::CShared::as_ptr(s).cast_const().cast(), owner) }
     }
@@ -652,29 +659,36 @@ macro_rules! impl_ccounted {
             type Alloc = $alloc;
             #[inline]
             unsafe fn c_init(this: core::ptr::NonNull<Self>) {
-                // SAFETY: the caller's contract.
+                // SAFETY: `this` is a live object nothing else reaches
+                // (`c_init`'s contract), whose count is at offset 0 (checked
+                // above): `GitRefcount::init`'s requirement.
                 unsafe { $crate::util::thread::GitRefcount::init($crate::util::thread::refcount_of(this)) }
             }
             #[inline]
             unsafe fn c_up_ref(this: core::ptr::NonNull<Self>) -> bool {
-                // SAFETY: the caller's contract.
+                // SAFETY: `this` is live with a reference the caller holds
+                // (`c_up_ref`'s contract), its count at offset 0.
                 unsafe { $crate::util::thread::GitRefcount::inc($crate::util::thread::refcount_of(this)) }
             }
             #[inline]
             unsafe fn c_down_ref(this: core::ptr::NonNull<Self>) -> bool {
-                // SAFETY: the caller's contract.
+                // SAFETY: `this` is live and the caller gives up its
+                // reference (`c_down_ref`'s contract), its count at offset 0.
                 unsafe { $crate::util::thread::GitRefcount::dec($crate::util::thread::refcount_of(this)) }
             }
             #[inline]
             unsafe fn c_is_sole_owner(this: core::ptr::NonNull<Self>) -> bool {
-                // SAFETY: the caller's contract.
+                // SAFETY: `this` is live with a reference the caller holds
+                // (`c_is_sole_owner`'s contract), its count at offset 0.
                 unsafe { $crate::util::thread::GitRefcount::sole($crate::util::thread::refcount_of(this)) }
             }
             $(
             #[inline]
             unsafe fn c_release(this: core::ptr::NonNull<Self>) {
                 let f: unsafe fn(core::ptr::NonNull<$t>) = $rel;
-                // SAFETY: the caller's contract: the last reference.
+                // SAFETY: `this` is the object whose last reference was
+                // dropped (`c_release`'s contract), which the release
+                // function named in `impl_ccounted!` takes over.
                 unsafe { f(this) }
             }
             )?

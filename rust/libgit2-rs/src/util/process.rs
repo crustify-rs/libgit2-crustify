@@ -701,7 +701,9 @@ impl GitProcess {
     /// `buf` is valid for writes of `count` bytes (any pointer if 0).
     unsafe fn read_fd(fd: c_int, buf: *mut u8, count: usize) -> Result<usize> {
         let count = count.min(isize::MAX as usize);
-        // SAFETY: the caller's contract; `read` writes at most `count`.
+        // SAFETY: `buf` is valid for writes of `count` bytes (this fn's
+        // contract; `count` only shrank), and `read` writes at most
+        // `count` of them, without reading.
         let ret = unsafe { libc::read(fd, buf.cast(), count) };
         if ret < 0 {
             let _ = git_error_set!(ErrorClass::OS, "could not read from child process");
@@ -1041,9 +1043,11 @@ pub mod ffi {
         }
         v.try_reserve_exact(len).map_err(|_| errors::oom())?;
         for i in 0..len {
-            // SAFETY: the caller's contract: `len` pointers at `p`.
+            // SAFETY: `p` has `len` readable pointers (this fn's
+            // contract), and `i < len`.
             let s = unsafe { *p.wrapping_add(i) };
-            // SAFETY: a NUL-terminated string.
+            // SAFETY: each is a valid string pointer whose string outlives
+            // the result (the contract); `cstr_bytes` maps NULL to `""`.
             v.push(unsafe { cstr_bytes(s) });
         }
         Ok(v)
