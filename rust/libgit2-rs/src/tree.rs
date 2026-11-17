@@ -962,7 +962,7 @@ unsafe fn index_entry<'a>(ix: IndexPtr, i: usize) -> Option<(&'a [u8], Oid, u32)
 unsafe fn find_next_dir(dirname: &[u8], ix: IndexPtr, start: usize) -> usize {
     // SAFETY: no reference into the index is live (this fn's contract);
     // the shared borrow ends with the statement.
-    let n = unsafe { ix.get_ref() }.entries.len();
+    let n = unsafe { ix.get_ref() }.entry_count();
     let mut i = start;
     while i < n {
         // SAFETY: this fn's contract, which is `index_entry`'s; the path is
@@ -995,7 +995,7 @@ unsafe fn write_tree(
     let dir = dirname.to_bytes();
     // SAFETY: no reference into the index is live (this fn's contract);
     // the shared borrow ends with the statement.
-    let root: *const pend::git_tree_cache = unsafe { ix.get_ref() }.tree;
+    let root: *const pend::git_tree_cache = unsafe { ix.get_ref() }.tree_cache();
     // SAFETY: the index's `tree` is NULL or a tree cache in its pool (the
     // index's invariant), which nothing changes during the call (this fn's
     // contract).
@@ -1013,7 +1013,7 @@ unsafe fn write_tree(
     let mut b = unsafe { BuilderBox::new(repo, ptr::null()) }?;
     let r = (|| -> Result<usize> {
         // SAFETY: as for `root` above.
-        let entries = unsafe { ix.get_ref() }.entries.len();
+        let entries = unsafe { ix.get_ref() }.entry_count();
         let mut i = start;
         // This loop is unfortunate, but necessary. The index doesn't have
         // any directories, so we need to handle that manually, and we need
@@ -1092,7 +1092,7 @@ unsafe fn write_index(oid: &mut Oid, ix: IndexPtr, repo: *mut git_repository) ->
         return Err(ErrorCode::UNMERGED);
     }
     // SAFETY: as above.
-    let root = unsafe { ix.get_ref() }.tree;
+    let root = unsafe { ix.get_ref() }.tree_cache();
     // SAFETY: NULL or the root of the index's tree cache, in its pool (the
     // index's invariant), unchanged during the call (this fn's contract).
     if let Some(r) = unsafe { root.as_ref() }
@@ -1124,13 +1124,13 @@ unsafe fn write_index(oid: &mut Oid, ix: IndexPtr, repo: *mut git_repository) ->
         if old_ignore_case {
             index.set_ignore_case(true);
         }
-        index.tree = ptr::null_mut();
+        index.forget_tree_cache();
     }
     ret?;
     // (the cache, which pointed into the pool, was just dropped)
     // SAFETY: as for `set_ignore_case` above: the borrow ends with the
     // statement, which calls no foreign code.
-    unsafe { ix.get() }.tree_pool.clear();
+    unsafe { ix.get() }.clear_tree_cache();
 
     // SAFETY: `repo` live (this fn's contract).
     let tree = unsafe { OwnedTree::lookup(repo, oid) }?;
@@ -1140,7 +1140,7 @@ unsafe fn write_index(oid: &mut Oid, ix: IndexPtr, repo: *mut git_repository) ->
         // SAFETY: as for `set_ignore_case` above: no foreign call in this
         // block.
         let index = unsafe { ix.get() };
-        (index.oid_type, core::mem::take(&mut index.tree_pool))
+        (index.oid_type_raw(), index.take_tree_pool())
     };
     // SAFETY: the tree just looked up, live until `tree` is dropped below,
     // after the last use of `src` and `root`.
@@ -1152,10 +1152,9 @@ unsafe fn write_index(oid: &mut Oid, ix: IndexPtr, repo: *mut git_repository) ->
         // SAFETY: as for `set_ignore_case` above: no foreign call in this
         // block.
         let index = unsafe { ix.get() };
-        index.tree_pool = pool;
-        if let Ok(t) = r {
-            index.tree = t;
-        }
+        let root = r.unwrap_or(ptr::null_mut());
+        // SAFETY: `root` is NULL or the cache `read_tree` built in `pool`.
+        unsafe { index.restore_tree_pool(pool, root) };
     }
     drop(tree);
     r.map(|_| ())

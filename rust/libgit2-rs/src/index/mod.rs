@@ -1098,40 +1098,40 @@ mod bit {
 #[repr(C)]
 pub struct GitIndex {
     /// `rc`.
-    pub rc: GitRefcount,
+    rc: GitRefcount,
     /// `index_file_path`: NULL (in memory) or a `git__allocator` string.
-    pub index_file_path: *mut c_char,
+    index_file_path: *mut c_char,
     /// `stamp`.
-    pub stamp: Filestamp,
+    stamp: Filestamp,
     /// `checksum`.
-    pub checksum: [u8; crate::util::hash::MAX_SIZE],
+    checksum: [u8; crate::util::hash::MAX_SIZE],
     /// `entries`.
-    pub entries: GitVector,
+    entries: GitVector,
     /// `oid_type`.
-    pub oid_type: git_oid_t,
+    oid_type: git_oid_t,
     /// `on_disk`, `ignore_case`, `distrust_filemode`, `no_symlinks`,
     /// `dirty` (bits 0 to 4).
     pub bits: CAtomicBitfield<u32>,
     /// `tree`.
-    pub tree: *mut GitTreeCache,
+    tree: *mut GitTreeCache,
     /// `tree_pool`.
-    pub tree_pool: GitPool,
+    tree_pool: GitPool,
     /// `names`.
-    pub names: GitVector,
+    names: GitVector,
     /// `reuc`.
-    pub reuc: GitVector,
+    reuc: GitVector,
 
     // --- not in the header ---
     /// `entries_map`.
-    pub(crate) entries_map: EntryMap,
+    entries_map: EntryMap,
     /// `deleted`: entries removed while readers (snapshots) were active.
-    pub(crate) deleted: Vec<EntryPtr>,
+    deleted: Vec<EntryPtr>,
     /// `readers`: the active snapshots.
-    pub(crate) readers: Atomic32,
+    readers: Atomic32,
     /// `extensions`, sorted by signature.
-    pub(crate) extensions: Vec<Extension>,
+    extensions: Vec<Extension>,
     /// `version`.
-    pub(crate) version: c_uint,
+    version: c_uint,
 }
 
 impl core::fmt::Debug for GitIndex {
@@ -1165,6 +1165,59 @@ macro_rules! bit_accessors {
 }
 
 impl GitIndex {
+    /// The number of entries (`entries.length`).
+    #[inline]
+    pub(crate) fn entry_count(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// `oid_type`.
+    #[inline]
+    pub(crate) fn oid_type_raw(&self) -> git_oid_t {
+        self.oid_type
+    }
+
+    /// The root of the tree cache (`tree`): NULL, or a tree cache in the
+    /// index's pool (the invariant), valid until the pool is cleared.
+    #[inline]
+    pub(crate) fn tree_cache(&self) -> *mut GitTreeCache {
+        self.tree
+    }
+
+    /// Forget the tree cache (`tree = NULL`); its pool is kept.
+    #[inline]
+    pub(crate) fn forget_tree_cache(&mut self) {
+        self.tree = ptr::null_mut();
+    }
+
+    /// Drop the tree cache and clear its pool.
+    pub(crate) fn clear_tree_cache(&mut self) {
+        self.tree = ptr::null_mut();
+        self.tree_pool.clear();
+    }
+
+    /// Lend the tree-cache pool out (empty in its place); the cache, which
+    /// points into it, is forgotten first.
+    pub(crate) fn take_tree_pool(&mut self) -> crate::util::pool::GitPool {
+        self.tree = ptr::null_mut();
+        core::mem::take(&mut self.tree_pool)
+    }
+
+    /// Put back the pool [`take_tree_pool`](Self::take_tree_pool) lent,
+    /// with `tree` as the cache's root.
+    ///
+    /// # Safety
+    ///
+    /// `tree` is NULL or a tree cache allocated in `pool`.
+    pub(crate) unsafe fn restore_tree_pool(
+        &mut self,
+        pool: crate::util::pool::GitPool,
+        tree: *mut GitTreeCache,
+    ) {
+        self.tree_pool = pool;
+        self.tree = tree;
+    }
+
     bit_accessors! {
         on_disk, set_on_disk, bit::ON_DISK;
         ignore_case, set_ignore_case_bit, bit::IGNORE_CASE;
