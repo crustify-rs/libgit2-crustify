@@ -693,14 +693,9 @@ fn write_extension(file: &mut GitFilebuf, signature: &[u8; 4], data: &[u8]) -> R
 
 /// `create_name_extension_data` of every NAME entry.
 fn name_extension_data(ix: &GitIndex, out: &mut GitStr) -> Result<()> {
-    for ne in ix.names.iter() {
-        let ne = ne.cast::<GitIndexNameEntry>();
-        // SAFETY: the index's name entries.
-        let n = unsafe { &*ne };
-        let fields = [n.ancestor, n.ours, n.theirs];
+    for fields in (0..ix.names.len()).filter_map(|n| ix.name_at(n)) {
         for f in fields {
-            // SAFETY: NULL or a string the entry owns.
-            match unsafe { crate::util::export::cstr(f) } {
+            match f {
                 None => out.put(b"\0")?,
                 Some(s) => out.put(s.to_bytes_with_nul())?,
             }
@@ -712,12 +707,7 @@ fn name_extension_data(ix: &GitIndex, out: &mut GitStr) -> Result<()> {
 /// `create_reuc_extension_data` of every REUC entry.
 fn reuc_extension_data(ix: &GitIndex, out: &mut GitStr) -> Result<()> {
     let oid_size = ix.oid_kind().size();
-    for r in ix.reuc.iter() {
-        let r = r.cast::<super::GitIndexReucEntry>();
-        // SAFETY: the index's REUC entries.
-        let path = unsafe { super::reuc_path(r) };
-        // SAFETY: as above.
-        let rr = unsafe { &*r };
+    for (rr, path) in (0..ix.reuc.len()).filter_map(|n| ix.reuc_at(n)) {
         let (modes, oids) = (rr.mode, rr.oid);
         out.put(path)?;
         out.put(b"\0")?;

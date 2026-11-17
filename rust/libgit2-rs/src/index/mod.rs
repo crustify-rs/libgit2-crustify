@@ -1825,6 +1825,20 @@ impl GitIndex {
 
     // ----- NAME entries -----
 
+    /// NAME record `n`'s strings (ancestor, ours, theirs), borrowed with
+    /// the index.
+    pub(crate) fn name_at(&self, n: usize) -> Option<[Option<&CStr>; 3]> {
+        let ne = self.names.get(n)?.cast::<GitIndexNameEntry>();
+        // SAFETY: `names` holds name entries this module allocated (the
+        // invariant), live and unwritten while `&self` is borrowed.
+        let ne = unsafe { &*ne };
+        Some([ne.ancestor, ne.ours, ne.theirs].map(|p| {
+            // SAFETY: as above: each field is NULL or a string the entry
+            // owns.
+            unsafe { crate::util::export::cstr(p) }
+        }))
+    }
+
     /// `git_index_name_add`.
     pub(crate) fn name_add(
         &mut self,
@@ -1873,6 +1887,17 @@ impl GitIndex {
     }
 
     // ----- REUC entries -----
+
+    /// REUC record `n` and its path, borrowed with the index.
+    pub(crate) fn reuc_at(&self, n: usize) -> Option<(&GitIndexReucEntry, &[u8])> {
+        let r = self.reuc.get(n)?.cast::<GitIndexReucEntry>();
+        // SAFETY: `reuc` holds REUC entries this module allocated
+        // (`reuc_alloc`, the invariant), live and unwritten while `&self` is
+        // borrowed.
+        let rr = unsafe { &*r };
+        // SAFETY: as above: a `reuc_alloc` entry's path follows it.
+        Some((rr, unsafe { reuc_path(r) }))
+    }
 
     /// `git_index_reuc_add`.
     pub(crate) fn reuc_add(
@@ -2209,15 +2234,20 @@ unsafe fn index_free(ix: IndexPtr) {
 /// `should_write:1` of [`GitIndexWriter`].
 pub const SHOULD_WRITE: ffibox::CBits<c_uint> = ffibox::CBits::first(1);
 
-/// `git_indexwriter`, mirrored.
+/// `git_indexwriter`, mirrored (C embeds it on its stack; only this module
+/// reads or writes its fields).
+///
+/// Invariant (kept by this module's code, and by the C callers of the
+/// writer exports, as their contracts say): `index` is NULL or an index on
+/// which the writer holds a reference.
 #[repr(C)]
 pub struct GitIndexWriter {
     /// `index`: a reference to the index, or NULL.
-    pub index: *mut GitIndex,
+    index: *mut GitIndex,
     /// `file`.
-    pub file: GitFilebuf,
+    file: GitFilebuf,
     /// `unsigned should_write:1` ([`SHOULD_WRITE`]).
-    pub should_write: ffibox::CBitfield<c_uint>,
+    should_write: ffibox::CBitfield<c_uint>,
 }
 
 /// `struct git_index_iterator`, mirrored: the tests read `snap`.

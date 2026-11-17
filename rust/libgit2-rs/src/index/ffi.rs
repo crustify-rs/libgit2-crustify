@@ -1195,7 +1195,9 @@ pub unsafe extern "C" fn git_index_iterator_free(it: *mut GitIndexIterator) {
         // SAFETY: made by `Box::into_raw`, freed once.
         let it = unsafe { Box::from_raw(it) };
         let GitIndexIterator { index, snap, .. } = *it;
-        ops::snapshot_release(snap, index);
+        // SAFETY: the iterator's snapshot, with its reader and reference
+        // (`git_index_iterator_new`), given up with the iterator.
+        unsafe { ops::snapshot_release(snap, index) };
     })
 }
 
@@ -1294,8 +1296,9 @@ pub unsafe extern "C" fn git_index_snapshot_new(
 ///
 /// # Safety
 ///
-/// `snap` a snapshot of [`git_index_snapshot_new`] of `index`, which it
-/// releases (the vector is left empty).
+/// `snap` NULL or a snapshot of [`git_index_snapshot_new`] of `index`,
+/// which it releases (the vector is left empty), with the reader and
+/// reference the snapshot holds; `index` NULL or that snapshot's index.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_snapshot_release(
     snap: Option<&mut GitVector>,
@@ -1305,7 +1308,9 @@ pub unsafe extern "C" fn git_index_snapshot_release(
         let ix = git_arg!(index, "index", ());
         // taken out, and left empty
         let v = snap.map_or_else(GitVector::new, core::mem::take);
-        ops::snapshot_release(v, ix);
+        // SAFETY: the snapshot's reader and reference on `index`, which the
+        // caller gives up (this export's contract).
+        unsafe { ops::snapshot_release(v, ix) };
     })
 }
 

@@ -985,10 +985,7 @@ impl<'r> Index<'r> {
 
     /// The `n`th resolve-undo record (`git_index_reuc_get_byindex`).
     pub fn reuc_get(&self, n: usize) -> Option<ReucEntry> {
-        self.with(|i| {
-            let r = i.reuc.get(n)?.cast::<super::GitIndexReucEntry>();
-            Some(reuc_entry(r))
-        })
+        self.with(|i| i.reuc_at(n).map(reuc_entry))
     }
 
     /// The resolve-undo record of `path` (`git_index_reuc_get_bypath`).
@@ -996,8 +993,7 @@ impl<'r> Index<'r> {
         let path = path.as_ref();
         self.with(|i| {
             let n = i.reuc_find(path).ok()?;
-            let r = i.reuc.get(n)?.cast::<super::GitIndexReucEntry>();
-            Some(reuc_entry(r))
+            i.reuc_at(n).map(reuc_entry)
         })
     }
 
@@ -1036,18 +1032,13 @@ impl<'r> Index<'r> {
     pub fn name_get(&self, n: usize) -> Option<NameEntry> {
         self.with(|i| {
             i.sort_names();
-            let ne = i.names.get(n)?.cast::<super::GitIndexNameEntry>();
-            // SAFETY: a live name entry of the index; its fields NULL or
-            // strings.
-            let n = unsafe { &*ne };
-            let f = |p| {
-                // SAFETY: as above.
-                unsafe { crate::util::export::cstr(p) }.map(|s: &CStr| s.to_bytes().to_vec())
-            };
+            let [a, o, t] = i
+                .name_at(n)?
+                .map(|s| s.map(|s: &CStr| s.to_bytes().to_vec()));
             Some(NameEntry {
-                ancestor: f(n.ancestor),
-                ours: f(n.ours),
-                theirs: f(n.theirs),
+                ancestor: a,
+                ours: o,
+                theirs: t,
             })
         })
     }
@@ -1110,15 +1101,11 @@ impl<'r> Index<'r> {
 }
 
 /// A copy of a resolve-undo record.
-fn reuc_entry(r: *const super::GitIndexReucEntry) -> ReucEntry {
-    // SAFETY: a live REUC entry of the index (the lock is held).
-    let path = unsafe { super::reuc_path(r) }.to_vec();
-    // SAFETY: as above.
-    let rr = unsafe { &*r };
+fn reuc_entry((r, path): (&super::GitIndexReucEntry, &[u8])) -> ReucEntry {
     ReucEntry {
-        path,
-        mode: rr.mode,
-        oid: rr.oid,
+        path: path.to_vec(),
+        mode: r.mode,
+        oid: r.oid,
     }
 }
 
@@ -1157,7 +1144,10 @@ impl Drop for IndexEntries<'_> {
     fn drop(&mut self) {
         if let Some(snap) = self.snap.take() {
             let _g = self.index.api();
-            ops::snapshot_release(snap, self.index.ptr());
+            // SAFETY: the snapshot `iter` took (with its reader and
+            // reference) on this handle's index, released once (taken out
+            // of `self`).
+            unsafe { ops::snapshot_release(snap, self.index.ptr()) };
         }
     }
 }

@@ -1510,17 +1510,25 @@ pub(crate) fn snapshot_new(ix: IndexPtr) -> Result<GitVector> {
     match index.entries.dup(cmp) {
         Ok(v) => Ok(v),
         Err(e) => {
-            snapshot_release(GitVector::new(), ix);
+            // SAFETY: the reader and the reference taken above, given up.
+            unsafe { snapshot_release(GitVector::new(), ix) };
             Err(e)
         }
     }
 }
 
 /// `git_index_snapshot_release`.
-pub(crate) fn snapshot_release(mut snap: GitVector, ix: IndexPtr) {
+///
+/// # Safety
+///
+/// The caller gives up the reader and the reference on `ix` that
+/// [`snapshot_new`] took for `snap`: it holds them, and uses neither
+/// `snap`'s entries nor (unless it holds another reference) `ix`
+/// afterwards.
+pub(crate) unsafe fn snapshot_release(mut snap: GitVector, ix: IndexPtr) {
     snap.dispose();
     // the reader and reference the snapshot holds
     ix.readers().dec();
-    // SAFETY: the snapshot's reference, given up.
+    // SAFETY: the snapshot's reference, given up (this fn's contract).
     unsafe { ix.decref() };
 }

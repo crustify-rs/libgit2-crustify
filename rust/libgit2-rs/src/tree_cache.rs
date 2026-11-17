@@ -429,7 +429,12 @@ pub(crate) unsafe trait TreeSource {
 }
 
 /// `read_tree_recursive`.
-fn read_tree_recursive<S: TreeSource, A: NodeAlloc + ?Sized>(
+///
+/// # Safety
+///
+/// `cache` is a node made by [`new_in`] in `pool`, with no children yet,
+/// that nothing else reaches during the call.
+unsafe fn read_tree_recursive<S: TreeSource, A: NodeAlloc + ?Sized>(
     src: &S,
     cache: *mut GitTreeCache,
     tree: &S::Tree,
@@ -437,8 +442,9 @@ fn read_tree_recursive<S: TreeSource, A: NodeAlloc + ?Sized>(
 ) -> Result<()> {
     let id = src.id(tree);
     // SAFETY: (this and every access to `*cache` and `*child` below) the
-    // nodes are fresh blocks of `pool`, made by `new`, that nothing else
-    // reaches until the tree is returned.
+    // nodes are fresh blocks of `pool` made by `new_in` (this fn's
+    // contract, and `new_in` below), that nothing else reaches until the
+    // tree is returned; no reference to them is held across the accesses.
     unsafe { (*cache).oid = id };
     let nentries = src.len(tree);
     let ntrees = (0..nentries).filter(|&i| src.is_tree(tree, i)).count();
@@ -471,7 +477,9 @@ fn read_tree_recursive<S: TreeSource, A: NodeAlloc + ?Sized>(
         // SAFETY: `children` has `ntrees` slots and `j < ntrees`.
         unsafe { children.wrapping_add(j).write(child) };
         let subtree = src.lookup(&eid)?;
-        let r = read_tree_recursive(src, child, &subtree, pool);
+        // SAFETY: `child` is the node just made in `pool`, which only this
+        // call reaches (its parent's slot is not read meanwhile).
+        let r = unsafe { read_tree_recursive(src, child, &subtree, pool) };
         drop(subtree);
         // SAFETY: as above.
         let n = unsafe { (*child).entry_count };
@@ -492,7 +500,8 @@ pub(crate) fn read_tree<S: TreeSource, A: NodeAlloc + ?Sized>(
     pool: &mut A,
 ) -> Result<*mut GitTreeCache> {
     let cache = new_in(b"", oid_type, pool)?;
-    read_tree_recursive(src, cache, tree, pool)?;
+    // SAFETY: the node just made in `pool`, which only this call reaches.
+    unsafe { read_tree_recursive(src, cache, tree, pool) }?;
     Ok(cache)
 }
 
