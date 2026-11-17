@@ -24,9 +24,11 @@
 //! (`s->strm`), through which later `deflate()` calls read and write the
 //! stream. So an initialized stream is reached only through one raw
 //! pointer ([`ZstreamPtr`]), derived once from C's pointer (or the Rust
-//! owner's): no `&mut GitZstream` or `&mut z_stream` is formed while zlib
-//! may use its stored copy. zlib-rs keeps no such pointer, but both kinds
-//! go the same way.
+//! owner's): no `&mut GitZstream` or `&mut z_stream` lives across a zlib
+//! call. Between calls, [`ZstreamPtr::with`] lends the fields to a closure
+//! that makes no zlib call: zlib touches the stream only inside its calls,
+//! so that reference overlaps none of its accesses. zlib-rs keeps no such
+//! pointer, but both kinds go the same way.
 //!
 //! An initialized stream must not be moved or copied: zlib detected that
 //! (`deflateStateCheck`), zlib-rs does not (rust/DIVERGENCES.md).
@@ -84,6 +86,9 @@ pub struct GitZstream {
     zerr: c_int,
 }
 
+// `ZstreamPtr::z` hands zlib the stream's own address for its `z`.
+const _: () = assert!(core::mem::offset_of!(GitZstream, z) == 0);
+
 impl Default for GitZstream {
     fn default() -> GitZstream {
         GitZstream::new()
@@ -118,30 +123,52 @@ impl GitZstream {
 }
 
 /// A `git_zstream` reached only through this pointer (see the module
-/// documentation): every operation reads and writes its fields as raw
-/// places and hands zlib pointers derived from it.
+/// documentation). Fields are accessed through [`with`](Self::with), a
+/// reference that ends before the next zlib call; zlib gets pointers
+/// derived from this one ([`z`](Self::z)).
+///
+/// It has the ABI of `git_zstream *`: the exports take it, and their
+/// `# Safety` (C's contract) is [`new`](Self::new)'s.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct ZstreamPtr<'a>(*mut GitZstream, PhantomData<&'a mut GitZstream>);
+#[repr(transparent)]
+pub struct ZstreamPtr<'a>(*mut GitZstream, PhantomData<&'a mut GitZstream>);
 
 impl<'a> ZstreamPtr<'a> {
     /// # Safety
     ///
     /// `p` points to a `git_zstream` (in any state C allows) that, for
     /// `'a`, is valid, accessed only through this pointer and its copies,
-    /// from one thread at a time, and not moved while initialized.
+    /// from one thread at a time, and not moved while initialized; no
+    /// reference to it is live while one of these copies is used.
     pub(crate) unsafe fn new(p: *mut GitZstream) -> ZstreamPtr<'a> {
         ZstreamPtr(p, PhantomData)
     }
 
+    /// The `z_stream`, as zlib is given it: the first field of the
+    /// `repr(C)` stream, so the same address (no place is formed).
     fn z(self) -> *mut z_stream {
-        // SAFETY: `self.0` is a valid stream (the constructor's contract);
-        // taking a field's address forms no reference.
-        unsafe { &raw mut (*self.0).z }
+        self.0.cast::<z_stream>()
+    }
+
+    /// Run `f` on the stream's fields, between zlib calls.
+    ///
+    /// zlib reads and writes the stream only inside the calls this module
+    /// makes (through the pointer it is given, or the one deflate stored
+    /// at init), and `f` makes none (they take [`z`](Self::z), and need an
+    /// `unsafe` block of their own): so a reference that ends when `f`
+    /// returns overlaps no access of zlib's. No caller nests `with`.
+    #[inline(always)]
+    fn with<R>(self, f: impl FnOnce(&mut GitZstream) -> R) -> R {
+        // SAFETY: `self.0` is a valid, aligned `git_zstream` for `'a`,
+        // reached only through this pointer and its copies, by one thread
+        // at a time, with no reference to it live (the constructor's
+        // contract); no copy is used while `f` runs (no `with` nests, and
+        // zlib is not running), so this reference is the only access.
+        f(unsafe { &mut *self.0 })
     }
 
     fn kind(self) -> c_int {
-        // SAFETY: as in `z`: a read of a raw place.
-        unsafe { (*self.0).kind }
+        self.with(|s| s.kind)
     }
 
     fn inflates(self) -> bool {
@@ -155,12 +182,15 @@ impl<'a> ZstreamPtr<'a> {
         // Miri cannot run the system zlib (foreign code): zlib-rs there.
         let sys = !cfg!(miri) && out_len < SMALL_OUTPUT;
         let r = if sys {
-            // SAFETY: a stream without state, reached only through this
-            // pointer and not moved while initialized (the type's rule).
+            // SAFETY: `z()` is the valid stream, without state yet,
+            // reached only through this pointer and not moved while
+            // initialized (the constructor's contract), with no reference
+            // to it live.
             unsafe { zlib::inflate_init(self.z()) }
         } else {
             let version = libz_rs_sys::zlibVersion();
-            // SAFETY: as above; the size is that of the stream.
+            // SAFETY: as above, for zlib-rs; `version` is its static
+            // version string and the size that of the stream.
             unsafe {
                 libz_rs_sys::inflateInit_(
                     self.z(),
@@ -170,25 +200,21 @@ impl<'a> ZstreamPtr<'a> {
             }
         };
         if r == Z_OK {
-            // SAFETY: as in `z`.
-            unsafe { (*self.0).kind = if sys { KIND_INFLATE_SYS } else { 0 } };
+            self.with(|s| s.kind = if sys { KIND_INFLATE_SYS } else { 0 });
         }
         r
     }
 
     fn zerr(self) -> c_int {
-        // SAFETY: as in `z`.
-        unsafe { (*self.0).zerr }
+        self.with(|s| s.zerr)
     }
 
     fn set_zerr(self, v: c_int) {
-        // SAFETY: as in `z`: a write of a raw place.
-        unsafe { (*self.0).zerr = v };
+        self.with(|s| s.zerr = v);
     }
 
     pub(crate) fn in_len(self) -> usize {
-        // SAFETY: as in `z`.
-        unsafe { (*self.0).in_len }
+        self.with(|s| s.in_len)
     }
 
     /// `zstream_seterr`.
@@ -198,8 +224,7 @@ impl<'a> ZstreamPtr<'a> {
             Z_OK | Z_STREAM_END | Z_BUF_ERROR => Ok(()),
             Z_MEM_ERROR => Err(errors::oom()),
             _ => {
-                // SAFETY: as in `z`.
-                let msg = unsafe { (*self.z()).msg };
+                let msg = self.with(|s| s.z.msg);
                 if msg.is_null() {
                     Err(git_error_set!(
                         ErrorClass::ZLIB,
@@ -207,7 +232,7 @@ impl<'a> ZstreamPtr<'a> {
                     ))
                 } else {
                     // SAFETY: zlib (and zlib-rs) set `msg` to NULL or to a
-                    // static NUL-terminated message.
+                    // static NUL-terminated message, never written.
                     let m = unsafe { CStr::from_ptr(msg) };
                     Err(errors::set_str(ErrorClass::ZLIB, m.to_bytes()))
                 }
@@ -217,20 +242,22 @@ impl<'a> ZstreamPtr<'a> {
 
     /// `git_zstream_init`. `kind` is C's `git_zstream_t` value.
     pub(crate) fn init(self, kind: c_int) -> Result<()> {
-        // SAFETY: as in `z`.
-        unsafe {
-            (*self.0).kind = if kind == 0 {
+        self.with(|s| {
+            s.kind = if kind == 0 {
                 KIND_INFLATE_PENDING
             } else {
                 kind
             }
-        };
+        });
         let r = if self.kind() == KIND_INFLATE_PENDING {
             Z_OK
         } else if self.inflates() {
-            // SAFETY: `zlibVersion` returns zlib-rs's static version; the
-            // size is that of the stream; the allocator fields are NULL
-            // (zlib-rs's default) or what C put there, as zlib's contract.
+            // SAFETY: `z()` is the valid stream, reached only through this
+            // pointer and not moved while initialized (the constructor's
+            // contract), with no reference to it live; `zlibVersion` is
+            // zlib-rs's static version, the size that of the stream; the
+            // allocator fields are NULL (zlib-rs's default) or what C put
+            // there, as zlib's contract.
             unsafe {
                 libz_rs_sys::inflateInit_(
                     self.z(),
@@ -264,24 +291,30 @@ impl<'a> ZstreamPtr<'a> {
     /// `git_zstream_free`. Ending a stream that has no state (never
     /// initialized, or freed) does nothing.
     pub(crate) fn free(self) {
-        if self.kind() == KIND_INFLATE_PENDING {
-        } else if self.kind() == KIND_INFLATE_SYS {
-            // SAFETY: the system zlib's inflate state of this stream.
+        let kind = self.kind();
+        if kind == KIND_INFLATE_PENDING {
+        } else if kind == KIND_INFLATE_SYS {
+            // SAFETY: `z()` is the valid stream with no reference live
+            // (the constructor's contract), whose state is the system
+            // zlib's inflate state (`start_inflate` set this kind), or
+            // NULL after a free (which zlib rejects).
             unsafe { zlib::inflate_end(self.z()) };
         } else if self.inflates() {
-            // SAFETY: the state is NULL or this stream's inflate state:
-            // only `init` sets it, with the library `kind` picks.
+            // SAFETY: as above; the state is NULL or this stream's zlib-rs
+            // inflate state: only `init`/`start_inflate` set it, with the
+            // library `kind` names.
             unsafe { libz_rs_sys::inflateEnd(self.z()) };
         } else {
-            // SAFETY: as above, for deflate.
+            // SAFETY: as above, for the system zlib's deflate state.
             unsafe { zlib::deflate_end(self.z()) };
         }
     }
 
     /// `git_zstream_reset`.
     pub(crate) fn reset(self) {
-        if self.kind() == KIND_INFLATE_PENDING {
-        } else if self.kind() == KIND_INFLATE_SYS {
+        let kind = self.kind();
+        if kind == KIND_INFLATE_PENDING {
+        } else if kind == KIND_INFLATE_SYS {
             // SAFETY: as in `free`.
             unsafe { zlib::inflate_reset(self.z()) };
         } else if self.inflates() {
@@ -291,30 +324,26 @@ impl<'a> ZstreamPtr<'a> {
             // SAFETY: as in `free`.
             unsafe { zlib::deflate_reset(self.z()) };
         }
-        // SAFETY: as in `z` (writes of raw places).
-        #[allow(clippy::multiple_unsafe_ops_per_block)]
-        unsafe {
-            (*self.0).in_ = core::ptr::null();
-            (*self.0).in_len = 0;
-        }
-        self.set_zerr(Z_STREAM_END);
+        self.with(|s| {
+            s.in_ = core::ptr::null();
+            s.in_len = 0;
+            s.zerr = Z_STREAM_END;
+        });
     }
 
     /// `git_zstream_set_input`: the input is read by the next
     /// [`get_output`](Self::get_output) calls, whose callers vouch for it.
     pub(crate) fn set_input(self, input: *const c_char, len: usize) {
-        // SAFETY: as in `z` (writes of raw places).
-        #[allow(clippy::multiple_unsafe_ops_per_block)]
-        unsafe {
-            (*self.0).in_ = input;
-            (*self.0).in_len = len;
-        }
-        self.set_zerr(Z_OK);
+        self.with(|s| {
+            s.in_ = input;
+            s.in_len = len;
+            s.zerr = Z_OK;
+        });
     }
 
     /// `git_zstream_done`.
     pub(crate) fn done(self) -> bool {
-        self.in_len() == 0 && self.zerr() == Z_STREAM_END
+        self.with(|s| s.in_len == 0 && s.zerr == Z_STREAM_END)
     }
 
     /// `git_zstream_eos`.
@@ -345,29 +374,23 @@ impl<'a> ZstreamPtr<'a> {
     /// `*out_len` bytes (maybe uninitialized) and overlaps neither the
     /// input nor the stream.
     pub(crate) unsafe fn get_output_chunk(self, out: *mut u8, out_len: &mut usize) -> Result<()> {
-        let p = self.0;
-        let z = self.z();
-        // SAFETY: reads and writes of raw places of the stream (the
-        // constructor's contract), and of `*out_len`, a distinct `&mut`.
-        #[allow(clippy::multiple_unsafe_ops_per_block)]
-        let (in_queued, out_queued) = unsafe {
-            (*z).next_in = (*p).in_.cast::<u8>();
-            if (*p).in_len > c_uint::MAX as usize {
-                (*z).avail_in = c_uint::MAX;
-                (*p).flush = Z_NO_FLUSH;
+        let want = *out_len;
+        let (in_queued, out_queued, flush) = self.with(|s| {
+            s.z.next_in = s.in_.cast::<u8>();
+            if s.in_len > c_uint::MAX as usize {
+                s.z.avail_in = c_uint::MAX;
+                s.flush = Z_NO_FLUSH;
             } else {
-                (*z).avail_in = (*p).in_len as c_uint;
-                (*p).flush = Z_FINISH;
+                s.z.avail_in = s.in_len as c_uint;
+                s.flush = Z_FINISH;
             }
-            (*z).next_out = out;
-            (*z).avail_out = *out_len as c_uint;
-            if (*z).avail_out as usize != *out_len {
-                (*z).avail_out = c_uint::MAX;
+            s.z.next_out = out;
+            s.z.avail_out = want as c_uint;
+            if s.z.avail_out as usize != want {
+                s.z.avail_out = c_uint::MAX;
             }
-            ((*z).avail_in as usize, (*z).avail_out as usize)
-        };
-        // SAFETY: as above.
-        let flush = unsafe { (*p).flush };
+            (s.z.avail_in as usize, s.z.avail_out as usize, s.flush)
+        });
         if self.kind() == KIND_INFLATE_PENDING {
             let r = self.start_inflate(out_queued);
             if r != Z_OK {
@@ -375,14 +398,18 @@ impl<'a> ZstreamPtr<'a> {
                 return self.seterr();
             }
         }
+        let z = self.z();
         let r = if self.kind() == KIND_INFLATE_SYS {
             // SAFETY: as below, for the system zlib's inflate state.
             unsafe { zlib::inflate(z, flush) }
         } else if self.inflates() {
-            // SAFETY: the stream's state is the inflate state `init` made
-            // (or NULL, which zlib-rs rejects); `next_in` / `next_out` are
-            // readable / writable for `avail_in` / `avail_out` bytes, which
-            // are at most `in_len` / `*out_len` (the caller's contract).
+            // SAFETY: `z` is the valid stream with no reference live (the
+            // constructor's contract); its state is the inflate state
+            // `init` made (or NULL, which zlib-rs rejects); `next_in` /
+            // `next_out` are readable / writable for `avail_in` /
+            // `avail_out` bytes, which are at most `in_len` / `*out_len`
+            // (this fn's contract), and do not overlap each other or the
+            // stream.
             unsafe { libz_rs_sys::inflate(z, flush) }
         } else {
             // SAFETY: as above, for the system zlib's deflate state.
@@ -391,14 +418,12 @@ impl<'a> ZstreamPtr<'a> {
         self.set_zerr(r);
         self.seterr()?;
 
-        // SAFETY: as above.
-        #[allow(clippy::multiple_unsafe_ops_per_block)]
-        unsafe {
-            let in_used = in_queued - (*z).avail_in as usize;
-            (*p).in_len -= in_used;
-            (*p).in_ = (*p).in_.wrapping_add(in_used);
-            *out_len = out_queued - (*z).avail_out as usize;
-        }
+        *out_len = self.with(|s| {
+            let in_used = in_queued - s.z.avail_in as usize;
+            s.in_len -= in_used;
+            s.in_ = s.in_.wrapping_add(in_used);
+            out_queued - s.z.avail_out as usize
+        });
         Ok(())
     }
 
@@ -420,8 +445,9 @@ impl<'a> ZstreamPtr<'a> {
 
         while out_remain > 0 && self.zerr() != Z_STREAM_END {
             let mut out_written = out_remain;
-            // SAFETY: `out` is writable for `out_remain` bytes (the
-            // caller's contract, advanced by what was written).
+            // SAFETY: the input is as `get_output_chunk` requires (this
+            // fn's contract), and `out` is writable for `out_remain` bytes
+            // (the contract, advanced by what was written).
             unsafe { self.get_output_chunk(out, &mut out_written) }?;
 
             // With room left, a Z_BUF_ERROR that wrote nothing is input
@@ -437,8 +463,7 @@ impl<'a> ZstreamPtr<'a> {
             out = out.wrapping_add(out_written);
         }
 
-        // SAFETY: as in `z`.
-        let flush = unsafe { (*self.0).flush };
+        let flush = self.with(|s| s.flush);
         // Either the input is finished or the data was not flushed.
         git_assert!(
             self.in_len() > 0 || flush == Z_FINISH,
@@ -514,9 +539,12 @@ pub struct ZStream<'a> {
     _input: PhantomData<&'a [u8]>,
 }
 
-// SAFETY: the stream owns its zlib state (zlib-rs's or the system zlib's),
-// which has no tie to a thread; the input is a shared borrow of bytes,
-// readable from any thread.
+// SAFETY: `raw` is the only pointer to the boxed `GitZstream` (as a
+// `Box`, which is `Send`); in it, `z`'s pointers are zlib's state (zlib-rs's
+// or the system zlib's: heap memory with no thread affinity, reached only
+// through the stream) and the current input/output, `in_` points into the
+// `&'a [u8]` input (`[u8]` is `Sync`), and the rest are integers. Moving
+// the `ZStream` moves every user of them; it is not `Sync`.
 unsafe impl Send for ZStream<'_> {}
 
 impl core::fmt::Debug for ZStream<'_> {
@@ -667,15 +695,11 @@ pub mod ffi {
     use super::*;
     use crate::util::export::{barrier, status};
 
-    /// # Safety
-    ///
-    /// `zs` points to a `git_zstream` that nothing else accesses during
-    /// the call, from which C (and these exports) never form references.
-    unsafe fn zs<'a>(zs: *mut GitZstream) -> ZstreamPtr<'a> {
-        // SAFETY: the caller's contract, which is `ZstreamPtr::new`'s for
-        // the call (C keeps the stream in place while initialized).
-        unsafe { ZstreamPtr::new(zs) }
-    }
+    // The exports take the stream as a `ZstreamPtr` (the ABI of
+    // `git_zstream *`): their contract, "a `git_zstream` that nothing else
+    // accesses during the call, from which C forms no reference while
+    // these run, kept in place while initialized", is `ZstreamPtr::new`'s
+    // for the call.
 
     /// `git_zstream_init`.
     ///
@@ -685,9 +709,8 @@ pub mod ffi {
     /// that nothing else accesses during the call, and that is neither
     /// moved nor copied until it is freed.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_zstream_init(zstream: *mut GitZstream, kind: c_int) -> c_int {
-        // SAFETY: forwarded to the caller.
-        barrier(|| status(unsafe { zs(zstream) }.init(kind)))
+    pub unsafe extern "C" fn git_zstream_init(zstream: ZstreamPtr<'_>, kind: c_int) -> c_int {
+        barrier(|| status(zstream.init(kind)))
     }
 
     /// `git_zstream_free`.
@@ -697,9 +720,8 @@ pub mod ffi {
     /// `zstream` points to a `git_zstream` (initialized, freed, or
     /// `GIT_ZSTREAM_INIT`) that nothing else accesses during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_zstream_free(zstream: *mut GitZstream) {
-        // SAFETY: forwarded to the caller.
-        barrier(|| unsafe { zs(zstream) }.free())
+    pub unsafe extern "C" fn git_zstream_free(zstream: ZstreamPtr<'_>) {
+        barrier(|| zstream.free())
     }
 
     /// `git_zstream_reset`.
@@ -708,9 +730,8 @@ pub mod ffi {
     ///
     /// As `git_zstream_free`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_zstream_reset(zstream: *mut GitZstream) {
-        // SAFETY: forwarded to the caller.
-        barrier(|| unsafe { zs(zstream) }.reset())
+    pub unsafe extern "C" fn git_zstream_reset(zstream: ZstreamPtr<'_>) {
+        barrier(|| zstream.reset())
     }
 
     /// `git_zstream_set_input`.
@@ -721,13 +742,12 @@ pub mod ffi {
     /// it is consumed or replaced.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_zstream_set_input(
-        zstream: *mut GitZstream,
+        zstream: ZstreamPtr<'_>,
         input: *const c_char,
         len: usize,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: forwarded to the caller.
-            unsafe { zs(zstream) }.set_input(input, len);
+            zstream.set_input(input, len);
             0
         })
     }
@@ -738,9 +758,8 @@ pub mod ffi {
     ///
     /// As `git_zstream_free`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_zstream_suggest_output_len(zstream: *mut GitZstream) -> usize {
-        // SAFETY: forwarded to the caller.
-        barrier(|| unsafe { zs(zstream) }.suggest_output_len())
+    pub unsafe extern "C" fn git_zstream_suggest_output_len(zstream: ZstreamPtr<'_>) -> usize {
+        barrier(|| zstream.suggest_output_len())
     }
 
     /// `git_zstream_get_output_chunk`.
@@ -748,22 +767,19 @@ pub mod ffi {
     /// # Safety
     ///
     /// `zstream` was initialized and nothing else accesses it during the
-    /// call; its input is as `git_zstream_set_input` requires; `out` is
-    /// writable for `*out_len` bytes, overlapping neither.
+    /// call; its input is as `git_zstream_set_input` requires; `out_len`
+    /// is a valid `size_t`, and `out` is writable for `*out_len` bytes
+    /// (maybe uninitialized); none of them overlaps another, or the input.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_zstream_get_output_chunk(
         out: *mut u8,
-        out_len: *mut usize,
-        zstream: *mut GitZstream,
+        out_len: &mut usize,
+        zstream: ZstreamPtr<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `out_len` is a valid `size_t` (the caller's contract),
-            // distinct from the stream.
-            let out_len = unsafe { &mut *out_len };
-            // SAFETY: forwarded to the caller.
-            let zs = unsafe { zs(zstream) };
-            // SAFETY: forwarded to the caller.
-            status(unsafe { zs.get_output_chunk(out, out_len) })
+            // SAFETY: the stream's input and `out` are as `get_output_chunk`
+            // requires (this export's contract).
+            status(unsafe { zstream.get_output_chunk(out, out_len) })
         })
     }
 
@@ -775,16 +791,12 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_zstream_get_output(
         out: *mut u8,
-        out_len: *mut usize,
-        zstream: *mut GitZstream,
+        out_len: &mut usize,
+        zstream: ZstreamPtr<'_>,
     ) -> c_int {
         barrier(|| {
             // SAFETY: as in `git_zstream_get_output_chunk`.
-            let out_len = unsafe { &mut *out_len };
-            // SAFETY: forwarded to the caller.
-            let zs = unsafe { zs(zstream) };
-            // SAFETY: forwarded to the caller.
-            status(unsafe { zs.get_output(out, out_len) })
+            status(unsafe { zstream.get_output(out, out_len) })
         })
     }
 
@@ -794,9 +806,8 @@ pub mod ffi {
     ///
     /// As `git_zstream_free`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_zstream_done(zstream: *mut GitZstream) -> bool {
-        // SAFETY: forwarded to the caller.
-        barrier(|| unsafe { zs(zstream) }.done())
+    pub unsafe extern "C" fn git_zstream_done(zstream: ZstreamPtr<'_>) -> bool {
+        barrier(|| zstream.done())
     }
 
     /// `git_zstream_eos`.
@@ -805,26 +816,24 @@ pub mod ffi {
     ///
     /// As `git_zstream_free`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_zstream_eos(zstream: *mut GitZstream) -> bool {
-        // SAFETY: forwarded to the caller.
-        barrier(|| unsafe { zs(zstream) }.eos())
+    pub unsafe extern "C" fn git_zstream_eos(zstream: ZstreamPtr<'_>) -> bool {
+        barrier(|| zstream.eos())
     }
 
     /// # Safety
     ///
-    /// `out` is a valid `git_str` that nothing else accesses during the
-    /// call; `input` is readable for `len` bytes (or `len` is 0) and does
-    /// not lie in `out`'s buffer.
+    /// `input` is readable for `len` bytes (or `len` is 0), unwritten
+    /// during the call, and does not lie in `out`'s buffer.
     unsafe fn buf(
-        out: *mut GitStr,
+        out: &mut GitStr,
         input: *const c_char,
         len: usize,
         f: fn(&mut GitStr, &[u8]) -> Result<()>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let out = unsafe { &mut *out };
-            // SAFETY: the caller's contract.
+            // SAFETY: `input` is readable for `len` bytes, unwritten during
+            // the call (this fn's contract): `out` is written only in its
+            // own buffer, where `input` is not.
             let input = unsafe { crate::util::export::bytes(input, len) };
             status(f(out, input))
         })
@@ -839,11 +848,11 @@ pub mod ffi {
     /// not lie in `out`'s buffer.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_zstream_deflatebuf(
-        out: *mut GitStr,
+        out: &mut GitStr,
         input: *const c_char,
         len: usize,
     ) -> c_int {
-        // SAFETY: forwarded to the caller.
+        // SAFETY: `input` is as `buf` requires (this export's contract).
         unsafe { buf(out, input, len, deflate_buf) }
     }
 
@@ -854,11 +863,11 @@ pub mod ffi {
     /// As `git_zstream_deflatebuf`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_zstream_inflatebuf(
-        out: *mut GitStr,
+        out: &mut GitStr,
         input: *const c_char,
         len: usize,
     ) -> c_int {
-        // SAFETY: forwarded to the caller.
+        // SAFETY: `input` is as `buf` requires (this export's contract).
         unsafe { buf(out, input, len, inflate_buf) }
     }
 }
