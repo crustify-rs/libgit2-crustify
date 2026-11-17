@@ -554,40 +554,6 @@ impl GitTreebuilder {
         }
     }
 
-    /// `git_treebuilder_new`: a builder allocated with `git__allocator`,
-    /// holding the entries of `source` (unvalidated).
-    ///
-    /// # Safety
-    ///
-    /// `repo` is live; `source` is NULL or a live tree.
-    pub(crate) unsafe fn new_raw(
-        repo: *mut git_repository,
-        source: *const GitTree,
-    ) -> Result<*mut GitTreebuilder> {
-        let p = alloc::malloc(size_of::<GitTreebuilder>()).cast::<GitTreebuilder>();
-        if p.is_null() {
-            return Err(ErrorCode::GENERIC);
-        }
-        // SAFETY: a fresh allocation, aligned (8) for the builder.
-        unsafe { p.write(GitTreebuilder::empty(repo)) };
-        if !source.is_null() {
-            // SAFETY: a live tree (contract).
-            for e in unsafe { entries(source) } {
-                // SAFETY: the builder made above, ours alone.
-                let b = unsafe { &mut *p };
-                // SAFETY: the entry of a live tree: its name is
-                // NUL-terminated after `filename_len` bytes.
-                let r = unsafe { b.append_entry(e.filename, &e.oid, u32::from(e.attr), false) };
-                if r.is_err() {
-                    // SAFETY: the builder made above, ours alone.
-                    unsafe { free_raw(p) };
-                    return Err(ErrorCode::GENERIC);
-                }
-            }
-        }
-        Ok(p)
-    }
-
     /// `append_entry`.
     ///
     /// # Safety
@@ -647,6 +613,14 @@ impl GitTreebuilder {
     /// `treebuilder_get`.
     pub(crate) fn get(&self, filename: &CStr) -> Option<*mut GitTreeEntry> {
         self.map.get(&probe_key(filename)).copied()
+    }
+
+    /// [`get`](Self::get), the entry borrowed with the builder.
+    pub(crate) fn get_ref(&self, filename: &CStr) -> Option<&GitTreeEntry> {
+        // SAFETY: the map's entries are `alloc_entry` blocks the builder
+        // owns, live while they are in the map, and changed only through
+        // `&mut self`.
+        self.get(filename).map(|e| unsafe { &*e })
     }
 
     /// `git_treebuilder_insert`: the inserted (or updated) entry.
@@ -807,7 +781,84 @@ impl Drop for GitTreebuilder {
     }
 }
 
-/// `git_treebuilder_free` of a builder from [`GitTreebuilder::new_raw`].
+/// A tree builder in its own `git__allocator` block (`git_treebuilder_new`
+/// 's), which the value owns and frees on drop (`git_treebuilder_free`).
+///
+/// Invariant: the pointer is such a block, holding an initialized
+/// builder, that only this value reaches.
+pub(crate) struct BuilderBox(ptr::NonNull<GitTreebuilder>);
+
+impl BuilderBox {
+    /// `git_treebuilder_new`: a builder holding the entries of `source`
+    /// (unvalidated).
+    ///
+    /// # Safety
+    ///
+    /// `repo` is NULL or a live repository (the builder's insertions and
+    /// writes need it live); `source` is NULL or a live tree.
+    pub(crate) unsafe fn new(
+        repo: *mut git_repository,
+        source: *const GitTree,
+    ) -> Result<BuilderBox> {
+        const { assert!(align_of::<GitTreebuilder>() <= 8) };
+        let p = alloc::malloc(size_of::<GitTreebuilder>()).cast::<GitTreebuilder>();
+        let Some(p) = ptr::NonNull::new(p) else {
+            return Err(ErrorCode::GENERIC);
+        };
+        // SAFETY: a fresh allocation of a builder's size, aligned for it
+        // (`git__allocator`'s blocks are 8-aligned; asserted above).
+        unsafe { p.as_ptr().write(GitTreebuilder::empty(repo)) };
+        // the block holds a builder now, that only `b` reaches (freed on
+        // failure below)
+        let mut b = BuilderBox(p);
+        if !source.is_null() {
+            // SAFETY: a live tree (this fn's contract).
+            for e in unsafe { entries(source) } {
+                // SAFETY: the entry of a live tree: its name is
+                // NUL-terminated after `filename_len` bytes; no validation,
+                // so the repository is not used.
+                let r = unsafe { b.append_entry(e.filename, &e.oid, u32::from(e.attr), false) };
+                if r.is_err() {
+                    return Err(ErrorCode::GENERIC);
+                }
+            }
+        }
+        Ok(b)
+    }
+
+    /// Hand the builder over (to C: `git_treebuilder_free` frees it).
+    pub(crate) fn into_raw(self) -> *mut GitTreebuilder {
+        let p = self.0.as_ptr();
+        core::mem::forget(self);
+        p
+    }
+}
+
+impl core::ops::Deref for BuilderBox {
+    type Target = GitTreebuilder;
+    fn deref(&self) -> &GitTreebuilder {
+        // SAFETY: the type's invariant: an initialized builder that only
+        // `self` reaches, borrowed with it.
+        unsafe { self.0.as_ref() }
+    }
+}
+
+impl core::ops::DerefMut for BuilderBox {
+    fn deref_mut(&mut self) -> &mut GitTreebuilder {
+        // SAFETY: as above, exclusively.
+        unsafe { self.0.as_mut() }
+    }
+}
+
+impl Drop for BuilderBox {
+    fn drop(&mut self) {
+        // SAFETY: the type's invariant: such a builder, that only `self`
+        // reaches, freed once (here).
+        unsafe { free_raw(self.0.as_ptr()) }
+    }
+}
+
+/// `git_treebuilder_free` of a builder from [`BuilderBox::new`].
 ///
 /// # Safety
 ///
@@ -917,11 +968,8 @@ unsafe fn write_tree(
     }
 
     // SAFETY: `repo` live (this fn's contract); no source tree.
-    let bld = unsafe { GitTreebuilder::new_raw(repo, ptr::null()) }?;
+    let mut b = unsafe { BuilderBox::new(repo, ptr::null()) }?;
     let r = (|| -> Result<usize> {
-        // SAFETY: the builder made above, ours alone until freed below (no
-        // C reaches it).
-        let b = unsafe { &mut *bld };
         // SAFETY: as for `root` above.
         let entries = unsafe { ix.get_ref() }.entries.len();
         let mut i = start;
@@ -974,8 +1022,7 @@ unsafe fn write_tree(
         *oid = unsafe { b.write_with_buffer(shared_buf) }.map_err(|_| ErrorCode::GENERIC)?;
         Ok(i)
     })();
-    // SAFETY: the builder made above, freed once.
-    unsafe { free_raw(bld) };
+    drop(b);
     r.map_err(|_| ErrorCode::GENERIC)
 }
 
@@ -1263,21 +1310,65 @@ pub struct GitTreeUpdate {
     pub path: *const c_char,
 }
 
-/// One level of `git_tree_create_updated`'s stack.
+/// One level of `git_tree_create_updated`'s stack (released on drop).
 struct StackEntry {
-    bld: *mut GitTreebuilder,
-    tree: *mut GitTree,
+    bld: BuilderBox,
+    tree: OwnedTree,
     name: Option<std::ffi::CString>,
 }
 
-impl StackEntry {
-    /// Release what the level holds.
-    fn release(&mut self) {
-        // SAFETY: NULL or a builder this level made, freed once.
-        unsafe { free_raw(core::mem::replace(&mut self.bld, ptr::null_mut())) };
-        // SAFETY: NULL or a tree this level looked up, released once.
-        unsafe { pend::git_tree_free(core::mem::replace(&mut self.tree, ptr::null_mut())) };
-        self.name = None;
+/// A reference to a tree object (`git_tree_lookup`, `git_tree_dup`), or
+/// none, released on drop (`git_tree_free`).
+///
+/// Invariant: the pointer is NULL, or a live, parsed tree on which the
+/// value holds a reference.
+struct OwnedTree(*mut GitTree);
+
+impl OwnedTree {
+    /// No tree.
+    const NONE: OwnedTree = OwnedTree(ptr::null_mut());
+
+    /// `git_tree_lookup`.
+    ///
+    /// # Safety
+    ///
+    /// `repo` is a live repository.
+    unsafe fn lookup(repo: *mut git_repository, id: &Oid) -> Result<OwnedTree> {
+        let mut t = ptr::null_mut();
+        // SAFETY: `repo` live (this fn's contract); `t` writable.
+        ErrorCode::check(unsafe { pend::git_tree_lookup(&raw mut t, repo, Some(id)) })?;
+        Ok(OwnedTree(t))
+    }
+
+    /// `git_tree_dup`: another reference to `tree`.
+    ///
+    /// # Safety
+    ///
+    /// `tree` is a live tree.
+    unsafe fn dup(tree: *mut GitTree) -> Result<OwnedTree> {
+        let mut t = ptr::null_mut();
+        // SAFETY: a live tree (this fn's contract); `t` writable.
+        ErrorCode::check(unsafe { pend::git_tree_dup(&raw mut t, tree) })?;
+        Ok(OwnedTree(t))
+    }
+
+    /// The pointer (NULL for none).
+    fn as_ptr(&self) -> *mut GitTree {
+        self.0
+    }
+
+    /// The tree, if any.
+    fn get(&self) -> Option<&GitTree> {
+        // SAFETY: the type's invariant: NULL or a live tree, which nothing
+        // writes once parsed (its count is atomic), held while `self` is.
+        unsafe { self.0.as_ref() }
+    }
+}
+
+impl Drop for OwnedTree {
+    fn drop(&mut self) {
+        // SAFETY: NULL or the reference the value holds, released once.
+        unsafe { pend::git_tree_free(self.0) };
     }
 }
 
@@ -1301,19 +1392,20 @@ fn type2string(t: c_int) -> &'static [u8] {
 ///
 /// # Safety
 ///
-/// The builders' repository is live; the levels' trees and builders are
-/// live.
-unsafe fn create_popped_tree(current: &mut StackEntry, mut popped: StackEntry) -> Result<()> {
-    // SAFETY: NULL or the level's tree, released once.
-    unsafe { pend::git_tree_free(core::mem::replace(&mut popped.tree, ptr::null_mut())) };
-    let name = popped.name.take().unwrap_or_default();
-    // SAFETY: the level's builder.
-    let pb = unsafe { &mut *popped.bld };
+/// The builders' repository is live.
+unsafe fn create_popped_tree(current: &mut StackEntry, popped: StackEntry) -> Result<()> {
+    let StackEntry {
+        bld: mut pb,
+        tree,
+        name,
+    } = popped;
+    // (C frees the level's tree first)
+    drop(tree);
+    let name = name.unwrap_or_default();
     // If the tree would be empty, remove it from the one higher up
     if pb.is_empty() {
-        popped.release();
-        // SAFETY: the parent level's builder.
-        let cb = unsafe { &mut *current.bld };
+        drop(pb);
+        let cb = &mut current.bld;
         if cb.get(&name).is_none() {
             return Err(tree_error(
                 "failed to remove entry: file isn't in the tree",
@@ -1323,27 +1415,24 @@ unsafe fn create_popped_tree(current: &mut StackEntry, mut popped: StackEntry) -
         cb.remove_found(&name);
         return Ok(());
     }
-    // SAFETY: the repository is live (contract).
+    // SAFETY: the builder's repository is live (this fn's contract).
     let new_tree = unsafe { pb.write() };
-    popped.release();
+    drop(pb);
     let new_tree = new_tree?;
 
     // Error out if this would create a D/F conflict in this update
-    if !current.tree.is_null() {
-        // SAFETY: the parent level's live tree.
-        if let Some(e) = unsafe { entry_fromname(current.tree, name.to_bytes()) }
-            && entry_type(e.attr) != OBJ_TREE
-        {
-            return Err(git_error_set!(
-                ErrorClass::TREE,
-                "D/F conflict when updating tree"
-            ));
-        }
+    if let Some(t) = current.tree.get()
+        // SAFETY: the parent level's tree, live while it holds it.
+        && let Some(e) = unsafe { entry_fromname(t, name.to_bytes()) }
+        && entry_type(e.attr) != OBJ_TREE
+    {
+        return Err(git_error_set!(
+            ErrorClass::TREE,
+            "D/F conflict when updating tree"
+        ));
     }
-    // SAFETY: the parent level's live builder, not otherwise borrowed.
-    let cb = unsafe { &mut *current.bld };
-    // SAFETY: the repository is live (contract).
-    unsafe { cb.insert(&name, &new_tree, FILEMODE_TREE) }.map(|_| ())
+    // SAFETY: the repository is live (this fn's contract).
+    unsafe { current.bld.insert(&name, &new_tree, FILEMODE_TREE) }.map(|_| ())
 }
 
 /// `git_tree_create_updated`.
@@ -1351,7 +1440,7 @@ unsafe fn create_popped_tree(current: &mut StackEntry, mut popped: StackEntry) -
 /// # Safety
 ///
 /// `repo` live; `baseline` NULL or a live tree; `updates` holds `n` valid
-/// updates whose paths are NUL-terminated.
+/// updates whose paths are NUL-terminated, unwritten during the call.
 unsafe fn create_updated(
     out: &mut Oid,
     repo: *mut git_repository,
@@ -1364,7 +1453,8 @@ unsafe fn create_updated(
         .try_reserve(updates.len())
         .map_err(|_| errors::oom())?;
     for u in updates {
-        // SAFETY: NUL-terminated (contract).
+        // SAFETY: NUL-terminated, and unwritten during the call (this fn's
+        // contract).
         sorted.push((unsafe { CStr::from_ptr(u.path) }.to_bytes(), u));
     }
     sorted.sort_by(|a, b| a.0.cmp(b.0));
@@ -1378,19 +1468,19 @@ unsafe fn create_updated(
     let mut stack: Vec<StackEntry> = Vec::new();
     let r = (|| -> Result<()> {
         stack.try_reserve(1).map_err(|_| errors::oom())?;
+        let tree = if baseline.is_null() {
+            OwnedTree::NONE
+        } else {
+            // SAFETY: a live tree (this fn's contract).
+            unsafe { OwnedTree::dup(baseline) }?
+        };
+        // SAFETY: `repo` live; the tree NULL or live (held by `tree`).
+        let bld = unsafe { BuilderBox::new(repo, tree.as_ptr()) }?;
         stack.push(StackEntry {
-            bld: ptr::null_mut(),
-            tree: ptr::null_mut(),
+            bld,
+            tree,
             name: None,
         });
-        if !baseline.is_null() {
-            let mut t = ptr::null_mut();
-            // SAFETY: a live tree.
-            ErrorCode::check(unsafe { pend::git_tree_dup(&raw mut t, baseline) })?;
-            stack[0].tree = t;
-        }
-        // SAFETY: `repo` live; the tree NULL or live.
-        stack[0].bld = unsafe { GitTreebuilder::new_raw(repo, stack[0].tree) }?;
 
         for i in 0..sorted.len() {
             let last_update = if i == 0 { None } else { Some(sorted[i - 1].0) };
@@ -1407,11 +1497,10 @@ unsafe fn create_updated(
                     return Err(errors::assert_failed("popped"));
                 };
                 let Some(current) = stack.last_mut() else {
-                    let mut popped = popped;
-                    popped.release();
+                    drop(popped);
                     return Err(errors::assert_failed("current"));
                 };
-                // SAFETY: live levels; `repo` live.
+                // SAFETY: `repo` live (this fn's contract).
                 unsafe { create_popped_tree(current, popped) }?;
             }
 
@@ -1421,21 +1510,13 @@ unsafe fn create_updated(
             while let Some(component) = next_component(path) {
                 let comp = cstring(component)?;
                 let last = stack.last().expect("the root level is never popped here");
-                let entry = if last.tree.is_null() {
-                    None
-                } else {
-                    // SAFETY: the level's live tree.
-                    unsafe { entry_fromname(last.tree, component) }.map(|e| (e.attr, e.oid))
-                };
-                let entry = entry.or_else(|| {
-                    // SAFETY: the level's builder (NULL or live), not
-                    // otherwise borrowed here.
-                    unsafe { last.bld.as_ref() }?.get(&comp).map(|e| {
-                        // SAFETY: an entry the builder owns.
-                        let e = unsafe { &*e };
-                        (e.attr, e.oid)
-                    })
-                });
+                // SAFETY: the level's tree, live while it holds it.
+                let entry = last
+                    .tree
+                    .get()
+                    .and_then(|t| unsafe { entry_fromname(t, component) })
+                    .map(|e| (e.attr, e.oid))
+                    .or_else(|| last.bld.get_ref(&comp).map(|e| (e.attr, e.oid)));
                 if let Some((attr, _)) = entry
                     && entry_type(attr) != OBJ_TREE
                 {
@@ -1445,38 +1526,32 @@ unsafe fn create_updated(
                     ));
                 }
                 stack.try_reserve(1).map_err(|_| errors::oom())?;
+                let tree = match entry {
+                    // SAFETY: `repo` live (this fn's contract).
+                    Some((_, id)) => unsafe { OwnedTree::lookup(repo, &id) }?,
+                    None => OwnedTree::NONE,
+                };
+                // SAFETY: `repo` live; the tree NULL or live (held by `tree`).
+                let bld = unsafe { BuilderBox::new(repo, tree.as_ptr()) }?;
                 stack.push(StackEntry {
-                    bld: ptr::null_mut(),
-                    tree: ptr::null_mut(),
-                    name: None,
+                    bld,
+                    tree,
+                    name: Some(comp),
                 });
-                let new_entry = stack.last_mut().expect("just pushed");
-                if let Some((_, id)) = entry {
-                    // SAFETY: `repo` live; `tree` writable.
-                    ErrorCode::check(unsafe {
-                        pend::git_tree_lookup(&raw mut new_entry.tree, repo, Some(&id))
-                    })?;
-                }
-                // SAFETY: `repo` live; the tree NULL or live.
-                new_entry.bld = unsafe { GitTreebuilder::new_raw(repo, new_entry.tree) }?;
-                new_entry.name = Some(comp);
                 // Get to the start of the next component
                 path = &path[component.len() + 1..];
             }
 
             // After all that, we're finally at the place where we want to
             // perform the update
-            let last = stack.last_mut().expect("the root level");
-            // SAFETY: the level's builder.
-            let lb = unsafe { &mut *last.bld };
+            let lb = &mut stack.last_mut().expect("the root level").bld;
             match update.action {
                 0 => {
                     // Make sure we're replacing something of the same type
                     let basename = basename_c(upath)?;
                     let new_type = type_from_filemode(update.filemode);
-                    if let Some(e) = lb.get(&basename) {
-                        // SAFETY: an entry of the builder.
-                        let t = entry_type(unsafe { (*e).attr });
+                    if let Some(e) = lb.get_ref(&basename) {
+                        let t = entry_type(e.attr);
                         if t != new_type {
                             return Err(git_error_set!(
                                 ErrorClass::TREE,
@@ -1487,7 +1562,7 @@ unsafe fn create_updated(
                             ));
                         }
                     }
-                    // SAFETY: `repo` live.
+                    // SAFETY: `repo` live (this fn's contract).
                     unsafe { lb.insert(&basename, &update.id, update.filemode) }?;
                 }
                 1 => {
@@ -1515,24 +1590,20 @@ unsafe fn create_updated(
             match stack.last_mut() {
                 // We've reached the top, current is the root tree
                 None => break popped,
-                // SAFETY: live levels; `repo` live.
+                // SAFETY: `repo` live (this fn's contract).
                 Some(current) => unsafe { create_popped_tree(current, popped) }?,
             }
         };
-        // Write out the root tree
-        // SAFETY: NULL or the root's tree, released once.
-        unsafe { pend::git_tree_free(core::mem::replace(&mut root.tree, ptr::null_mut())) };
-        // SAFETY: the root's live builder, not otherwise borrowed.
-        let rb = unsafe { &mut *root.bld };
-        // SAFETY: `repo` live (contract).
-        let r = unsafe { rb.write() };
-        root.release();
+        // Write out the root tree (C frees the root's tree first)
+        root.tree = OwnedTree::NONE;
+        // SAFETY: `repo` live (this fn's contract).
+        let r = unsafe { root.bld.write() };
+        drop(root);
         *out = r?;
         Ok(())
     })();
-    for mut e in stack.drain(..).rev() {
-        e.release();
-    }
+    // release the levels left, from the top
+    while stack.pop().is_some() {}
     r
 }
 
@@ -1905,9 +1976,9 @@ pub mod ffi {
             let source = source.map_or(ptr::null(), ptr::from_ref);
             // SAFETY: `repo` is live (checked non-NULL; this export's
             // contract), and `source` NULL or a live tree.
-            match unsafe { GitTreebuilder::new_raw(repo, source) } {
+            match unsafe { BuilderBox::new(repo, source) } {
                 Ok(b) => {
-                    builder_p.write(b);
+                    builder_p.write(b.into_raw());
                     0
                 }
                 Err(e) => e.raw(),

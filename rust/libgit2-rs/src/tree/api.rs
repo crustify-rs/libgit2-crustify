@@ -14,7 +14,7 @@ use core::marker::PhantomData;
 use core::ptr::{self, NonNull};
 use std::ffi::CString;
 
-use super::{GitTree, GitTreeEntry, GitTreeUpdate, GitTreebuilder, WalkResult};
+use super::{BuilderBox, GitTree, GitTreeEntry, GitTreeUpdate, GitTreebuilder, WalkResult};
 use crate::commit::deps::{self as pend, git_repository};
 use crate::commit::ec;
 use crate::object::{Object, ObjectType};
@@ -494,7 +494,7 @@ impl core::fmt::Debug for Tree<'_> {
 
 /// A tree builder (`git_treebuilder`).
 pub struct TreeBuilder<'r> {
-    raw: NonNull<GitTreebuilder>,
+    raw: BuilderBox,
     _repo: PhantomData<&'r Repository>,
 }
 
@@ -511,23 +511,21 @@ impl<'r> TreeBuilder<'r> {
     /// entries.
     pub fn new(repo: &'r Repository, source: Option<&Tree<'_>>) -> Result<TreeBuilder<'r>, Error> {
         let src = source.map_or(ptr::null(), |t| t.t());
-        // SAFETY: a live repository; `src` NULL or a live tree.
-        let raw = unsafe { GitTreebuilder::new_raw(repo.raw_ptr(), src) }.map_err(Error::from)?;
+        // SAFETY: a live repository, which outlives the builder (`'r`);
+        // `src` NULL or a live tree (borrowed for the call).
+        let raw = unsafe { BuilderBox::new(repo.raw_ptr(), src) }.map_err(Error::from)?;
         Ok(TreeBuilder {
-            // SAFETY: `new_raw` returns a non-NULL builder on success.
-            raw: unsafe { NonNull::new_unchecked(raw) },
+            raw,
             _repo: PhantomData,
         })
     }
 
     fn b(&self) -> &GitTreebuilder {
-        // SAFETY: the builder this value owns; only it reaches the builder.
-        unsafe { self.raw.as_ref() }
+        &self.raw
     }
 
     fn b_mut(&mut self) -> &mut GitTreebuilder {
-        // SAFETY: as above, exclusively.
-        unsafe { self.raw.as_mut() }
+        &mut self.raw
     }
 
     /// `git_treebuilder_entrycount`.
@@ -543,11 +541,7 @@ impl<'r> TreeBuilder<'r> {
     /// `git_treebuilder_get`.
     pub fn get(&self, name: impl AsRef<[u8]>) -> Option<TreeEntryRef<'_>> {
         let name = CString::new(name.as_ref()).ok()?;
-        self.b().get(&name).map(|e| TreeEntryRef {
-            // SAFETY: an entry the builder owns, unchanged while `self` is
-            // borrowed shared.
-            entry: unsafe { &*e },
-        })
+        self.b().get_ref(&name).map(|entry| TreeEntryRef { entry })
     }
 
     /// `git_treebuilder_insert`: add or replace the entry `name` (checked:
@@ -608,12 +602,5 @@ impl<'r> TreeBuilder<'r> {
     pub fn write(&mut self) -> Result<Oid, Error> {
         // SAFETY: the builder's repository outlives `'r`.
         unsafe { self.b_mut().write() }.map_err(Error::from)
-    }
-}
-
-impl Drop for TreeBuilder<'_> {
-    fn drop(&mut self) {
-        // SAFETY: the builder this value owns, freed once.
-        unsafe { super::free_raw(self.raw.as_ptr()) }
     }
 }
