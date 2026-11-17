@@ -2,6 +2,16 @@
 //! borrows the index only between those calls (see the [index
 //! module](super)). These are the bodies of the exports and of the safe
 //! API.
+//!
+//! The rule their borrows rely on (`IndexPtr`'s): the index an
+//! [`IndexPtr`] names is live, its holders keep no reference into it
+//! across a call that takes the handle (the exports hold none, the safe
+//! API holds its lock), and no other thread uses it except to read, on
+//! C's read paths. So a borrow ([`IndexPtr::get`], or
+//! [`IndexPtr::get_ref`] where C only reads) is sound for a block that
+//! calls no foreign code (libgit2's C, or a callback: either may reach the
+//! index; system calls cannot); each SAFETY comment below says which
+//! block.
 
 use crate::util::cabi::CStrArg;
 use core::ffi::{CStr, c_char, c_int, c_uint};
@@ -126,9 +136,10 @@ pub(crate) fn entry_dup(
 ///
 /// # Safety
 ///
-/// `e.path` is NULL or a string live for `'a`.
+/// `e.path` is NULL or a string, live and unwritten for `'a`.
 pub(crate) unsafe fn src_path<'a>(e: &GitIndexEntry) -> &'a [u8] {
-    // SAFETY: the caller's contract.
+    // SAFETY: NULL or a string, live and unwritten for `'a` (this fn's
+    // contract).
     unsafe { crate::util::export::cstr_bytes(e.path) }
 }
 
@@ -143,9 +154,8 @@ pub(crate) fn insert(
     trust_id: bool,
 ) -> Result<EntryPtr> {
     let (mode, id) = {
-        // SAFETY: no reference into the index is live (`IndexPtr`'s use:
-        // no caller holds one across this call), and this block calls no
-        // foreign code.
+        // SAFETY: the module's rule: this block calls no foreign code, and
+        // the borrow ends with it.
         let index = unsafe { ix.get() };
         let pathlen = entry.pathlen();
         let stage = entry.update(|e| {
@@ -177,7 +187,8 @@ pub(crate) fn insert(
         // (`entry` is freed: dropped)
         return Err(ErrorCode::GENERIC);
     }
-    // SAFETY: as above: `insert_finish` calls no foreign code.
+    // SAFETY: the module's rule: `insert_finish` calls no foreign code, and
+    // the borrow ends with the call.
     unsafe { ix.get() }.insert_finish(entry, replace, trust_path)
 }
 
@@ -209,9 +220,12 @@ pub(crate) fn add(ix: IndexPtr, source: &GitIndexEntry, path: &[u8]) -> Result<(
     }
     let entry = entry_dup(owner(ix), source, path)?;
     let entry = insert(ix, entry, true, true, true, false)?;
-    // SAFETY: no foreign call; `entry` is a live entry of the index.
+    // SAFETY: the module's rule: the rest of the function calls no foreign
+    // code.
     let index = unsafe { ix.get() };
-    // SAFETY: as above.
+    // SAFETY: `tree` is NULL or a tree cache in the index's pool (the
+    // invariant), which `index` borrows exclusively; `entry` is the live
+    // entry `insert` left in the index.
     unsafe { super::invalidate_entry(index.tree, entry) };
     Ok(())
 }
@@ -254,17 +268,19 @@ pub(crate) fn add_from_buffer(
         e.file_size = buf.len() as u32;
     });
     let entry = insert(ix, entry, true, true, true, true)?;
-    // SAFETY: no foreign call below; `entry` is live until the conflict
-    // removal (which may remove it, when the source had a stage: the path
-    // is copied first, where C read the freed entry).
+    // SAFETY: the module's rule: the rest of the function calls no foreign
+    // code.
     let index = unsafe { ix.get() };
-    // SAFETY: as above.
+    // SAFETY: `entry` is the live entry `insert` left in the index, until
+    // the conflict removal (which may remove it, when the source had a
+    // stage: the path is copied first, where C read the freed entry).
     let p = c_copy(unsafe { epath(entry) })?;
     let r = conflict_to_reuc(index, p.as_bytes());
     if r.is_err() && !not_found(&r) {
         return r;
     }
-    // SAFETY: the tree invariant.
+    // SAFETY: `tree` is NULL or a tree cache in the index's pool (the
+    // invariant), which `index` borrows exclusively.
     unsafe { tree_cache::invalidate_path(index.tree, p.as_bytes()) };
     Ok(())
 }
@@ -287,8 +303,8 @@ fn entry_init(ix: IndexPtr, rel_path: &CStr) -> Result<NewEntry> {
     // write the blob to disk and get the oid and stat info (on failure,
     // `entry` is freed: dropped)
     let id = foreign::blob_from_workdir(repo, rel_path, &mut st)?;
-    // SAFETY: no reference into the index is live, and the statement calls
-    // no foreign code (shared, for one bit).
+    // SAFETY: the module's rule: the statement reads one bit (shared) and
+    // calls no foreign code.
     let trust = !unsafe { ix.get_ref() }.distrust_filemode();
     entry.update(|e| {
         e.id = id;
@@ -313,8 +329,8 @@ fn add_repo_as_submodule(ix: IndexPtr, path: &CStr) -> Result<NewEntry> {
     };
     let mut entry = entry_create(Some(repo), path.to_bytes(), Some(st.st_mode), true)
         .map_err(|_| ErrorCode::GENERIC)?;
-    // SAFETY: no reference into the index is live, and the statement calls
-    // no foreign code (shared, for one bit).
+    // SAFETY: the module's rule: the statement reads one bit (shared) and
+    // calls no foreign code.
     let trust = !unsafe { ix.get_ref() }.distrust_filemode();
     entry.update(|e| init_from_stat(e, &st, trust));
     // (on failure, `entry` is freed: dropped; C leaked it)
@@ -363,15 +379,17 @@ pub(crate) fn add_bypath(ix: IndexPtr, path: &CStr) -> Result<()> {
         }
     }
     let entry = ret?;
-    // SAFETY: no foreign call below; `entry` is a live stage-0 entry of
-    // the index (the conflict removal leaves it).
+    // SAFETY: the module's rule: the rest of the function calls no foreign
+    // code.
     let index = unsafe { ix.get() };
     // Adding implies conflict was resolved, move conflict entries to REUC
     let r = conflict_to_reuc(index, path.to_bytes());
     if r.is_err() && !not_found(&r) {
         return r;
     }
-    // SAFETY: as above.
+    // SAFETY: `tree` is NULL or a tree cache in the index's pool (the
+    // invariant), which `index` borrows exclusively; `entry` is the live
+    // stage-0 entry `insert` left (the conflict removal leaves it).
     unsafe { super::invalidate_entry(index.tree, entry) };
     Ok(())
 }
@@ -405,8 +423,8 @@ pub(crate) unsafe fn fill(ix: IndexPtr, source: &[*const GitIndexEntry]) -> Resu
         return Ok(());
     }
     {
-        // SAFETY: no reference into the index is live (`IndexPtr`'s use),
-        // and this block calls no foreign code.
+        // SAFETY: the module's rule: this block calls no foreign code, and
+        // the borrow ends with it.
         let index = unsafe { ix.get() };
         index.entries.size_hint(source.len())?;
         index
@@ -429,8 +447,8 @@ pub(crate) unsafe fn fill(ix: IndexPtr, source: &[*const GitIndexEntry]) -> Resu
                 break;
             }
         };
-        // SAFETY: as above: no foreign call from here to the end of the
-        // iteration.
+        // SAFETY: the module's rule: no foreign call from here to the end of
+        // the iteration.
         let index = unsafe { ix.get() };
         let n = entry.pathlen();
         entry.update(|e| {
@@ -455,7 +473,8 @@ pub(crate) unsafe fn fill(ix: IndexPtr, source: &[*const GitIndexEntry]) -> Resu
         index.set_dirty(true);
     }
     if error.is_ok() {
-        // SAFETY: no foreign call.
+        // SAFETY: the module's rule: `sort` calls no foreign code, and the
+        // borrow ends with the statement.
         unsafe { ix.get() }.sort();
     }
     error
@@ -487,8 +506,8 @@ pub(crate) fn conflict_add(
     }
     // Remove existing index entries for each path
     for e in entries.iter().flatten() {
-        // SAFETY: no reference into the index is live (`IndexPtr`'s use),
-        // and `remove` calls no foreign code; `e` is not the index's.
+        // SAFETY: the module's rule: `remove` calls no foreign code, and the
+        // borrow ends with the call; `e` is not the index's.
         let r = unsafe { ix.get() }.remove(e.path(), 0);
         if r.is_err() {
             if !not_found(&r) {
@@ -528,7 +547,8 @@ pub(crate) fn open_ext(path: Option<&CStr>, oid_type: OidType) -> Result<IndexPt
         }
     }
     let shared = ffibox::CShared::from_box(index);
-    // SAFETY: a fresh index, live until its last reference goes.
+    // SAFETY: a fresh index, live until its last reference goes (`shared`'s,
+    // then the caller's), and that only this thread reaches yet.
     let ix = unsafe { IndexPtr::new(crate::util::thread::shared_nn(&shared)) };
     if path.is_some()
         && let Err(e) = read(ix, true)
@@ -553,9 +573,11 @@ impl GitIndex {
 /// 0 if not.
 fn compare_checksum(path: &CStr, checksum: &[u8]) -> Result<c_int> {
     let fd = crate::util::posix::open(path, libc::O_RDONLY, 0).map_err(|_| ErrorCode::GENERIC)?;
-    // SAFETY: `fd` is open; `lseek` has no memory preconditions.
+    // SAFETY: `lseek` has no memory preconditions (an invalid `fd` is an
+    // error, not UB); `fd` is ours, open.
     if unsafe { libc::lseek(fd, -(checksum.len() as libc::off_t), libc::SEEK_END) } < 0 {
-        // SAFETY: our descriptor, closed once.
+        // SAFETY: the descriptor opened above, which nothing else uses,
+        // closed once (the function returns).
         let _ = unsafe { crate::util::posix::close(fd) };
         return Err(git_error_set!(
             ErrorClass::OS,
@@ -564,7 +586,7 @@ fn compare_checksum(path: &CStr, checksum: &[u8]) -> Result<c_int> {
     }
     let mut buf = [0u8; crate::util::hash::MAX_SIZE];
     let r = crate::util::posix::read(fd, &mut buf[..checksum.len()]);
-    // SAFETY: our descriptor, closed once.
+    // SAFETY: as above: the descriptor opened above, closed once.
     let _ = unsafe { crate::util::posix::close(fd) };
     match r {
         Ok(n) if n >= checksum.len() => Ok(c_int::from(buf[..checksum.len()] != *checksum)),
@@ -579,7 +601,8 @@ pub(crate) fn read(ix: IndexPtr, force: bool) -> Result<c_int> {
     // index from several threads (`threads::diff`, `diff_load_index`):
     // shared access, the bits atomic (C's bitfield writes race there).
     let (path, mut stamp, checksum) = {
-        // SAFETY: no foreign call in this block; shared access.
+        // SAFETY: the module's rule: this block calls no foreign code, and
+        // the borrow ends with it.
         let index = unsafe { ix.get_ref() };
         let Some(p) = index.file_path() else {
             return Err(index_error(
@@ -594,14 +617,17 @@ pub(crate) fn read(ix: IndexPtr, force: bool) -> Result<c_int> {
     };
     let path_c = path.as_c_str();
     let on_disk = crate::util::fs_path::exists(path_c);
-    // SAFETY: no foreign call; shared access.
+    // SAFETY: the module's rule: `set_on_disk` calls no foreign code, and the
+    // borrow ends with the statement.
     unsafe { ix.get_ref() }.set_on_disk(on_disk);
     if !on_disk {
         if force {
-            // SAFETY: no foreign call.
+            // SAFETY: the module's rule: `clear` calls no foreign code, and the
+            // borrow ends with the statement.
             unsafe { ix.get() }.clear()?;
         }
-        // SAFETY: no foreign call; shared access.
+        // SAFETY: the module's rule: `set_dirty` calls no foreign code, and the
+        // borrow ends with the statement.
         unsafe { ix.get_ref() }.set_dirty(false);
         return Ok(0);
     }
@@ -632,7 +658,8 @@ pub(crate) fn read(ix: IndexPtr, force: bool) -> Result<c_int> {
     crate::util::futils::readbuffer(&mut buffer, path_c)?;
 
     let (mut st, repo) = {
-        // SAFETY: no foreign call in this block.
+        // SAFETY: the module's rule: this block calls no foreign code, and
+        // the borrow ends with it.
         let index = unsafe { ix.get() };
         index.tree = ptr::null_mut();
         index.tree_pool.clear();
@@ -642,7 +669,8 @@ pub(crate) fn read(ix: IndexPtr, force: bool) -> Result<c_int> {
     let mut validate =
         |p: &[u8]| foreign::path_is_valid(repo, p, 0, GIT_PATH_REJECT_INDEX_DEFAULTS);
     let r = ondisk::parse(&mut st, buffer.as_bytes(), &mut validate);
-    // SAFETY: no foreign call.
+    // SAFETY: the module's rule: this block calls no foreign code, and
+    // the borrow ends with it.
     let index = unsafe { ix.get() };
     index.put_parse_state(st);
     r?;
@@ -658,7 +686,8 @@ fn ondisk_checksum_size(t: OidType) -> usize {
 
 /// `git_index_read_safely`.
 pub(crate) fn read_safely(ix: IndexPtr) -> Result<c_int> {
-    // SAFETY: no foreign call.
+    // SAFETY: the module's rule: `dirty` calls no foreign code, and the
+    // borrow ends with the statement.
     let dirty = unsafe { ix.get() }.dirty();
     if super::git_index__enforce_unsaved_safety.load(core::sync::atomic::Ordering::Relaxed) && dirty
     {
@@ -699,8 +728,8 @@ fn truncate_racily_clean(ix: IndexPtr) -> Result<()> {
         | d::GIT_DIFF_DISABLE_PATHSPEC_MATCH;
     let mut paths: Vec<*mut c_char> = Vec::new();
     {
-        // SAFETY: no reference into the index is live (`IndexPtr`'s use),
-        // and this block calls no foreign code.
+        // SAFETY: the module's rule: this block calls no foreign code, and
+        // the borrow ends with it.
         let index = unsafe { ix.get_ref() };
         for ent in (0..index.entries.len()).filter_map(|i| index.entry_ref(i)) {
             let ent = ent.entry();
@@ -716,8 +745,9 @@ fn truncate_racily_clean(ix: IndexPtr) -> Result<()> {
     if paths.is_empty() {
         return Ok(());
     }
-    // SAFETY: no reference into the index is live; the paths are entries'
-    // paths, which the diff (it only reads the index) leaves live.
+    // SAFETY: the module's rule: no reference into the index is live
+    // across the call; the paths are entries' paths, which the diff (it
+    // only reads the index) leaves live and unwritten.
     let diff = unsafe {
         Diff::index_to_workdir(
             repo,
@@ -730,7 +760,8 @@ fn truncate_racily_clean(ix: IndexPtr) -> Result<()> {
         let Some(path) = diff.old_path(i) else {
             continue;
         };
-        // SAFETY: no foreign call in this block.
+        // SAFETY: the module's rule: this block calls no foreign code, and
+        // the borrow ends with it.
         let index = unsafe { ix.get() };
         // Ensure that we have a stage 0 for this file (ie, it's not a
         // conflict), otherwise smudging it is quite pointless.
@@ -765,7 +796,8 @@ pub(crate) fn write(ix: IndexPtr) -> Result<()> {
     if r.is_ok() {
         r = writer_commit(&mut writer);
         if r.is_ok() {
-            // SAFETY: no foreign call.
+            // SAFETY: the module's rule: `set_dirty` calls no foreign code, and the
+            // borrow ends with the statement.
             unsafe { ix.get() }.set_dirty(false);
         }
     }
@@ -777,7 +809,8 @@ pub(crate) fn write(ix: IndexPtr) -> Result<()> {
 pub(crate) fn writer_init(writer: &mut GitIndexWriter, ix: IndexPtr) -> Result<()> {
     ix.incref();
     writer.index = ix.as_ptr();
-    // SAFETY: no foreign call in this block.
+    // SAFETY: the module's rule: this block calls no foreign code, and
+    // the borrow ends with it.
     let index = unsafe { ix.get() };
     let filebuf_hash = match index.oid_kind() {
         OidType::Sha1 => GIT_FILEBUF_HASH_SHA1,
@@ -819,7 +852,8 @@ pub(crate) fn writer_init_for_operation(
 ) -> Result<()> {
     let index = foreign::repository_index(repo)?;
     // SAFETY: the repository's index, live while the repository is (and
-    // the writer takes a reference).
+    // the writer takes a reference); it is used under the module's rule
+    // (C's: one thread at a time).
     writer_init(writer, unsafe { IndexPtr::new(index) })?;
     writer.should_write.set_flag(
         super::SHOULD_WRITE,
@@ -837,10 +871,11 @@ pub(crate) fn writer_commit(writer: &mut GitIndexWriter) -> Result<()> {
     let Some(ixp) = NonNull::new(writer.index) else {
         return Err(errors::assert_arg_failed("writer->index"));
     };
-    // SAFETY: the writer holds a reference to its index.
+    // SAFETY: the writer holds a reference to its index (`GitIndexWriter`'s
+    // invariant), which keeps it live while the handle is used.
     let ix = unsafe { IndexPtr::new(ixp) };
-    // SAFETY: no foreign call in this block (the writer's filebuf and the
-    // index are distinct objects).
+    // SAFETY: the module's rule: the rest of the function calls no foreign
+    // code (the writer's filebuf and the index are distinct objects).
     let index = unsafe { ix.get() };
     index.sort();
     index.sort_reuc();
@@ -868,7 +903,8 @@ pub(crate) fn writer_commit(writer: &mut GitIndexWriter) -> Result<()> {
     let n = index.oid_kind().size();
     index.checksum[..n].copy_from_slice(&checksum[..n]);
     writer.index = ptr::null_mut();
-    // SAFETY: the writer's reference, given up.
+    // SAFETY: the writer's reference, given up: `writer.index` was cleared
+    // above, and `ix`, `index` are not used after.
     unsafe { ix.decref() };
     Ok(())
 }
@@ -878,9 +914,11 @@ pub(crate) fn writer_cleanup(writer: &mut GitIndexWriter) {
     writer.file.cleanup();
     if let Some(p) = NonNull::new(writer.index) {
         writer.index = ptr::null_mut();
-        // SAFETY: the writer holds a reference to a live index.
+        // SAFETY: the writer holds a reference to its index
+        // (`GitIndexWriter`'s invariant), live while the handle is used.
         let ix = unsafe { IndexPtr::new(p) };
-        // SAFETY: the writer's reference, given up.
+        // SAFETY: the writer's reference, given up (`writer.index` was
+        // cleared above).
         unsafe { ix.decref() };
     }
 }
@@ -891,7 +929,8 @@ pub(crate) fn writer_cleanup(writer: &mut GitIndexWriter) {
 
 /// `git_index_set_caps`.
 pub(crate) fn set_caps(ix: IndexPtr, caps: c_int) -> Result<()> {
-    // SAFETY: no foreign call.
+    // SAFETY: the module's rule: `ignore_case` calls no foreign code, and the
+    // borrow ends with the statement.
     let old_ignore_case = unsafe { ix.get() }.ignore_case();
     if caps == GIT_INDEX_CAPABILITY_FROM_OWNER {
         let Some(repo) = owner(ix) else {
@@ -900,7 +939,8 @@ pub(crate) fn set_caps(ix: IndexPtr, caps: c_int) -> Result<()> {
         let icase = foreign::configmap_lookup(repo, foreign::CONFIGMAP_IGNORECASE);
         let filemode = foreign::configmap_lookup(repo, foreign::CONFIGMAP_FILEMODE);
         let symlinks = foreign::configmap_lookup(repo, foreign::CONFIGMAP_SYMLINKS);
-        // SAFETY: no foreign call.
+        // SAFETY: the module's rule: this block calls no foreign code, and
+        // the borrow ends with it.
         let index = unsafe { ix.get() };
         if let Ok(v) = icase {
             index.set_ignore_case_bit(v != 0);
@@ -912,13 +952,15 @@ pub(crate) fn set_caps(ix: IndexPtr, caps: c_int) -> Result<()> {
             index.set_no_symlinks(v == 0);
         }
     } else {
-        // SAFETY: no foreign call.
+        // SAFETY: the module's rule: this block calls no foreign code, and
+        // the borrow ends with it.
         let index = unsafe { ix.get() };
         index.set_ignore_case_bit(caps & GIT_INDEX_CAPABILITY_IGNORE_CASE != 0);
         index.set_distrust_filemode(caps & GIT_INDEX_CAPABILITY_NO_FILEMODE != 0);
         index.set_no_symlinks(caps & GIT_INDEX_CAPABILITY_NO_SYMLINKS != 0);
     }
-    // SAFETY: no foreign call.
+    // SAFETY: the module's rule: this block calls no foreign code, and
+    // the borrow ends with it.
     let index = unsafe { ix.get() };
     if old_ignore_case != index.ignore_case() {
         let icase = index.ignore_case();
@@ -930,7 +972,8 @@ pub(crate) fn set_caps(ix: IndexPtr, caps: c_int) -> Result<()> {
 /// `git_index_read_tree`.
 pub(crate) fn read_tree(ix: IndexPtr, tree: foreign::TreeRef<'_>) -> Result<()> {
     let icase = {
-        // SAFETY: no foreign call in this block.
+        // SAFETY: the module's rule: this block calls no foreign code, and
+        // the borrow ends with it.
         let index = unsafe { ix.get() };
         index.tree = ptr::null_mut();
         index.tree_pool.clear();
@@ -960,8 +1003,9 @@ pub(crate) fn read_tree(ix: IndexPtr, tree: foreign::TreeRef<'_>) -> Result<()> 
         });
         {
             // look for corresponding old entry and copy data to new entry
-            // SAFETY: no foreign call in this block (the walk is paused
-            // in this callback, holding no reference).
+            // SAFETY: the module's rule: this block calls no foreign code
+            // (the walk is paused in this callback, holding no reference
+            // into the index), and the borrow ends with it.
             let index = unsafe { ix.get_ref() };
             // SAFETY: the index's entries are live (its invariant), and
             // unwritten while it is borrowed.
@@ -989,7 +1033,9 @@ pub(crate) fn read_tree(ix: IndexPtr, tree: foreign::TreeRef<'_>) -> Result<()> 
     });
     let free_entries = |v: &mut GitVector| {
         for e in v.iter() {
-            // SAFETY: ours (C leaked them on these failures).
+            // SAFETY: the walk's entries (`entry_create`'s, handed to `v`),
+            // in no index or map that outlives this: freed once (`v` is
+            // cleared just after; C leaked them on these failures).
             unsafe { entry_free(as_entry(e)) };
         }
         v.clear();
@@ -1006,7 +1052,9 @@ pub(crate) fn read_tree(ix: IndexPtr, tree: foreign::TreeRef<'_>) -> Result<()> 
     }
     let mut put_err = None;
     for e in entries.iter() {
-        // SAFETY: our entries, which the map holds no longer than them.
+        // SAFETY: the walk's entries: live while the map holds them (it is
+        // swapped into the index with them, or disposed of before they are
+        // freed).
         if let Err(err) = unsafe { map.put(as_entry(e)) } {
             put_err = Some(err);
             break;
@@ -1021,7 +1069,8 @@ pub(crate) fn read_tree(ix: IndexPtr, tree: foreign::TreeRef<'_>) -> Result<()> 
     // freed below, unwritten meanwhile.
     unsafe { sort_entries(&mut entries, icase) };
     let mut pool = {
-        // SAFETY: no foreign call in this block.
+        // SAFETY: the module's rule: this block calls no foreign code, and
+        // the borrow ends with it.
         let index = unsafe { ix.get() };
         if let Err(e) = index.clear() {
             free_entries(&mut entries);
@@ -1037,12 +1086,14 @@ pub(crate) fn read_tree(ix: IndexPtr, tree: foreign::TreeRef<'_>) -> Result<()> 
     };
     entries.dispose();
     map.dispose();
-    // SAFETY: the caller's tree is live (`TreeRef`).
+    // SAFETY: the caller's tree is live for `TreeRef`'s lifetime, which
+    // outlives this call and so `src` and `root`.
     let (src, root) = unsafe { foreign::CTrees::borrow(tree.as_ptr()) };
-    // SAFETY: no foreign call.
+    // SAFETY: the module's rule: the borrow ends with the field's read.
     let oid_type = unsafe { ix.get() }.oid_type;
     let r = tree_cache::read_tree(&src, &root, oid_type, &mut pool);
-    // SAFETY: no foreign call.
+    // SAFETY: the module's rule: this block calls no foreign code, and
+    // the borrow ends with it.
     let index = unsafe { ix.get() };
     index.tree_pool = pool;
     if let Ok(t) = r {
@@ -1060,33 +1111,39 @@ pub(crate) fn read_index(ix: IndexPtr, new_ix: IndexPtr) -> Result<()> {
     // (so that removals are deferred), and a sort.
     let snap = |p: IndexPtr| -> Result<Vec<EntryPtr>> {
         p.incref();
-        // SAFETY: no foreign call in this block.
+        // SAFETY: the module's rule: this block calls no foreign code, and
+        // the borrow ends with it.
         let index = unsafe { p.get() };
         index.readers.inc();
         index.sort();
         let mut v = Vec::new();
         if v.try_reserve_exact(index.entries.len()).is_err() {
             index.readers.dec();
-            // SAFETY: the reference just taken.
+            // SAFETY: the reference taken just above, given up.
             unsafe { p.decref() };
             return Err(errors::oom());
         }
         v.extend(index.entries.iter().map(as_entry));
-        // SAFETY: live entries of the index.
         // (timsort in place, as the C iterator's `git_vector_sort`)
+        // SAFETY: live entries of the index (its invariant), unwritten while
+        // `index` is borrowed.
         crate::util::tsort::tsort(&mut v, |a, b| unsafe { entry_cmp(a, b, false) });
         Ok(v)
     };
     let release = |p: IndexPtr| {
-        // SAFETY: no foreign call.
+        // SAFETY: the module's rule: `readers` calls no foreign code, and the
+        // borrow ends with the statement.
         unsafe { p.get() }.readers.dec();
-        // SAFETY: the reference `snap` took.
+        // SAFETY: the reference `snap` took, given up (each `release`
+        // matches one `snap`).
         unsafe { p.decref() };
     };
     let (hint, old_len, icase) = {
-        // SAFETY: no foreign call in this block.
+        // SAFETY: the module's rule: `entries` calls no foreign code, and the
+        // borrow ends with the statement.
         let n = unsafe { new_ix.get() }.entries.len();
-        // SAFETY: as above.
+        // SAFETY: as above (the borrow of `new_ix`, which may be the same
+        // index, ended with the statement before).
         let i = unsafe { ix.get() };
         (n, i.entries.len(), i.ignore_case())
     };
@@ -1115,7 +1172,8 @@ pub(crate) fn read_index(ix: IndexPtr, new_ix: IndexPtr) -> Result<()> {
         let old_entry = old_snap.get(oi).copied();
         let new_entry = new_snap.get(ni).copied();
         let diff = match (old_entry, new_entry) {
-            // SAFETY: live entries (both indexes have a reader).
+            // SAFETY: entries of the snapshots, live (both indexes have a
+            // reader: their removals are deferred) and unwritten here.
             (Some(o), Some(n)) => unsafe { entry_cmp(o, n, false) },
             (None, Some(_)) => 1,
             (Some(_), None) => -1,
@@ -1133,7 +1191,7 @@ pub(crate) fn read_index(ix: IndexPtr, new_ix: IndexPtr) -> Result<()> {
                 old_entry.unwrap_or(NonNull::dangling()),
                 new_entry.unwrap_or(NonNull::dangling()),
             );
-            // SAFETY: live entries.
+            // SAFETY: as above: live snapshot entries, copied.
             let oe = unsafe { (*o.as_ptr()).entry };
             // SAFETY: as above.
             let ne = unsafe { (*n.as_ptr()).entry };
@@ -1147,9 +1205,10 @@ pub(crate) fn read_index(ix: IndexPtr, new_ix: IndexPtr) -> Result<()> {
             }
         }
         if let Some(dup) = dup_entry {
-            // SAFETY: a live entry of the new index (it has a reader).
+            // SAFETY: a live entry of the new index's snapshot (it has a
+            // reader), copied before any call.
             let src = unsafe { (*dup.as_ptr()).entry };
-            // SAFETY: as above.
+            // SAFETY: as above: its path, copied.
             let path = unsafe { epath(dup) }.to_vec();
             match entry_create(repo, &path, None, false) {
                 Ok(mut e) => {
@@ -1174,9 +1233,11 @@ pub(crate) fn read_index(ix: IndexPtr, new_ix: IndexPtr) -> Result<()> {
             // invalidate this path in the tree cache if this is new (to
             // invalidate the parent trees)
             if remove_entry.is_none() {
-                // SAFETY: no foreign call; the tree invariant.
+                // SAFETY: the module's rule: the next statement calls no
+                // foreign code.
                 let index = unsafe { ix.get() };
-                // SAFETY: as above.
+                // SAFETY: `tree` is NULL or a tree cache in the index's pool
+                // (the invariant), which `index` borrows exclusively.
                 unsafe { tree_cache::invalidate_path(index.tree, &path) };
             }
         }
@@ -1184,7 +1245,9 @@ pub(crate) fn read_index(ix: IndexPtr, new_ix: IndexPtr) -> Result<()> {
         if let Some(a) = add_entry {
             error = new_entries.insert(a.as_ptr().cast());
             if error.is_ok() {
-                // SAFETY: the entry stays live while the map is used.
+                // SAFETY: `a` is a live entry (the old index's, or one made
+                // here), which stays live while the map is used (it is
+                // swapped into the index with it, or disposed of first).
                 error = unsafe { new_map.put(a) };
             }
         }
@@ -1213,14 +1276,16 @@ pub(crate) fn read_index(ix: IndexPtr, new_ix: IndexPtr) -> Result<()> {
     if let Err(e) = result {
         release(ix);
         for e in created {
-            // SAFETY: the entries made here, which the index never got.
+            // SAFETY: the entries made here, which no index holds (the new
+            // vector and map are disposed of): freed once.
             unsafe { entry_free(e) };
         }
         new_map.dispose();
         return Err(e);
     }
     {
-        // SAFETY: no foreign call in this block.
+        // SAFETY: the module's rule: this block calls no foreign code, and
+        // the borrow ends with it.
         let index = unsafe { ix.get() };
         index.name_clear();
         index.reuc_clear();
@@ -1228,7 +1293,9 @@ pub(crate) fn read_index(ix: IndexPtr, new_ix: IndexPtr) -> Result<()> {
         index.entries_map.swap(&mut new_map);
         index.readers.dec();
         for &e in &remove_entries {
-            // SAFETY: a removed entry, still live.
+            // SAFETY: a removed entry of the index, still live (freed below);
+            // `tree` is NULL or a tree cache in its pool, which `index`
+            // borrows exclusively.
             unsafe { super::invalidate_entry(index.tree, e) };
             if index.readers.get() > 0 {
                 // another snapshot may read it (C freed it: see DEFECTS.md)
@@ -1236,14 +1303,16 @@ pub(crate) fn read_index(ix: IndexPtr, new_ix: IndexPtr) -> Result<()> {
                     index.deleted.push(e);
                 }
             } else {
-                // SAFETY: the index's entry, in no vector or map now.
+                // SAFETY: the index's entry, in no vector or map now, and
+                // with no reader left to see it: freed once.
                 unsafe { entry_free(e) };
             }
         }
         index.clear_uptodate();
         index.set_dirty(true);
     }
-    // SAFETY: the reference `snap` took.
+    // SAFETY: the reference `snap(ix)` took, given up (its reader was
+    // dropped above).
     unsafe { ix.decref() };
     new_map.dispose();
     new_entries.dispose();
@@ -1340,7 +1409,8 @@ fn apply_to_wd_diff(
             opts |= d::GIT_DIFF_INCLUDE_IGNORED | d::GIT_DIFF_RECURSE_IGNORED_DIRS;
         }
     }
-    // SAFETY: no reference into the index is live.
+    // SAFETY: the module's rule: no reference into the index is live across
+    // the call.
     let diff = match unsafe { Diff::index_to_workdir(repo, ix.as_ptr(), opts, None) } {
         Ok(d) => d,
         Err(e) => return e.raw(),
@@ -1348,7 +1418,8 @@ fn apply_to_wd_diff(
     let mut each = |delta: &foreign::DeltaView<'_>| -> c_int {
         // `apply_each_file`
         let path = delta.old_path;
-        // SAFETY: no foreign call.
+        // SAFETY: the module's rule: `ignore_case` calls no foreign code, and the
+        // borrow ends with the statement.
         let casefold = unsafe { ix.get() }.ignore_case();
         // We only want those which match the pathspecs
         let Some(matched) = ps.matches(path, casefold) else {
@@ -1366,7 +1437,8 @@ fn apply_to_wd_diff(
         }
         // If the workdir item does not exist, remove it from the index.
         if delta.new_flags & d::GIT_DIFF_FLAG_EXISTS == 0 {
-            // SAFETY: no foreign call in `remove_bypath`.
+            // SAFETY: the module's rule: `remove_bypath` calls no foreign code,
+            // and the borrow ends with the call.
             code(remove_bypath(unsafe { ix.get() }, path.to_bytes()))
         } else {
             code(add_bypath(ix, delta.new_path))
@@ -1392,7 +1464,8 @@ fn apply_to_all(
         Ok(p) => p,
         Err(e) => return e.raw(),
     };
-    // SAFETY: no foreign call.
+    // SAFETY: the module's rule: `sort` calls no foreign code, and the
+    // borrow ends with the statement.
     unsafe { ix.get() }.sort();
     let mut error = 0;
     let mut i = 0usize;
@@ -1401,10 +1474,9 @@ fn apply_to_all(
             break;
         }
         let (entry, casefold) = {
-            // SAFETY: no reference into the index is live (`IndexPtr`'s
-            // use); the borrow (and the entry's) is used up to the path's
-            // copy below, across no call that can reach the index (the
-            // pathspec match is C that sees only the path).
+            // SAFETY: the module's rule; the borrow (and the entry's) is used
+            // up to the path's copy below, across no call that can reach the
+            // index (the pathspec match is C that sees only the path).
             let index = unsafe { ix.get_ref() };
             match index.entry_ref(i) {
                 Some(e) => (e, index.ignore_case()),
@@ -1447,7 +1519,8 @@ fn apply_to_all(
                 error = code(r);
                 if not_found(&r) {
                     errors::clear();
-                    // SAFETY: no foreign call in `remove_bypath`.
+                    // SAFETY: the module's rule: `remove_bypath` calls no foreign code,
+                    // and the borrow ends with the call.
                     let r = remove_bypath(unsafe { ix.get() }, path.as_bytes());
                     error = code(r);
                     if error == 0 {
@@ -1457,7 +1530,8 @@ fn apply_to_all(
                 }
             }
             INDEX_ACTION_REMOVE => {
-                // SAFETY: no foreign call in `remove_bypath`.
+                // SAFETY: the module's rule: `remove_bypath` calls no foreign code,
+                // and the borrow ends with the call.
                 error = code(remove_bypath(unsafe { ix.get() }, path.as_bytes()));
                 if error == 0 {
                     // back up foreach if we removed this
@@ -1502,9 +1576,9 @@ pub(crate) fn update_all(ix: IndexPtr, paths: Paths<'_>, cb: Option<MatchedPathC
 pub(crate) fn snapshot_new(ix: IndexPtr) -> Result<GitVector> {
     ix.incref();
     ix.with_readers(crate::util::thread::Atomic32::inc);
-    // SAFETY: no foreign call; shared access (C's iterators take snapshots
-    // of one index from several threads: `threads::diff`), exclusive only
-    // for a sort the vector needs.
+    // SAFETY: the module's rule, shared (C's iterators take snapshots of
+    // one index from several threads: `threads::diff`), exclusive only for
+    // a sort the vector needs: the rest calls no foreign code.
     let index = unsafe { ix.sorted() };
     let cmp = index.entries.cmp_fn();
     match index.entries.dup(cmp) {
