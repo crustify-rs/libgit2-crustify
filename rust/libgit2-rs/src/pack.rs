@@ -1891,7 +1891,9 @@ pub unsafe fn packfile_free(p: *mut GitPackFile, unlink_packfile: bool) {
     if p.is_null() {
         return;
     }
-    // SAFETY: the caller's contract: ours alone.
+    // SAFETY: a non-NULL `p` is the `Box::into_raw` of `packfile_alloc`,
+    // which nothing else uses any more and is freed once (this fn's
+    // contract).
     let pack = unsafe { Box::from_raw(p) };
     {
         let _g = pack.plock();
@@ -2547,7 +2549,8 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             let p = git_arg!(p, "p", -1);
-            // SAFETY: the caller's contract is `open_in`'s.
+            // SAFETY: `obj` is writable and stays put until disposed, `p`
+            // outlives it (this export's contract, `open_in`'s).
             status(unsafe { GitPackfileStream::open_in(obj, p, curpos) }.map(|_| ()))
         })
     }
@@ -2634,8 +2637,8 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             let p = git_arg!(p, "p", -1);
-            // SAFETY: a live pack (the caller); the callback contract is the
-            // caller's, and each id outlives its call.
+            // SAFETY: `cb` may be called with `data` and an id (this
+            // export's contract); each id is readable for its call.
             p.foreach_entry(|id| unsafe { cb(id, data) })
         })
     }
@@ -2658,7 +2661,8 @@ pub mod ffi {
         barrier(|| {
             let p = git_arg!(p, "p", -1);
             let r = p.foreach_entry_offset(|id, off| {
-                // SAFETY: the callback contract is the caller's.
+                // SAFETY: `cb` may be called with `data` (this export's
+                // contract), an id readable for the call, and an offset.
                 unsafe { cb(id, off, data) }
             });
             match r {

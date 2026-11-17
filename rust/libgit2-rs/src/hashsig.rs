@@ -424,8 +424,9 @@ pub mod ffi {
     use super::Signature;
     use crate::git_assert_arg;
     use crate::util::alloc;
+    use crate::util::cabi::{CStrArg, Out};
     use crate::util::errors::{self, Result};
-    use crate::util::export::{barrier, bytes, cstr};
+    use crate::util::export::{barrier, bytes};
 
     /// `git_hashsig`, as C sees it: opaque.
     pub type GitHashsig = Signature;
@@ -433,19 +434,21 @@ pub mod ffi {
     /// Allocate the signature in storage of `git__allocator` first (C's
     /// `git__calloc`, so that a failing allocator fails first, as in C),
     /// then compute it with `make` and hand it out through `out`.
-    fn create(out: *mut *mut GitHashsig, make: impl FnOnce() -> Result<Signature>) -> c_int {
+    fn create(
+        mut out: Out<'_, *mut GitHashsig>,
+        make: impl FnOnce() -> Result<Signature>,
+    ) -> c_int {
         let p = alloc::malloc(size_of::<Signature>()).cast::<Signature>();
         if p.is_null() {
             return errors::oom().raw();
         }
         match make() {
             Ok(sig) => {
-                // SAFETY: `p` is a fresh allocation of the size of
-                // `Signature`, aligned to 8 (git__allocator's alignment,
-                // enough for it).
+                // SAFETY: `p` is a fresh, non-NULL allocation of the size
+                // of `Signature`, aligned to 8 (git__allocator's alignment,
+                // enough for it: asserted above), that nothing else sees.
                 unsafe { p.write(sig) };
-                // SAFETY: `out` is writable (the caller's contract).
-                unsafe { out.write(p) };
+                out.write(p);
                 0
             }
             Err(e) => {
@@ -460,11 +463,11 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` is writable; `buf` is readable for `buflen` bytes (or `buflen`
-    /// is 0).
+    /// `out` is NULL or writable; `buf` is NULL or readable for `buflen`
+    /// bytes, which nothing writes during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_hashsig_create(
-        out: *mut *mut GitHashsig,
+        out: Out<'_, *mut GitHashsig>,
         buf: *const c_char,
         buflen: usize,
         opts: c_int,
@@ -473,8 +476,9 @@ pub mod ffi {
             // C checks neither `out` nor `buf`; checking `out` avoids a
             // NULL write (it would crash in C).
             git_assert_arg!(!out.is_null(), "out", -1);
-            // SAFETY: the caller's contract; nothing writes `buf` during the
-            // call.
+            // SAFETY: `buf` is NULL (an empty slice) or readable for
+            // `buflen` bytes that nothing writes during the call (this
+            // export's contract).
             let data = unsafe { bytes(buf, buflen) };
             create(out, || Signature::from_buf(data, opts as u32))
         })
@@ -484,17 +488,17 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` is writable; `path` is a NUL-terminated string.
+    /// `out` is NULL or writable; `path` is NULL or a NUL-terminated
+    /// string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_hashsig_create_fromfile(
-        out: *mut *mut GitHashsig,
-        path: *const c_char,
+        out: Out<'_, *mut GitHashsig>,
+        path: CStrArg<'_>,
         opts: c_int,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!out.is_null(), "out", -1);
-            // SAFETY: the caller passes a NUL-terminated string.
-            let Some(path) = (unsafe { cstr(path) }) else {
+            let Some(path) = path.get() else {
                 let _ = errors::assert_arg_failed("path");
                 return -1;
             };
