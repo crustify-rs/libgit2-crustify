@@ -52,6 +52,12 @@ unsafe extern "C" {
     -> c_int;
     fn git_odb_backend_data_alloc(backend: *mut GitOdbBackend, len: usize) -> *mut c_void;
     fn git_odb_exists(db: *mut GitOdb, id: *const Oid) -> c_int;
+    fn git_odb_exists_prefix(
+        out: *mut Oid,
+        db: *mut GitOdb,
+        short_id: *const Oid,
+        len: usize,
+    ) -> c_int;
     fn git_odb_free(db: *mut GitOdb);
     fn git_odb_get_backend(out: *mut *mut GitOdbBackend, db: *mut GitOdb, pos: usize) -> c_int;
     fn git_odb_init_backend(backend: *mut GitOdbBackend, version: c_uint) -> c_int;
@@ -411,6 +417,40 @@ fn mempack_c_abi_from_threads() {
     assert_eq!(last_message(), "invalid argument: '_backend'");
     // SAFETY: live objects of this test, as the C contract requires.
     unsafe { git_odb_free(db) };
+}
+
+/// `git_odb_exists_prefix(&id, db, &id, len)`: expanding an id in place,
+/// as C allows (it copies the prefix first and writes `out` last). Under
+/// Miri this checks that `short_id` is not a reference argument, which the
+/// write to `out` would invalidate while it is protected.
+#[test]
+fn exists_prefix_in_place() {
+    let _g = test_support::init();
+    let mut db: *mut GitOdb = ptr::null_mut();
+    let mut mp: *mut GitOdbBackend = ptr::null_mut();
+    let mut id = Oid::NONE;
+    // SAFETY: live objects of this test, as the C contract requires; `out`
+    // and `short_id` are the same local id, which the contract allows.
+    unsafe {
+        assert_eq!(git_odb_new(&raw mut db), 0);
+        assert_eq!(git_mempack_new(&raw mut mp), 0);
+        assert_eq!(git_odb_add_backend(db, mp, 1), 0);
+        assert_eq!(
+            git_odb_write(&raw mut id, db, b"in place\n".as_ptr().cast(), 9, 3),
+            0
+        );
+        // The full length: `git_odb_exists`, then `out` is set from
+        // `short_id`.
+        let mut x = id;
+        assert_eq!(git_odb_exists_prefix(&raw mut x, db, &raw const x, 40), 0);
+        assert_eq!(x, id);
+        // A prefix: the backends' lookup (the mempack has none: not
+        // found, `out` untouched).
+        let mut x = id.prefix(8);
+        assert_eq!(git_odb_exists_prefix(&raw mut x, db, &raw const x, 8), -3);
+        assert_eq!(x, id.prefix(8));
+        git_odb_free(db);
+    }
 }
 
 /// A fresh `git_odb_object` (no data), as odb.c makes one for the cache.

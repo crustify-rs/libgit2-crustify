@@ -192,6 +192,13 @@ fn alloc_find_unpack_free() {
         let e = e.assume_init();
         assert_eq!((e.id, e.p), (id, p));
         assert!((*p).mwf.fd() >= 0, "the pack file is open after a find");
+        // In place: `short_oid` inside the entry the call writes (C writes
+        // `e` last, so this works there; `short_oid` must not be a
+        // reference argument).
+        let mut e2 = e;
+        e2.id = id.prefix(10);
+        assert_eq!(git_pack_entry_find(&raw mut e2, p, &raw const e2.id, 10), 0);
+        assert_eq!((e2.id, e2.offset), (id, e.offset));
 
         let mut size = 0usize;
         let mut kind = 0;

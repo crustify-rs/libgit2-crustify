@@ -2592,18 +2592,25 @@ pub mod ffi {
     /// # Safety
     ///
     /// `e` is NULL or writable; `p` is NULL or a live pack; `short_oid`
-    /// NULL or a readable id.
+    /// NULL or a readable id, which may lie in `*e` (C writes `e` last).
     ///
-    /// (`p` stays a raw pointer: the entry hands it back to C.)
+    /// (`p` stays a raw pointer: the entry hands it back to C. `short_oid`
+    /// too, read once before `e` is written: as a reference it would be
+    /// protected for the call, and the write to `e` would then be
+    /// undefined behaviour when it covers the id.)
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_pack_entry_find(
         mut e: Out<'_, GitPackEntry>,
         p: *mut GitPackFile,
-        short_oid: Option<&Oid>,
+        short_oid: *const Oid,
         len: usize,
     ) -> c_int {
         barrier(|| {
-            let short_oid = git_arg!(short_oid, "short_oid", -1);
+            git_assert_arg!(!short_oid.is_null(), "short_oid", -1);
+            // SAFETY: `short_oid` is non-null, so a readable, aligned id
+            // (this export's contract), copied before `e` is written; no
+            // reference to it is kept.
+            let short_oid = &unsafe { short_oid.read() };
             git_assert_arg!(!p.is_null(), "p", -1);
             // SAFETY: a live pack (this export's contract; not NULL, checked
             // above), only read through `&` (`GitPackFile` is `Sync` with

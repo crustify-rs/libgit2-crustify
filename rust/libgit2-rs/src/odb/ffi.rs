@@ -503,18 +503,25 @@ pub unsafe extern "C" fn git_odb_exists_ext(
 ///
 /// # Safety
 ///
-/// `out` is NULL or writable; otherwise as [`git_odb__freshen`].
+/// `out` is NULL or writable; `db` NULL or a live odb; `short_id` NULL or
+/// a readable id, which may be `out` (C expands an id in place: it copies
+/// the prefix first and writes `out` last, so `short_id` stays a raw
+/// pointer, read once before `out` is written).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_odb_exists_prefix(
     mut out: Out<'_, Oid>,
     db: Option<&GitOdb>,
-    short_id: Option<&Oid>,
+    short_id: *const Oid,
     len: usize,
 ) -> c_int {
     barrier(|| {
         let db = git_arg!(db, "db", -1);
-        let short_id = git_arg!(short_id, "short_id", -1);
-        match db.exists_prefix(short_id, len) {
+        git_assert_arg!(!short_id.is_null(), "short_id", -1);
+        // SAFETY: `short_id` is non-null, so a readable, aligned id (this
+        // export's contract), copied here before `out` (which may be the
+        // same id) is written; no reference to it is kept.
+        let short_id = unsafe { short_id.read() };
+        match db.exists_prefix(&short_id, len) {
             Ok(id) => {
                 out.write(id);
                 0
