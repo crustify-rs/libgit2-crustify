@@ -430,8 +430,17 @@ pub unsafe fn tree_write_index(index: IndexPtr, repo: Repo) -> Result<Oid> {
 // ---------------------------------------------------------------------------
 
 /// The strings of a `git_strarray` argument, valid for `'a` (or none).
+///
+/// It has the ABI of `const git_strarray *` (as [`CStrArg`] has that of a
+/// string), so an export takes it as its parameter; its `# Safety` then
+/// states [`from_raw`](Self::from_raw)'s requirement as the C's contract.
+///
+/// Invariant (established by both constructors): the pointer is NULL or a
+/// valid `git_strarray` whose strings are NULL or NUL-terminated, all
+/// readable and unwritten for `'a`.
 #[derive(Clone, Copy)]
-pub struct Paths<'a>(*const GitStrArray, PhantomData<&'a ()>);
+#[repr(transparent)]
+pub struct Paths<'a>(*const GitStrArray, PhantomData<&'a GitStrArray>);
 
 impl<'a> Paths<'a> {
     /// The array at `raw` (NULL for none).
