@@ -231,7 +231,8 @@ fn alloc_and_free() {
     // SAFETY: no borrow of the namespace is live.
     unsafe { r.replace_string(StrField::Namespace, Some(alloc_cstr(b"ns").unwrap())) };
     assert_eq!(r.namespace(), Some(c"ns"));
-    r.set_ident(Some(c"n"), None).unwrap();
+    // SAFETY: no identity string is borrowed.
+    unsafe { r.set_ident(Some(c"n"), None) }.unwrap();
     assert_eq!(r.ident_name(), Some(c"n"));
     assert_eq!(r.ident_email(), None);
     // SAFETY: ours alone.

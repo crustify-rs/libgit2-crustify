@@ -34,6 +34,19 @@ fn rp(repo: &GitRepository) -> *mut GitRepository {
     ptr::from_ref(repo).cast_mut()
 }
 
+/// The refs modules' handle on `repo`.
+///
+/// # Safety
+///
+/// The handle (and its copies) is not used after the borrow of `repo`
+/// ends, and neither is anything obtained through it (references, the
+/// refdb, iterators), which point back to `repo`.
+unsafe fn refs_repo(repo: &GitRepository) -> crate::refs::deps::RepoPtr {
+    // SAFETY: `repo` is live while borrowed, which (the caller's
+    // guarantee) covers every use of the handle and of what it yields.
+    unsafe { crate::refs::deps::RepoPtr::new(NonNull::from(repo)) }
+}
+
 /// `git_reference_lookup`.
 pub(crate) fn lookup<'r>(repo: &'r GitRepository, name: &CStr) -> Result<Reference<'r>> {
     let mut out = ptr::null_mut();
@@ -90,21 +103,11 @@ fn reference_symbolic_create(
     force: bool,
     log: Option<&CStr>,
 ) -> Result<()> {
-    let mut out = ptr::null_mut();
-    // SAFETY: as `reference_create`.
-    check(unsafe {
-        crate::refs::ffi::git_reference_symbolic_create(
-            &raw mut out,
-            rp(repo),
-            name.as_ptr(),
-            target.as_ptr(),
-            c_int::from(force),
-            CStrArg::from(log),
-        )
-    })?;
-    // SAFETY: the new reference, ours to free.
-    drop(unsafe { Reference::from_raw(out) });
-    Ok(())
+    // SAFETY: the handle is used for this call only, and the reference it
+    // makes is dropped before returning.
+    let repo = unsafe { refs_repo(repo) };
+    let (n, t) = (name.to_bytes(), target.to_bytes());
+    crate::refs::symbolic_create_matching(repo, n, t, force, None, log).map(drop)
 }
 
 /// `git_object_lookup`.
@@ -276,8 +279,11 @@ pub(crate) fn foreach_worktree(
 /// `repo_contains_no_reference`: 1, 0, or an error code.
 fn repo_contains_no_reference(repo: &GitRepository) -> c_int {
     let mut it = ptr::null_mut();
-    // SAFETY: a live repository and a local out.
-    let e = unsafe { crate::refs::ffi::git_reference_iterator_new(&raw mut it, rp(repo)) };
+    // SAFETY: a live repository (borrowed for the call), no glob, and a
+    // local out.
+    let e = unsafe {
+        crate::refs::ffi::git_reference_iterator_glob_new(&raw mut it, rp(repo), CStrArg::NULL)
+    };
     if e < 0 {
         return e;
     }
@@ -438,9 +444,9 @@ pub(crate) unsafe fn set_head_detached_from_annotated(
     repo: &GitRepository,
     commit: NonNull<c_void>,
 ) -> Result<()> {
-    // SAFETY: the caller's contract.
+    // SAFETY: a live annotated commit for the call (the contract).
     let id = unsafe { crate::sys::annotated_commit::id(commit) };
-    // SAFETY: the caller's contract.
+    // SAFETY: as above.
     let desc = unsafe { crate::sys::annotated_commit::description(commit) };
     detach(repo, Some(id), desc)
 }
@@ -574,10 +580,12 @@ const STATE_FILES: [&[u8]; 7] = [
 /// `git_repository_state_cleanup`.
 pub(crate) fn state_cleanup(repo: &GitRepository) -> Result<()> {
     ErrorCode::check(cleanup_files(repo, &STATE_FILES))?;
+    // SAFETY: the handle and its refdb are used in this loop only.
+    let rr = unsafe { refs_repo(repo) };
     for r in [GIT_REVERT_HEAD_REF, GIT_CHERRYPICK_HEAD_REF] {
-        // SAFETY: a live repository and a NUL-terminated name.
-        match check(unsafe { crate::refs::ffi::git_reference_remove(rp(repo), r.into()) }) {
-            Ok(_) | Err(ErrorCode::NOT_FOUND) => {}
+        // `git_reference_remove`.
+        match crate::refdb::RefdbPtr::of_repo(rr).and_then(|db| db.delete(r, None, None)) {
+            Ok(()) | Err(ErrorCode::NOT_FOUND) => {}
             Err(e) => return Err(e),
         }
     }
@@ -823,7 +831,8 @@ pub(crate) unsafe fn set_objectformat(
         return Err(ErrorCode::GENERIC);
     }
     if repo.oid_type_raw() != oid_type {
-        // SAFETY: the caller's contract.
+        // SAFETY: no weak pointer to the old index, odb or refdb is used
+        // after the call (the contract), as the setters require.
         unsafe { repo.set_index(None) };
         // SAFETY: as above.
         unsafe { repo.set_odb(None) };
@@ -869,8 +878,7 @@ pub(crate) fn commit_parents(
     if parents.try_reserve(1).is_err() {
         return Err(errors::oom());
     }
-    // SAFETY: an object's pointer is not NULL.
-    parents.push(unsafe { NonNull::new_unchecked(first.into_raw().cast()) });
+    parents.push(NonNull::new(first.into_raw().cast()).expect("an object is not NULL"));
 
     struct Data<'a> {
         repo: &'a GitRepository,

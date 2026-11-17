@@ -40,8 +40,8 @@ use crate::refdb::{
     GIT_REFDB_BACKEND_VERSION, RefIteratorTable, RefdbBackendTable, RefdbPtr, git_refdb_backend,
     git_reference_iterator,
 };
-use crate::reflog::{self, GitReflog};
-use crate::refs::deps::{self as p, RepoPtr, configmap, git_repository, git_signature};
+use crate::reflog::{self, GitReflog, ReflogRef};
+use crate::refs::deps::{self as p, RepoPtr, SigRef, configmap, git_signature};
 use crate::refs::{
     self, GIT_HEAD_REF, GIT_PACKEDREFS_FILE, GIT_PACKEDREFS_FILE_MODE, GIT_PACKEDREFS_HEADER,
     GIT_REFERENCE_DIRECT, GIT_REFERENCE_SYMBOLIC, GIT_REFS_DIR, GIT_REFS_FILE_MODE,
@@ -51,6 +51,7 @@ use crate::sys::iterator::{
     FsIterator, GIT_ITERATOR_DESCEND_SYMLINKS, GIT_ITERATOR_IGNORE_CASE,
     GIT_ITERATOR_PRECOMPOSE_UNICODE,
 };
+use crate::util::cabi::CStrArg;
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use crate::util::filebuf::{GIT_FILEBUF_CREATE_LEADING_DIRS, GIT_FILEBUF_FSYNC, GitFilebuf};
 use crate::util::fs_path::{
@@ -460,10 +461,13 @@ pub fn namespace_path(namespace: &[u8]) -> Vec<u8> {
 /// trait last seen applies, as in C).
 struct Mapping(GitMap, Option<bool>);
 
-// SAFETY: a private read-only mapping that this process never writes;
-// unmapped once, in `drop`, when no reference into it remains.
+// SAFETY: the fields are a `GitMap` (the address and length of a private,
+// read-only mapping that this process never writes, unmapped once, in
+// `drop`, when no reference into it remains; mappings are process-wide, so
+// any thread may read or unmap it) and a `bool`.
 unsafe impl Send for Mapping {}
-// SAFETY: as above.
+// SAFETY: `&Mapping` only reads the mapping (`bytes`), which nothing
+// writes (see `bytes`).
 unsafe impl Sync for Mapping {}
 
 impl Mapping {
@@ -544,7 +548,8 @@ impl LockFile {
     ///
     /// `p` came from `into_payload` and is not used again.
     unsafe fn from_payload(p: *mut c_void) -> LockFile {
-        // SAFETY: per the contract: a `Box<GitFilebuf>` we gave away.
+        // SAFETY: the `Box<GitFilebuf>` `into_payload` gave away (the
+        // contract), taken back once.
         LockFile(Some(unsafe { Box::from_raw(p.cast::<GitFilebuf>()) }))
     }
 }
@@ -929,15 +934,22 @@ impl FsInner {
     fn maybe_append_head(
         &self,
         r: RefView<'_>,
-        who: *const git_signature,
+        who: Option<SigRef<'_>>,
         message: Option<&CStr>,
     ) -> Result<()> {
         let db = self.repo.refdb()?;
-        // SAFETY: the count `git_repository_refdb` gave us.
+        // SAFETY: `db` is the repository's live database with the count
+        // `git_repository_refdb` just took for us, which `counted` drops.
         let counted = unsafe { ffibox::CShared::from_raw(db.cast::<refdb::GitRefdb>()) }
             .ok_or(ErrorCode::GENERIC)?;
-        // SAFETY: we hold a count on the live database.
-        let dbp = unsafe { RefdbPtr::new(NonNull::from(&*counted)) };
+        // The pointer with the allocation's provenance (not one derived
+        // from `&GitRefdb`: references made through the handle keep it and
+        // may drop the last count, freeing through it).
+        let db = NonNull::new(ffibox::CShared::as_ptr(&counted)).ok_or(ErrorCode::GENERIC)?;
+        // SAFETY: we hold a count on the live database (`counted`, alive
+        // to the end of this call, longer than every use of the handle);
+        // its backend and repository are ours (`self`) and live.
+        let dbp = unsafe { RefdbPtr::new(db) };
         if !dbp.should_write_head_reflog(r)? {
             return Ok(());
         }
@@ -956,7 +968,7 @@ impl FsInner {
         r: RefView<'_>,
         old: Option<&Oid>,
         new: Option<&Oid>,
-        who: *const git_signature,
+        who: Option<SigRef<'_>>,
         message: Option<&CStr>,
     ) -> Result<()> {
         let is_symbolic = r.raw_kind() == GIT_REFERENCE_SYMBOLIC;
@@ -988,6 +1000,9 @@ impl FsInner {
             }
         };
         let mut buf = GitStr::new();
+        // C formats a NULL signature (`git_signature__writebuf` crashes):
+        // the panic becomes an error at the slot's barrier.
+        let who = who.expect("reflog entry without a signature");
         reflog::serialize_entry(&mut buf, &old_id, &new_id, who, message.map(CStr::to_bytes))?;
         let path = self.reflog_path(r.name())?;
         match futils::mkpath2file(path.as_bytes(), 0o777) {
@@ -1028,7 +1043,7 @@ impl FsInner {
         update_reflog: bool,
         old_id: Option<&Oid>,
         old_target: Option<&[u8]>,
-        who: *const git_signature,
+        who: Option<SigRef<'_>>,
         message: Option<&CStr>,
     ) -> Result<()> {
         let mut file = file;
@@ -1063,7 +1078,7 @@ impl FsInner {
         &self,
         r: RefView<'_>,
         force: bool,
-        who: *const git_signature,
+        who: Option<SigRef<'_>>,
         message: Option<&CStr>,
         old_id: Option<&Oid>,
         old_target: Option<&[u8]>,
@@ -1211,7 +1226,7 @@ impl FsInner {
         old_name: &[u8],
         new_name: &[u8],
         force: bool,
-        who: *const git_signature,
+        who: Option<SigRef<'_>>,
         message: Option<&CStr>,
     ) -> Result<RefBox> {
         self.reference_path_available(new_name, Some(old_name), force)?;
@@ -1502,26 +1517,19 @@ impl FsInner {
     }
 
     /// `refdb_reflog_fs__write`.
-    ///
-    /// # Safety
-    ///
-    /// `log` is a live reflog (from any backend, or `transaction.c`'s
-    /// pool), not changed during the call.
-    unsafe fn reflog_write(&self, log: *mut GitReflog) -> Result<()> {
-        // SAFETY: per the contract.
-        let name = unsafe { reflog::name_of(log) };
+    fn reflog_write(&self, log: ReflogRef<'_>) -> Result<()> {
+        let name = log.name();
         let Ok(mut file) = self.lock_reflog(name.to_bytes()) else {
             return Err(ErrorCode::GENERIC);
         };
         let mut buf = GitStr::new();
-        // SAFETY: per the contract.
-        for e in unsafe { reflog::entries_of(log) } {
-            // SAFETY: the reflog's entries are live entries.
-            let e = unsafe { &*e };
-            // SAFETY: an entry's message is NULL or a string.
-            let msg = unsafe { crate::util::export::cstr(e.msg) }.map(CStr::to_bytes);
-            if reflog::serialize_entry(&mut buf, &e.oid_old, &e.oid_cur, e.committer, msg).is_err()
-            {
+        for e in log.entries() {
+            let msg = e.msg().map(CStr::to_bytes);
+            let f = e.get();
+            // C formats a NULL committer (a crash): the panic becomes an
+            // error at the slot's barrier.
+            let who = e.committer().expect("reflog entry without a committer");
+            if reflog::serialize_entry(&mut buf, &f.oid_old, &f.oid_cur, who, msg).is_err() {
                 // C jumps to its cleanup with `error` still 0.
                 return Ok(());
             }
@@ -1826,16 +1834,28 @@ pub struct FsIter {
     packed_pos: usize,
 }
 
-// SAFETY: the names are blocks of the iterator's own pool, read-only
-// strings; nothing ties them to a thread.
+// SAFETY: the fields: `backend` (`Arc<FsInner>`, `Send + Sync`), `glob`
+// (`CString`), `pool` (a `GitPool` the iterator owns; `git__allocator`
+// frees from any thread), the positions, and the `NonNull<c_char>` names of
+// `loose` / `packed`, which point into that pool: NUL-terminated strings
+// written once when made, then only read, and freed with the pool. Moving
+// the iterator moves the pool with them; nothing is thread-local.
 unsafe impl Send for FsIter {}
-// SAFETY: as above; shared access reads only.
+// SAFETY: `&FsIter` reads the names and positions only (every write is
+// through `&mut FsIter`), and the names are never written after they are
+// made; the shared `FsInner` is `Sync`.
 unsafe impl Sync for FsIter {}
 
 /// A NUL-terminated name of the pool.
-fn pool_str<'a>(p: NonNull<c_char>) -> &'a CStr {
-    // SAFETY: a string the iterator's pool holds until it is dropped,
-    // which outlives every use (the iterator's `&mut self`).
+///
+/// # Safety
+///
+/// `p` is one of the names in an iterator's `loose` / `packed` (strings of
+/// its pool, never written), and the result is not used after that
+/// iterator is dropped.
+unsafe fn pool_str<'a>(p: NonNull<c_char>) -> &'a CStr {
+    // SAFETY: a NUL-terminated string the iterator's pool holds until the
+    // iterator is dropped, which (the caller's guarantee) outlives `'a`.
     unsafe { CStr::from_ptr(p.as_ptr()) }
 }
 
@@ -1843,7 +1863,8 @@ impl FsIter {
     fn shadow(&mut self, name: &[u8]) {
         if let Ok(i) = self
             .packed
-            .binary_search_by(|(n, _)| pool_str(*n).to_bytes().cmp(name))
+            // SAFETY: a name of our pool, used during this borrow of `self`.
+            .binary_search_by(|(n, _)| unsafe { pool_str(*n) }.to_bytes().cmp(name))
         {
             self.packed[i].1.flags |= PACKREF_SHADOWED;
         }
@@ -1858,7 +1879,8 @@ impl FsIter {
     /// `refdb_fs_backend__iterator_next`.
     fn next(&mut self) -> Result<RefBox> {
         while self.loose_pos < self.loose.len() {
-            let path = pool_str(self.loose[self.loose_pos]).to_bytes();
+            // SAFETY: a name of our pool (`loose`), used while `self` is.
+            let path = unsafe { pool_str(self.loose[self.loose_pos]) }.to_bytes();
             self.loose_pos += 1;
             if let Ok(Some(r)) = self.backend.loose_lookup(path, true) {
                 self.shadow(path);
@@ -1869,7 +1891,8 @@ impl FsIter {
         while self.packed_pos < self.packed.len() {
             let (n, r) = self.packed[self.packed_pos];
             self.packed_pos += 1;
-            let name = pool_str(n).to_bytes();
+            // SAFETY: a name of our pool (`packed`), used while `self` is.
+            let name = unsafe { pool_str(n) }.to_bytes();
             if r.flags & PACKREF_SHADOWED != 0 || !self.glob_matches(name) {
                 continue;
             }
@@ -1882,7 +1905,8 @@ impl FsIter {
     fn next_name(&mut self) -> Result<NonNull<c_char>> {
         while self.loose_pos < self.loose.len() {
             let p = self.loose[self.loose_pos];
-            let path = pool_str(p).to_bytes();
+            // SAFETY: a name of our pool (`loose`), used while `self` is.
+            let path = unsafe { pool_str(p) }.to_bytes();
             self.loose_pos += 1;
             if let Ok(None) = self.backend.loose_lookup(path, false) {
                 self.shadow(path);
@@ -1893,7 +1917,9 @@ impl FsIter {
         while self.packed_pos < self.packed.len() {
             let (n, r) = self.packed[self.packed_pos];
             self.packed_pos += 1;
-            if r.flags & PACKREF_SHADOWED != 0 || !self.glob_matches(pool_str(n).to_bytes()) {
+            // SAFETY: a name of our pool (`packed`), used while `self` is.
+            let name = unsafe { pool_str(n) }.to_bytes();
+            if r.flags & PACKREF_SHADOWED != 0 || !self.glob_matches(name) {
                 continue;
             }
             return Ok(n);
@@ -1927,9 +1953,13 @@ fn st(r: Result<()>) -> c_int {
 ///
 /// # Safety
 ///
-/// `p` is a NUL-terminated string (C's contract for the slot).
+/// `p` is a NUL-terminated string, readable and unwritten for `'a` (C's
+/// contract for the slot: the call).
 unsafe fn name<'a>(p: *const c_char) -> &'a CStr {
-    // SAFETY: per the contract (C dereferences NULL).
+    // C dereferences NULL: the panic becomes the slot's error.
+    assert!(!p.is_null(), "NULL name");
+    // SAFETY: a non-null, NUL-terminated string valid for `'a` (the
+    // contract).
     unsafe { CStr::from_ptr(p) }
 }
 
@@ -1937,29 +1967,32 @@ unsafe fn name<'a>(p: *const c_char) -> &'a CStr {
 ///
 /// # Safety
 ///
-/// `p` is NULL or a NUL-terminated string.
+/// `p` is NULL or a NUL-terminated string, readable and unwritten for
+/// `'a`.
 unsafe fn opt<'a>(p: *const c_char) -> Option<&'a CStr> {
-    // SAFETY: per the contract.
-    unsafe { crate::util::export::cstr(p) }
+    // SAFETY: the caller's guarantee is `CStrArg::from_ptr`'s, for `'a`.
+    unsafe { CStrArg::from_ptr(p) }.get()
 }
 
 /// The reference argument of a slot.
 ///
 /// # Safety
 ///
-/// `p` is a live reference for the call.
+/// `p` is a live reference that nothing writes or frees during `'a`.
 unsafe fn refarg<'a>(p: *const GitReference) -> RefView<'a> {
-    // SAFETY: per the contract (C dereferences NULL).
-    unsafe { RefView::from_raw(p) }
+    // C dereferences NULL: the panic becomes the slot's error.
+    let p = NonNull::new(p.cast_mut()).expect("NULL reference");
+    // SAFETY: the caller's guarantee is `from_ptr`'s, for `'a`.
+    unsafe { RefView::from_ptr(p) }
 }
 
 /// An optional oid argument of a slot.
 ///
 /// # Safety
 ///
-/// `p` is NULL or a valid oid for the call.
+/// `p` is NULL or a valid oid, unwritten for `'a`.
 unsafe fn oidarg<'a>(p: *const Oid) -> Option<&'a Oid> {
-    // SAFETY: per the contract.
+    // SAFETY: NULL, or a valid, unwritten oid for `'a` (align 1).
     unsafe { p.as_ref() }
 }
 
@@ -2036,10 +2069,13 @@ ffibox::impl_cvtable! {
             let v = unsafe { refarg(r) };
             // SAFETY: NULL or a string.
             let msg = unsafe { opt(message) };
-            // SAFETY: NULL or a valid oid.
+            // SAFETY: NULL or a valid oid (the slot's contract).
             let old = unsafe { oidarg(old_id) };
-            // SAFETY: NULL or a string.
+            // SAFETY: NULL or a string (the slot's contract).
             let old_t = unsafe { opt(old_target) };
+            // SAFETY: NULL or a valid signature for the call (the slot's
+            // contract).
+            let who = unsafe { SigRef::from_raw(who) };
             st(s.0.write(v, force != 0, who, msg, old, old_t.map(CStr::to_bytes)))
         },
     }
@@ -2057,6 +2093,9 @@ ffibox::impl_cvtable! {
         |s: &FsBackend| {
             // SAFETY: the names are strings, `message` NULL or one.
             let (o, n, msg) = (unsafe { name(old_name) }, unsafe { name(new_name) }, unsafe { opt(message) });
+            // SAFETY: NULL or a valid signature for the call (the slot's
+            // contract).
+            let who = unsafe { SigRef::from_raw(who) };
             let r = s.0.rename(o.to_bytes(), n.to_bytes(), force != 0, who, msg);
             match r {
                 Ok(r) => {
@@ -2135,12 +2174,13 @@ ffibox::impl_cvtable! {
         on panic: panicked(),
         on busy: busy(),
         |s: &FsBackend| {
-            if log.is_null() {
+            let Some(log) = NonNull::new(log) else {
                 let _ = errors::assert_arg_failed("reflog");
                 return -1;
-            }
-            // SAFETY: a live reflog for the call.
-            st(unsafe { s.0.reflog_write(log) })
+            };
+            // SAFETY: a valid reflog (from any backend, or `transaction.c`'s
+            // pool), unwritten during the call (the slot's contract).
+            st(s.0.reflog_write(unsafe { ReflogRef::from_ptr(log) }))
         },
     }
     fn reflog_rename(@backend, old_name: *const c_char, new_name: *const c_char) -> c_int {
@@ -2207,6 +2247,9 @@ ffibox::impl_cvtable! {
                 // SAFETY: `r` is a live reference; `message` NULL or a
                 // string.
                 let (v, msg) = (unsafe { refarg(r) }, unsafe { opt(message) });
+                // SAFETY: NULL or a valid signature for the call (the
+                // slot's contract).
+                let sig = unsafe { SigRef::from_raw(sig) };
                 s.0.write_tail(v, lock, update_reflog != 0, None, None, sig, msg)
             } else {
                 drop(lock);
@@ -2259,29 +2302,28 @@ ffibox::impl_cvtable! {
 /// The exports of `refdb_fs.c`.
 pub mod ffi {
     use super::*;
-    use crate::util::cabi::CStrArg;
+    use crate::git_arg;
+    use crate::util::cabi::Out;
     use crate::util::export::barrier;
 
     /// `git_refdb_backend_fs`.
     ///
     /// # Safety
     ///
-    /// `out` is writable; `repo` a live repository that outlives the
-    /// backend.
+    /// `out` is NULL or writable; `repo` NULL or a live repository that
+    /// stays live, and is used by the backend under libgit2's threading
+    /// rules, until the backend is freed (the backend keeps it as a weak
+    /// pointer, as C does).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_refdb_backend_fs(
-        out: *mut *mut git_refdb_backend,
-        repo: *mut git_repository,
+        mut out: Out<'_, *mut git_refdb_backend>,
+        repo: Option<RepoPtr>,
     ) -> c_int {
         barrier(|| {
-            let Some(r) = NonNull::new(repo) else {
-                return errors::assert_arg_failed("repository").raw();
-            };
-            // SAFETY: per the contract.
-            match backend_fs(unsafe { RepoPtr::new(r) }) {
+            let r = git_arg!(repo, "repository", -1);
+            match backend_fs(r) {
                 Ok(b) => {
-                    // SAFETY: `out` is writable.
-                    unsafe { *out = b };
+                    out.write(b);
                     0
                 }
                 Err(e) => e.raw(),
@@ -2296,22 +2338,18 @@ pub mod ffi {
     /// `out` is NULL or writable; the strings are NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference__lookup_loose(
-        out: *mut *mut GitReference,
+        mut out: Out<'_, *mut GitReference>,
         ref_dir: CStrArg<'_>,
         ref_name: CStrArg<'_>,
         oid_type: c_int,
     ) -> c_int {
         barrier(|| {
-            if !out.is_null() {
-                // SAFETY: writable.
-                unsafe { *out = core::ptr::null_mut() };
-            }
+            out.write(core::ptr::null_mut());
             let dir = ref_dir.to_bytes();
             let n = ref_name.to_bytes();
             match refs::lookup_loose(dir, n, oid_type, !out.is_null()) {
                 Ok(Some(r)) => {
-                    // SAFETY: writable (`want` is `!out.is_null()`).
-                    unsafe { *out = r.into_raw() };
+                    out.write(r.into_raw());
                     0
                 }
                 Ok(None) => 0,

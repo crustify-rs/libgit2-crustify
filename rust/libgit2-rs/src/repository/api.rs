@@ -436,7 +436,11 @@ pub struct Repository {
     repo: NonNull<GitRepository>,
 }
 
-// SAFETY: the repository and what it owns are released from any thread.
+// SAFETY: the one field owns a `GitRepository` (made by `alloc`, `Send +
+// Sync`, see there), which `Drop` frees with `GitRepository::free`: that
+// releases the odb, config, refdb and index (atomically counted), the
+// caches and strings (`git__allocator`), from whichever thread drops the
+// owner. Nothing in it is thread-local.
 unsafe impl Send for Repository {}
 // SAFETY: every field of `GitRepository` is atomic or behind its own lock
 // (it is `Sync`), and what `&self` reaches is libgit2's thread-safe part:
@@ -452,7 +456,9 @@ unsafe impl Sync for Repository {}
 
 impl Drop for Repository {
     fn drop(&mut self) {
-        // SAFETY: the repository this owner holds alone.
+        // SAFETY: the repository this owner holds alone (from `alloc`);
+        // dropping the owner ends every borrow of it (`'repo` handles), so
+        // nothing uses it after.
         unsafe { GitRepository::free(self.repo.as_ptr()) }
     }
 }
@@ -477,7 +483,8 @@ impl Repository {
     }
 
     pub(crate) fn raw(&self) -> &GitRepository {
-        // SAFETY: the repository this owner holds, live until drop.
+        // SAFETY: the repository this owner holds, live (and aligned) until
+        // drop, which `&self` excludes; only read through `&`.
         unsafe { self.repo.as_ref() }
     }
 
@@ -679,10 +686,16 @@ impl Repository {
 
     /// `git_repository_config`.
     pub fn config(&self) -> Result<Config<'_>> {
-        let c = self.raw().config_weak()?;
-        // SAFETY: the repository's live config; a new reference, bound to
-        // the repository.
-        Ok(unsafe { Config::new_ref(NonNull::from(c)) })
+        let r = self.raw();
+        r.config_weak()?;
+        // The published pointer, with the allocation's provenance (one made
+        // from the `&GitConfig` may not be freed through, and the handle's
+        // count may become the last one).
+        let p = NonNull::new(r.config_ptr()).ok_or(ErrorCode::GENERIC)?;
+        // SAFETY: the repository's live config (just published, and the
+        // repository keeps its count while borrowed); a new reference,
+        // bound to the repository.
+        Ok(unsafe { Config::new_ref(p) })
     }
 
     /// `git_repository_config_snapshot`.
@@ -760,7 +773,9 @@ impl Repository {
     pub fn set_ident(&mut self, name: Option<&[u8]>, email: Option<&[u8]>) -> Result<()> {
         let n = name.map(|n| c_string(n, "name")).transpose()?;
         let e = email.map(|e| c_string(e, "email")).transpose()?;
-        Ok(self.raw().set_ident(n.as_deref(), e.as_deref())?)
+        // SAFETY: `&mut self`: no borrow of the repository, so none of
+        // its identity strings (`ident`), is live.
+        Ok(unsafe { self.raw().set_ident(n.as_deref(), e.as_deref()) }?)
     }
 
     /// `git_repository_hashfile`: the id the file at `path` would get as
@@ -790,7 +805,8 @@ impl Repository {
     /// since the odb then reads the repository's object cache, which no
     /// handle that can outlive the repository may reach.
     pub fn wrap_odb(odb: Odb<'static>) -> Result<Repository> {
-        sole(odb.as_raw(), "odb")?;
+        // SAFETY: `odb` holds a reference to the live odb for the call.
+        unsafe { sole(odb.as_raw(), "odb") }?;
         crate::libgit2::ensure_init()?;
         Ok(Repository::from_nonnull(open::wrap_odb(&odb)?))
     }
@@ -805,7 +821,8 @@ impl Repository {
     /// [`odb`](Self::odb). `&mut self`: no handle of the old odb is live.
     pub fn set_odb(&mut self, odb: Odb<'static>) -> Result<()> {
         let p = odb.as_raw();
-        sole(p, "odb")?;
+        // SAFETY: `odb` holds a reference to the live odb for the call.
+        unsafe { sole(p, "odb") }?;
         // SAFETY: `odb` is live (we hold its only reference until the end
         // of the call); `&mut self`: no borrow of the repository, so no
         // handle or weak pointer of the old odb, is live.
@@ -821,8 +838,15 @@ impl Repository {
     /// handle; its owner is the repository from now on (setting a value
     /// clears the repository's configuration cache).
     pub fn set_config(&mut self, config: Config<'static>) -> Result<()> {
-        let p = NonNull::from(config.inner());
-        sole(p, "config")?;
+        // The pointer with the allocation's provenance: the repository
+        // keeps it and frees through it when it drops the last count (one
+        // made from `config.inner()`, a `&GitConfig`, may not be freed
+        // through).
+        let config = config.into_shared();
+        let p = NonNull::new(ffibox::CShared::as_ptr(&config)).expect("a CShared is not NULL");
+        // SAFETY: `config` holds a reference to the live config for the
+        // call.
+        unsafe { sole(p, "config") }?;
         // SAFETY: as in `set_odb`.
         unsafe { self.raw().set_config(Some(p)) };
         Ok(())
@@ -838,7 +862,8 @@ impl Repository {
     /// [`index`](Self::index).
     pub fn set_index(&mut self, index: Index<'static>) -> Result<()> {
         let p = index.as_nonnull();
-        sole(p, "index")?;
+        // SAFETY: `index` holds a reference to the live index for the call.
+        unsafe { sole(p, "index") }?;
         // The safe API's lock of the index is held for the change of owner.
         index.locked(|_| {
             // SAFETY: as in `set_odb`; and no other thread reaches the
@@ -874,7 +899,9 @@ impl Repository {
     ///
     /// `&mut self`: no lookup may use the cache meanwhile.
     pub fn submodule_cache_clear(&mut self) -> Result<()> {
-        ErrorCode::check(self.raw().submodule_cache_clear())?;
+        // SAFETY: `&mut self`: no other use of the repository, so of its
+        // submodule cache, is in progress.
+        ErrorCode::check(unsafe { self.raw().submodule_cache_clear() })?;
         Ok(())
     }
 
@@ -993,9 +1020,14 @@ pub(crate) fn set_extensions(exts: &[&[u8]]) {
 
 /// Whether `p`'s reference (held by the caller) is the only one and no
 /// repository owns the object; otherwise the error of the setters.
-fn sole<T>(p: NonNull<T>, what: &str) -> Result<()> {
-    // SAFETY: `p` is a live refcounted object (`git_refcount` at offset
-    // 0) of which the caller holds a reference.
+///
+/// # Safety
+///
+/// `p` is a live refcounted object (a `git_refcount` at offset 0) on which
+/// the caller holds a reference for the call.
+unsafe fn sole<T>(p: NonNull<T>, what: &str) -> Result<()> {
+    // SAFETY: the caller's guarantee: a live object whose count (at offset
+    // 0) we only read.
     if unsafe { crate::util::thread::GitRefcount::sole(crate::util::thread::refcount_of(p)) } {
         return Ok(());
     }

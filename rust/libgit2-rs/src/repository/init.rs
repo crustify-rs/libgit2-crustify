@@ -831,8 +831,8 @@ pub(crate) unsafe fn set_workdir(
     }
 
     let new = detach(&mut path)?;
-    // SAFETY: the caller's contract: no borrow of the old workdir is used
-    // after this call.
+    // SAFETY: no borrow of the old workdir is used after this call (the
+    // contract), as `replace_string` requires.
     unsafe { repo.replace_string(StrField::Workdir, Some(new)) };
     repo.set_is_bare(false);
     Ok(())
@@ -850,7 +850,7 @@ pub(crate) unsafe fn set_bare(repo: &GitRepository) -> Result<()> {
     let config = repo.config_weak()?;
     config.set_bool(c"core.bare", true)?;
     config.update_entry(c"core.worktree", None, true, true)?;
-    // SAFETY: the caller's contract.
+    // SAFETY: as in `set_workdir` (this function's contract is its).
     unsafe { repo.replace_string(StrField::Workdir, None) };
     repo.set_is_bare(true);
     Ok(())
