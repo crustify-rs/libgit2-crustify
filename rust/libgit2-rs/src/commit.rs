@@ -2673,8 +2673,13 @@ pub mod ffi {
         };
         let error = (|| {
             if author.is_null() || committer.is_null() {
-                // SAFETY: `repo` live; writable out-parameter.
-                if unsafe { pend::git_signature_default(&raw mut default_signature, repo) } < 0 {
+                // SAFETY: `repo` is a live repository (contract), only read
+                // through `&` (its state is interior-mutable).
+                let repo = unsafe { repo.as_ref() };
+                // SAFETY: a live repository; a writable local out-parameter.
+                if unsafe { pend::git_signature_default(Out::from(&mut default_signature), repo) }
+                    < 0
+                {
                     return -1;
                 }
                 if author.is_null() {
@@ -2918,9 +2923,13 @@ pub mod ffi {
                 let committer = match opts.map(|o| o.committer).filter(|c| !c.is_null()) {
                     Some(c) => c,
                     None => {
-                        // SAFETY: `repo` live; writable out-parameter.
-                        let e =
-                            unsafe { pend::git_signature_default(&raw mut new_committer, repo) };
+                        // SAFETY: as for `git_repository_head` above.
+                        let repo = unsafe { repo.as_ref() };
+                        // SAFETY: NULL or a live repository; a writable local
+                        // out-parameter.
+                        let e = unsafe {
+                            pend::git_signature_default(Out::from(&mut new_committer), repo)
+                        };
                         if e < 0 {
                             return e;
                         }

@@ -311,9 +311,10 @@ impl GitTag {
 
     /// The tagger.
     pub(crate) fn tagger(&self) -> Option<&Signature> {
-        // SAFETY: NULL or the tag's own signature block, whose strings it
-        // owns (a `Signature`'s invariant; `Signature` is transparent over
-        // `git_signature`).
+        // SAFETY: NULL or the tag's own signature block (the type's
+        // invariant), made by `Signature::into_raw`: a `git_signature` whose
+        // strings are owned and non-NULL, which `Signature` (of the same
+        // layout) is; borrowed from `self`, so live and unwritten.
         unsafe { self.tagger.cast::<Signature>().as_ref() }
     }
 

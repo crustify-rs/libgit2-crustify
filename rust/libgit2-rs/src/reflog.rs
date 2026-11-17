@@ -129,8 +129,10 @@ pub(crate) fn serialize_entry(
     let _ = buf.puts(old.hex().as_bytes());
     let _ = buf.putc(b' ');
     let _ = buf.puts(new.hex().as_bytes());
-    // SAFETY: `buf` is a valid `git_str`; `committer` is the caller's
-    // signature (C's contract for the reflog writers: valid).
+    // SAFETY: `committer` is NULL or the caller's signature (C's contract
+    // for the reflog writers: valid), only read.
+    let committer = unsafe { committer.as_ref() };
+    // SAFETY: `buf` is a valid `git_str`; `committer` NULL or valid.
     unsafe { p::git_signature__writebuf(Some(buf), c" ".into(), committer) };
     buf.rtrim();
     if let Some(msg) = msg {
@@ -323,7 +325,7 @@ fn parse_line(parser: &mut GitParseCtx<'_>, t: Option<OidType>) -> Result<Option
     let r = unsafe {
         p::git_signature__parse(
             sig_out,
-            &raw mut start,
+            Some(&mut start),
             line.as_ptr().wrapping_add(sig_len).cast(),
             CStrArg::NULL,
             0,

@@ -230,7 +230,7 @@ impl SigBox {
     pub fn now(name: &CStr, email: &CStr) -> Result<SigBox> {
         let mut out = core::ptr::null_mut();
         // SAFETY: NUL-terminated strings; `out` writable.
-        let r = unsafe { git_signature_now(&raw mut out, name.into(), email.into()) };
+        let r = unsafe { git_signature_now(Out::from(&mut out), name.into(), email.into()) };
         Self::adopt(r, out)
     }
 
@@ -238,15 +238,18 @@ impl SigBox {
     pub fn new(name: &CStr, email: &CStr, time: i64, offset: c_int) -> Result<SigBox> {
         let mut out = core::ptr::null_mut();
         // SAFETY: as above.
-        let r = unsafe { git_signature_new(&raw mut out, name.into(), email.into(), time, offset) };
+        let r = unsafe {
+            git_signature_new(Out::from(&mut out), name.into(), email.into(), time, offset)
+        };
         Self::adopt(r, out)
     }
 
     /// `git_signature_default(repo)`.
     pub fn default_for(repo: RepoPtr) -> Result<SigBox> {
         let mut out = core::ptr::null_mut();
-        // SAFETY: a live repository; `out` writable.
-        let r = unsafe { git_signature_default(&raw mut out, repo.as_ptr()) };
+        // SAFETY: a live repository (`RepoPtr`'s invariant); `out` a
+        // writable local.
+        let r = unsafe { git_signature_default(Out::from(&mut out), Some(repo.get())) };
         Self::adopt(r, out)
     }
 
@@ -257,7 +260,9 @@ impl SigBox {
     /// `sig` is a valid signature.
     pub unsafe fn dup(sig: *const git_signature) -> Result<SigBox> {
         let mut out = core::ptr::null_mut();
-        // SAFETY: per the contract.
+        // SAFETY: `sig` is a valid signature (the contract), only read.
+        let sig = unsafe { sig.as_ref() };
+        // SAFETY: NULL or a valid signature; `out` a writable local.
         let r = unsafe { git_signature_dup(Out::from(&mut out), sig) };
         Self::adopt(r, out)
     }
