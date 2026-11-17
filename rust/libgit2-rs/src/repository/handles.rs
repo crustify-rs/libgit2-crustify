@@ -10,7 +10,6 @@
 //! are `ffibox::CShared`s over their leading `git_refcount`
 //! ([`GitRefcount`](crate::util::thread::GitRefcount)).
 
-use crate::util::cabi::CStrArg;
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::marker::PhantomData;
 use core::ptr::{self, NonNull};
@@ -27,11 +26,12 @@ use ffibox::CShared;
 /// # Safety
 ///
 /// `p` points to a live struct that has an initialized, aligned `T` at
-/// `offset`, which nothing writes during the read.
+/// `offset` (within the struct), which nothing writes during the read.
 pub(crate) unsafe fn read_field<T: Copy>(p: NonNull<c_void>, offset: usize) -> T {
-    // SAFETY: the caller's contract: `offset` is within the struct.
-    let field = unsafe { p.as_ptr().byte_add(offset) }.cast::<T>();
-    // SAFETY: the caller's contract: aligned and initialized.
+    let field = p.as_ptr().wrapping_byte_add(offset).cast::<T>();
+    // SAFETY: `field` is in the live struct `p` points to (the caller's
+    // `offset`), aligned and initialized for `T`, and unwritten during the
+    // read (the contract); its provenance is `p`'s.
     unsafe { field.read() }
 }
 
@@ -51,7 +51,9 @@ pub(crate) unsafe fn opt_cstr<'a>(p: *const c_char) -> Option<&'a CStr> {
     if p.is_null() {
         None
     } else {
-        // SAFETY: the caller's contract.
+        // SAFETY: a non-null `p` is a NUL-terminated string valid (and,
+        // being a C result the caller borrows, unwritten) for `'a` (the
+        // contract).
         Some(unsafe { CStr::from_ptr(p) })
     }
 }
@@ -145,8 +147,7 @@ impl<'r> Refdb<'r> {
 
     /// The C pointer, non-null (still owned).
     pub(crate) fn as_nonnull(&self) -> NonNull<GitRefdb> {
-        // SAFETY: a `CShared`'s pointer is not NULL.
-        unsafe { NonNull::new_unchecked(CShared::as_ptr(&self.0)) }
+        NonNull::new(CShared::as_ptr(&self.0)).expect("a CShared is not NULL")
     }
 
     /// Whether this handle holds the only reference to the database.
@@ -158,30 +159,24 @@ impl<'r> Refdb<'r> {
     ///
     /// # Safety
     ///
-    /// `p` is a live `git_refdb`.
+    /// `p` is a live `git_refdb` (made by `refdb::new_db`) on which someone
+    /// holds a count for the call, and whose repository (if set) outlives
+    /// `'r`.
     pub(crate) unsafe fn new_ref(p: NonNull<GitRefdb>) -> Refdb<'r> {
-        // SAFETY: the caller's contract.
+        // SAFETY: a live `CShared` database with a count held (the
+        // contract), so taking another count is sound.
         let db = unsafe { CShared::from_borrowed(p.as_ptr()) }.expect("non-null");
         Refdb(db, PhantomData)
     }
 
-    /// The C pointer (still owned).
-    pub(crate) fn as_ptr(&self) -> *mut GitRefdb {
-        CShared::as_ptr(&self.0)
-    }
-
     /// `git_refdb_init`.
     pub(crate) fn init(&self, head: Option<&CStr>, mode: u32, flags: u32) -> Result<()> {
-        // SAFETY: a live refdb; `head` is NULL or NUL-terminated.
-        check(unsafe {
-            crate::refdb::ffi::git_refdb_init(
-                self.as_ptr(),
-                CStrArg::from(head),
-                mode as libc::mode_t,
-                flags,
-            )
-        })
-        .map(drop)
+        // SAFETY: this handle holds a count on the live database, whose
+        // backend it owns and whose repository outlives `'r`; the handle
+        // made here is used only for this call.
+        let d = unsafe { crate::refdb::RefdbPtr::new(self.as_nonnull()) };
+        crate::git_assert_arg!(!d.backend().is_null(), "refdb->backend");
+        d.init(head, mode as libc::mode_t, flags)
     }
 }
 
