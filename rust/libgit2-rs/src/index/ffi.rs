@@ -91,15 +91,21 @@ unsafe fn sorted_reuc<'a>(ix: IndexPtr) -> &'a GitIndex {
 }
 
 /// A C matched-path callback as the operations call it.
-fn c_callback<'a>(
+///
+/// # Safety
+///
+/// `cb`, if any, may be called with `payload` and two strings (the second
+/// NULL or a string) while the result lives.
+unsafe fn c_callback<'a>(
     cb: Option<GitIndexMatchedPathCb>,
     payload: *mut c_void,
-) -> Option<impl FnMut(*const c_char, *const c_char) -> c_int + 'a> {
+) -> Option<impl FnMut(CStrArg<'_>, CStrArg<'_>) -> c_int + 'a> {
     cb.map(move |f| {
-        move |p: *const c_char, m: *const c_char| {
-            // SAFETY: the caller's callback and payload, with two strings
-            // (or a NULL match) live for the call.
-            unsafe { f(p, m, payload) }
+        move |p: CStrArg<'_>, m: CStrArg<'_>| {
+            // SAFETY: `f` may be called with `payload` (this fn's contract,
+            // the export's), and the strings are NULL or NUL-terminated and
+            // live for the call (`CStrArg`).
+            unsafe { f(p.as_ptr(), m.as_ptr(), payload) }
         }
     })
 }
@@ -1453,7 +1459,9 @@ pub unsafe extern "C" fn git_index_add_all(
 ) -> c_int {
     barrier(|| {
         let ix = git_arg!(index, "index", -1);
-        let mut f = c_callback(cb, payload);
+        // SAFETY: `cb` may be called with `payload` during the call (this
+        // export's contract), which `f` does not outlive.
+        let mut f = unsafe { c_callback(cb, payload) };
         let cbr: Option<MatchedPathCb<'_>> = f.as_mut().map(|f| f as MatchedPathCb<'_>);
         ops::add_all(ix, paths, flags, cbr)
     })
@@ -1473,7 +1481,9 @@ pub unsafe extern "C" fn git_index_remove_all(
 ) -> c_int {
     barrier(|| {
         let ix = git_arg!(index, "index", -1);
-        let mut f = c_callback(cb, payload);
+        // SAFETY: `cb` may be called with `payload` during the call (this
+        // export's contract), which `f` does not outlive.
+        let mut f = unsafe { c_callback(cb, payload) };
         let cbr: Option<MatchedPathCb<'_>> = f.as_mut().map(|f| f as MatchedPathCb<'_>);
         ops::remove_all(ix, pathspec, cbr)
     })
@@ -1493,7 +1503,9 @@ pub unsafe extern "C" fn git_index_update_all(
 ) -> c_int {
     barrier(|| {
         let ix = git_arg!(index, "index", -1);
-        let mut f = c_callback(cb, payload);
+        // SAFETY: `cb` may be called with `payload` during the call (this
+        // export's contract), which `f` does not outlive.
+        let mut f = unsafe { c_callback(cb, payload) };
         let cbr: Option<MatchedPathCb<'_>> = f.as_mut().map(|f| f as MatchedPathCb<'_>);
         ops::update_all(ix, pathspec, cbr)
     })

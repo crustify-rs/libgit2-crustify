@@ -3,6 +3,7 @@
 //! module](super)). These are the bodies of the exports and of the safe
 //! API.
 
+use crate::util::cabi::CStrArg;
 use core::ffi::{CStr, c_char, c_int, c_uint};
 use core::ptr::{self, NonNull};
 
@@ -30,7 +31,7 @@ use crate::util::vector::GitVector;
 /// A `git_index_matched_path_cb`, as the operations call it: the path and
 /// the matched pathspec (NULL for none), both C strings valid for the call;
 /// 0 to go on, > 0 to skip, < 0 to stop.
-pub type MatchedPathCb<'a> = &'a mut dyn FnMut(*const c_char, *const c_char) -> c_int;
+pub type MatchedPathCb<'a> = &'a mut dyn FnMut(CStrArg<'_>, CStrArg<'_>) -> c_int;
 
 /// `create_index_error`.
 fn index_error(msg: &str) -> ErrorCode {
@@ -1355,7 +1356,7 @@ fn apply_to_wd_diff(
         };
         let mut error = 0;
         if let Some(cb) = cb.as_mut() {
-            error = cb(path.as_ptr(), matched);
+            error = cb(path.into(), matched);
         }
         if error > 0 {
             return 0;
@@ -1430,7 +1431,7 @@ fn apply_to_all(
         };
         // issue notification callback if requested
         if let Some(cb) = cb.as_mut() {
-            error = cb(path.as_c_str().as_ptr(), matched);
+            error = cb(path.as_c_str().into(), matched);
             if error != 0 {
                 if error > 0 {
                     error = 0;

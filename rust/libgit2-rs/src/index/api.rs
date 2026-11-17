@@ -12,7 +12,8 @@
 //! no borrow while they run). A panic in a callback stops the operation
 //! and is resumed after it.
 
-use core::ffi::{CStr, c_char, c_int};
+use crate::util::cabi::CStrArg;
+use core::ffi::{CStr, c_int};
 use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
 use core::ptr::NonNull;
@@ -746,18 +747,15 @@ impl<'r> Index<'r> {
         let has_cb = cb.is_some();
         let mut panic = None;
         let mut stopped = false;
-        let mut adapter = |p: *const c_char, m: *const c_char| -> c_int {
+        let mut adapter = |p: CStrArg<'_>, m: CStrArg<'_>| -> c_int {
             let Some(f) = cb.as_mut() else { return 0 };
             if panic.is_some() || stopped {
                 return ErrorCode::USER.raw();
             }
             // the strings are copied before the closure runs (it may change
             // the index, and free what they point to)
-            // SAFETY: the operation passes a string and a NULL or string,
-            // live for the call.
-            let path = unsafe { crate::util::export::cstr_bytes(p) }.to_vec();
-            // SAFETY: as above.
-            let matched = unsafe { crate::util::export::cstr(m) }.map(|m| m.to_bytes().to_vec());
+            let path = p.to_bytes().to_vec();
+            let matched = m.get().map(|m| m.to_bytes().to_vec());
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 f(&path, matched.as_deref())
             })) {

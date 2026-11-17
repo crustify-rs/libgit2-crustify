@@ -524,9 +524,9 @@ impl Pathspec {
     }
 
     /// The stand-in of `git_pathspec__match`.
-    pub fn matches(&self, path: &CStr, casefold: bool) -> Option<*const c_char> {
+    pub fn matches(&self, path: &CStr, casefold: bool) -> Option<CStrArg<'_>> {
         if self.0.is_empty() {
-            return Some(ptr::null());
+            return Some(CStrArg::NULL);
         }
         let p = path.to_bytes();
         self.0
@@ -541,7 +541,7 @@ impl Pathspec {
                     == crate::util::wildmatch::WildMatch::Match
                     || (p.starts_with(pat) && p.get(pat.len()) == Some(&b'/'))
             })
-            .map(|pat| pat.as_ptr())
+            .map(|pat| pat.as_c_str().into())
     }
 
     /// Ignore checks need the repository: none under Miri.
@@ -575,7 +575,7 @@ impl Pathspec {
 
     /// `git_pathspec__match`: `Some(matched pattern, or NULL)` if `path`
     /// matches.
-    pub fn matches(&self, path: &CStr, casefold: bool) -> Option<*const c_char> {
+    pub fn matches(&self, path: &CStr, casefold: bool) -> Option<CStrArg<'_>> {
         let mut m = ptr::null();
         // SAFETY: the vector is the initialized pathspec's; `path` a
         // string; `m` writable.
@@ -589,7 +589,10 @@ impl Pathspec {
                 ptr::null_mut(),
             )
         };
-        ok.then_some(m)
+        // SAFETY: C sets `m` to NULL or to the matching pattern's string,
+        // which the pathspec owns: NUL-terminated, live and unwritten while
+        // `self` is borrowed.
+        ok.then(|| unsafe { CStrArg::from_ptr(m) })
     }
 
     /// `git_ignore__check_pathspec_for_exact_ignores`.
