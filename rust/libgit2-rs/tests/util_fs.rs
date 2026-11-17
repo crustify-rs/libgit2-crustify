@@ -51,11 +51,9 @@ impl Drop for Scratch {
     }
 }
 
-/// `GitFilebuf::open` on a local that the test never moves.
+/// `GitFilebuf::open`.
 fn open_fb(f: &mut GitFilebuf, path: &[u8], flags: c_int, mode: u32) -> errors::Result<()> {
-    // SAFETY: the tests' filebufs are locals that stay in place until they
-    // are cleaned up (or dropped after cleanup).
-    unsafe { f.open(path, flags, mode) }
+    f.open(path, flags, mode)
 }
 
 fn last() -> (ErrorClass, String) {

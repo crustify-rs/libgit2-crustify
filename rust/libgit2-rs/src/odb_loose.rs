@@ -393,16 +393,14 @@ impl Loose {
         let header_len = crate::odb::format_object_header(&mut header, data.len() as u64, type_)?;
         let mut final_path = self.tmp_path().map_err(|_| ErrorCode::GENERIC)?;
         let mut fbuf = OpenFilebuf::new();
-        // SAFETY: the filebuf is boxed: it does not move until cleaned up
-        // (by the commit or `OpenFilebuf`'s drop).
-        if unsafe {
-            fbuf.0.open(
+        if fbuf
+            .0
+            .open(
                 final_path.as_bytes(),
                 self.filebuf_flags(),
                 self.options.file_mode,
             )
-        }
-        .is_err()
+            .is_err()
         {
             return Err(ErrorCode::GENERIC);
         }
@@ -824,12 +822,8 @@ impl Loose {
                 .get_mut()
                 .unwrap_or_else(PoisonError::into_inner);
             self.tmp_path().is_ok_and(|p| {
-                // SAFETY: the filebuf is boxed in the stream's state: it does
-                // not move until cleaned up (commit or the stream's release).
-                unsafe {
-                    f.0.open(p.as_bytes(), self.filebuf_flags(), self.options.file_mode)
-                }
-                .is_ok()
+                f.0.open(p.as_bytes(), self.filebuf_flags(), self.options.file_mode)
+                    .is_ok()
                     && f.0.write(&hdr[..hdrlen]).is_ok()
             })
         };

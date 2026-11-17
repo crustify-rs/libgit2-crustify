@@ -816,14 +816,10 @@ pub(crate) fn writer_init(writer: &mut GitIndexWriter, ix: IndexPtr) -> Result<(
             "failed to write index: The index is in-memory only",
         ));
     };
-    // SAFETY: no deflate level in the flags, so zlib keeps no address of
-    // the filebuf (and the writer, C's or `write`'s local, does not move
-    // before its cleanup either).
-    if let Err(e) = unsafe {
-        writer
-            .file
-            .open(path.to_bytes(), filebuf_hash, GIT_INDEX_FILE_MODE)
-    } {
+    if let Err(e) = writer
+        .file
+        .open(path.to_bytes(), filebuf_hash, GIT_INDEX_FILE_MODE)
+    {
         if e == ErrorCode::LOCKED {
             let _ = git_error_set!(
                 ErrorClass::INDEX,

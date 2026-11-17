@@ -99,8 +99,7 @@ pub unsafe extern "C" fn git_filebuf_flush(file: Option<&mut GitFilebuf>) -> c_i
 ///
 /// `file` is NULL or a valid `git_filebuf` (zeroed, or cleaned up: its
 /// `buffer` is NULL) that nothing else accesses during the call; `path`
-/// NULL or a NUL-terminated string, unwritten during the call. The filebuf
-/// does not move until it is cleaned up.
+/// NULL or a NUL-terminated string, unwritten during the call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_filebuf_open(
     file: Option<&mut GitFilebuf>,
@@ -129,9 +128,7 @@ pub unsafe extern "C" fn git_filebuf_open_withsize(
     barrier(|| {
         let file = crate::git_arg!(file, "file", -1);
         let p = crate::git_arg!(path.get(), "path", -1).to_bytes();
-        // SAFETY: the caller keeps the filebuf in place until it is cleaned
-        // up (this export's contract).
-        status(unsafe { file.open_withsize(p, flags, mode, size) })
+        status(file.open_withsize(p, flags, mode, size))
     })
 }
 

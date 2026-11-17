@@ -521,27 +521,21 @@ impl GitFilebuf {
     }
 
     /// `git_filebuf_open`.
-    ///
-    /// # Safety
-    ///
-    /// As [`open_withsize`](Self::open_withsize).
-    pub unsafe fn open(&mut self, path: &[u8], flags: c_int, mode: mode_t) -> Result<()> {
-        // SAFETY: forwarded.
-        unsafe { self.open_withsize(path, flags, mode, WRITE_BUFFER_SIZE) }
+    pub fn open(&mut self, path: &[u8], flags: c_int, mode: mode_t) -> Result<()> {
+        self.open_withsize(path, flags, mode, WRITE_BUFFER_SIZE)
     }
 
     /// `git_filebuf_open_withsize`: start writing `path` (through
     /// `path.lock`, or a temporary file `path_git2_*` with
     /// [`GIT_FILEBUF_TEMPORARY`]) with a buffer of `size` bytes.
     ///
-    /// # Safety
-    ///
-    /// The filebuf does not move until it is cleaned up (by `cleanup`,
-    /// `commit` or `commit_at`). (Since the deflate stream moved to its own
-    /// heap cell, nothing in the Rust relies on this any more; the contract
-    /// is kept so that the signature stays as the other WPs use it, and as
-    /// C embeds the filebuf in place anyway.) [`Filebuf`] keeps it boxed.
-    pub unsafe fn open_withsize(
+    /// The filebuf may move while open: the deflate stream, whose address
+    /// zlib keeps, lives in its own heap cell (`StreamSlot`), and
+    /// everything else is plain data or pointers to separate allocations
+    /// (the `HashCtx` included). (This was an `unsafe fn` whose contract
+    /// was "does not move until cleaned up", for the stream that used to
+    /// live in place.)
+    pub fn open_withsize(
         &mut self,
         path: &[u8],
         flags: c_int,
@@ -967,9 +961,7 @@ impl Filebuf {
         mode: mode_t,
     ) -> core::result::Result<Filebuf, errors::Error> {
         let mut f = Box::new(GitFilebuf::new());
-        // SAFETY: the box keeps the filebuf in place until `Drop` (or a
-        // commit) cleans it up; it is never moved out.
-        unsafe { f.open(path, flags, mode) }.map_err(errors::Error::from)?;
+        f.open(path, flags, mode).map_err(errors::Error::from)?;
         Ok(Filebuf(f))
     }
 
