@@ -17,14 +17,16 @@
 //! which may read the repository's config, and so this backend, again.
 
 use core::ffi::{CStr, c_char, c_int};
+use core::ptr::NonNull;
 use std::sync::atomic::{AtomicI32, AtomicPtr, Ordering};
 use std::sync::{Arc, Mutex};
 
 use ffibox::vtable::CTable;
 
 use crate::config::{
-    Backend, ConfigBackendCell, GIT_CONFIG_FILE_MODE, as_cstr, cstring, git_config_backend,
-    git_config_backend_entry, git_config_iterator, normalize_name, slot_busy, slot_panicked,
+    Backend, BackendCalls, BackendPtr, ConfigBackendCell, GIT_CONFIG_FILE_MODE, as_cstr, cstring,
+    git_config_backend, git_config_backend_entry, git_config_iterator, normalize_name, slot_busy,
+    slot_panicked,
 };
 use crate::config_list::{ConfigList, EntryMeta};
 use crate::config_mem::{arg, entry_name};
@@ -96,6 +98,8 @@ pub struct FileBackend {
     /// The entries (`values_mutex`, `config_list`); `None` before `open`
     /// and after a failed one.
     values: Mutex<Option<Arc<ConfigList>>>,
+    /// Invariant: NULL, or a live repository that outlives the backend
+    /// (only `open`, an `unsafe fn` with that contract, stores it).
     repo: AtomicPtr<git_repository>,
     level: AtomicI32,
     /// `file`: the tree of files read.
@@ -111,10 +115,18 @@ const _: fn() = || {
     thread_safe::<FileBackend>();
 };
 
-/// Whether the table's `readonly` is set (C may have set it).
-fn table_readonly(cfg: *mut git_config_backend) -> bool {
-    // SAFETY: the slot's own live table, read raw.
-    unsafe { (*cfg).readonly != 0 }
+/// The table a slot runs for, as a handle: the methods read its
+/// `readonly` (which C may set) when C did.
+///
+/// # Safety
+///
+/// `cfg` is the live table of the slot being run; the handle is used only
+/// during that slot.
+unsafe fn table(cfg: *mut git_config_backend) -> BackendPtr {
+    let p = NonNull::new(cfg).unwrap_or_else(|| unreachable!("a slot's table is not NULL"));
+    // SAFETY: the live table of the running slot (this function's
+    // contract), for as long as the handle is used.
+    unsafe { BackendPtr::new(p) }
 }
 
 /// `escape_value`: `value` with its special characters escaped.
@@ -148,7 +160,7 @@ fn until_nul(s: &[u8]) -> &[u8] {
 
 /// `config_file_parse_data` and `read_on_variable`.
 struct Reader<'a> {
-    repo: *const git_repository,
+    repo: Option<&'a git_repository>,
     file: &'a mut ConfigFile,
     list: &'a mut ConfigList,
     level: c_int,
@@ -203,7 +215,10 @@ impl Reader<'_> {
 
     /// `parse_conditional_include`.
     fn parse_conditional_include(&mut self, section: &[u8], value: Option<&[u8]>) -> Result<()> {
-        if self.repo.is_null() || value.is_none() {
+        let Some(repo) = self.repo else {
+            return Ok(());
+        };
+        if value.is_none() {
             return Ok(());
         }
         const PREFIX: usize = b"includeIf.".len();
@@ -212,7 +227,7 @@ impl Reader<'_> {
             return Ok(());
         }
         let condition = &section[PREFIX..section.len() - SUFFIX];
-        type Matcher = fn(*const git_repository, &[u8], &[u8]) -> Result<bool>;
+        type Matcher = fn(&git_repository, &[u8], &[u8]) -> Result<bool>;
         let conditions: [(&[u8], Matcher); 3] = [
             (b"gitdir:", |r, f, c| match_gitdir(r, f, c, false)),
             (b"gitdir/i:", |r, f, c| match_gitdir(r, f, c, true)),
@@ -222,7 +237,7 @@ impl Reader<'_> {
             if prefixcmp(condition, prefix) != 0 {
                 continue;
             }
-            if matches(self.repo, self.file.path(), &condition[prefix.len()..])? {
+            if matches(repo, self.file.path(), &condition[prefix.len()..])? {
                 self.parse_include(value)?;
             }
             break;
@@ -268,7 +283,7 @@ fn at(s: &[u8], i: usize) -> u8 {
 
 /// `do_match_gitdir`.
 fn match_gitdir(
-    repo: *const git_repository,
+    repo: &git_repository,
     cfg_file: &[u8],
     condition: &[u8],
     icase: bool,
@@ -294,9 +309,6 @@ fn match_gitdir(
         return Err(ErrorCode::GENERIC);
     }
     let mut gitdir = GitStr::new();
-    // SAFETY: C's contract keeps the backend's repository live (non-NULL:
-    // `parse_conditional_include` checked); it is `Sync`.
-    let repo = unsafe { &*repo };
     repo.item_path(&mut gitdir, crate::repository::ITEM_GITDIR)?;
     if gitdir
         .as_bytes()
@@ -314,10 +326,7 @@ fn match_gitdir(
 ///
 /// `HEAD` is read from the refdb directly: the higher-level functions read
 /// the repository's config, which is being read.
-fn match_onbranch(repo: *const git_repository, _cfg_file: &[u8], condition: &[u8]) -> Result<bool> {
-    // SAFETY: C's contract keeps the backend's repository live (non-NULL:
-    // `parse_conditional_include` checked); it is `Sync`.
-    let repo = unsafe { &*repo };
+fn match_onbranch(repo: &git_repository, _cfg_file: &[u8], condition: &[u8]) -> Result<bool> {
     let target = repository_head_symbolic_target(repo)?;
     let Some(target) = target else {
         return Ok(false);
@@ -340,7 +349,7 @@ fn match_onbranch(repo: *const git_repository, _cfg_file: &[u8], condition: &[u8
 /// `config_file_read_buffer`.
 fn read_buffer(
     list: &mut ConfigList,
-    repo: *const git_repository,
+    repo: Option<&git_repository>,
     file: &mut ConfigFile,
     level: c_int,
     depth: u32,
@@ -372,7 +381,7 @@ fn read_buffer(
 /// its includes into `list`.
 fn read(
     list: &mut ConfigList,
-    repo: *const git_repository,
+    repo: Option<&git_repository>,
     file: &mut ConfigFile,
     level: c_int,
     depth: u32,
@@ -595,8 +604,12 @@ impl FileBackend {
         self.locked.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    fn repo(&self) -> *const git_repository {
-        self.repo.load(Ordering::Acquire).cast_const()
+    /// The repository `open` was given, if any.
+    fn repo(&self) -> Option<&git_repository> {
+        let p = self.repo.load(Ordering::Acquire).cast_const();
+        // SAFETY: NULL or a live repository that outlives the backend, so
+        // `&self` (the field's invariant); it is `Sync`, and only read.
+        unsafe { p.as_ref() }
     }
 
     fn level(&self) -> c_int {
@@ -611,8 +624,8 @@ impl FileBackend {
     }
 
     /// `config_file_set_entries`.
-    fn set_entries(&self, cfg: *mut git_config_backend, list: ConfigList) -> Result<()> {
-        if table_readonly(cfg) {
+    fn set_entries(&self, cfg: BackendPtr, list: ConfigList) -> Result<()> {
+        if cfg.is_readonly() {
             return Err(git_error_set!(
                 ErrorClass::CONFIG,
                 "this backend is read-only"
@@ -624,9 +637,16 @@ impl FileBackend {
     }
 
     /// `config_file_open`.
-    fn open(&self, level: c_int, repo: *const git_repository) -> Result<()> {
+    ///
+    /// # Safety
+    ///
+    /// `repo` is NULL or a live repository that outlives the backend (the
+    /// `open` slot's contract: the file backend keeps it, for conditional
+    /// includes).
+    unsafe fn open(&self, level: c_int, repo: *const git_repository) -> Result<()> {
         self.level.store(level, Ordering::Release);
         self.repo.store(repo.cast_mut(), Ordering::Release);
+        let repo = self.repo();
         *self.lock_values() = Some(ConfigList::new().freeze());
         let cpath = self.cpath();
         let cpath = as_cstr(&cpath);
@@ -654,8 +674,8 @@ impl FileBackend {
     }
 
     /// `config_file_refresh`.
-    fn refresh(&self, cfg: *mut git_config_backend) -> Result<()> {
-        if table_readonly(cfg) {
+    fn refresh(&self, cfg: BackendPtr) -> Result<()> {
+        if cfg.is_readonly() {
             return Ok(());
         }
         let file = {
@@ -680,7 +700,7 @@ impl FileBackend {
     }
 
     /// `config_file_refresh_from_buffer`.
-    fn refresh_from_buffer(&self, cfg: *mut git_config_backend, buf: &[u8]) -> Result<()> {
+    fn refresh_from_buffer(&self, cfg: BackendPtr, buf: &[u8]) -> Result<()> {
         let mut file = self.lock_file().without_includes();
         let mut list = ConfigList::new();
         let r = read_buffer(&mut list, self.repo(), &mut file, self.level(), 0, buf);
@@ -690,12 +710,8 @@ impl FileBackend {
     }
 
     /// `config_file_get`.
-    fn get(
-        &self,
-        cfg: *mut git_config_backend,
-        key: &[u8],
-    ) -> Result<*mut git_config_backend_entry> {
-        if !table_readonly(cfg) {
+    fn get(&self, cfg: BackendPtr, key: &[u8]) -> Result<*mut git_config_backend_entry> {
+        if !cfg.is_readonly() {
             self.refresh(cfg)?;
         }
         let values = self.lock_values();
@@ -709,13 +725,13 @@ impl FileBackend {
     }
 
     /// `config_file_iterator`.
-    fn iterator(&self, cfg: *mut git_config_backend) -> Result<*mut git_config_iterator> {
+    fn iterator(&self, cfg: BackendPtr) -> Result<*mut git_config_iterator> {
         self.refresh(cfg)?;
         Ok(crate::config_list::iterator_new(self.take_list()))
     }
 
     /// `config_file_set`.
-    fn set(&self, cfg: *mut git_config_backend, name: &[u8], value: Option<&[u8]>) -> Result<()> {
+    fn set(&self, cfg: BackendPtr, name: &[u8], value: Option<&[u8]>) -> Result<()> {
         let key = normalize_name(name)?;
         let list = self.take_list();
         match list.get_unique(&key) {
@@ -732,7 +748,7 @@ impl FileBackend {
     /// `config_file_set_multivar`.
     fn set_multivar(
         &self,
-        cfg: *mut git_config_backend,
+        cfg: BackendPtr,
         name: &[u8],
         regexp: Option<&CStr>,
         value: Option<&[u8]>,
@@ -744,7 +760,7 @@ impl FileBackend {
     }
 
     /// `config_file_delete`.
-    fn delete(&self, cfg: *mut git_config_backend, name: &[u8]) -> Result<()> {
+    fn delete(&self, cfg: BackendPtr, name: &[u8]) -> Result<()> {
         let key = normalize_name(name)?;
         let list = self.take_list();
         let entry = match list.get_unique(&key) {
@@ -765,12 +781,7 @@ impl FileBackend {
     }
 
     /// `config_file_delete_multivar`.
-    fn delete_multivar(
-        &self,
-        cfg: *mut git_config_backend,
-        name: &[u8],
-        regexp: Option<&CStr>,
-    ) -> Result<()> {
+    fn delete_multivar(&self, cfg: BackendPtr, name: &[u8], regexp: Option<&CStr>) -> Result<()> {
         let key = normalize_name(name)?;
         let list = self.take_list();
         if list.get(&key).is_none() {
@@ -827,7 +838,7 @@ impl FileBackend {
     /// matching `preg` if given.
     fn write(
         &self,
-        cfg: *mut git_config_backend,
+        cfg: BackendPtr,
         orig_key: &[u8],
         key: &[u8],
         preg: Option<&Regexp>,
@@ -895,10 +906,12 @@ fn status(r: Result<()>) -> c_int {
 ///
 /// # Safety
 ///
-/// `p` is NULL or NUL-terminated, for the call.
+/// `p` is NULL or NUL-terminated, and unwritten for `'a` (the slot's
+/// call).
 unsafe fn opt<'a>(p: *const c_char) -> Option<&'a CStr> {
-    // SAFETY: per the contract.
-    (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) })
+    // SAFETY: `p` is NULL or NUL-terminated and unwritten for `'a` (this
+    // function's contract), which is `CStrArg::from_ptr`'s.
+    unsafe { crate::util::cabi::CStrArg::from_ptr(p) }.get()
 }
 
 ffibox::impl_cvtable! {
@@ -913,64 +926,81 @@ ffibox::impl_cvtable! {
     fn open(@cfg, level: c_int, repo: *const git_repository) -> c_int {
         on panic: slot_panicked(),
         on busy: slot_busy(),
-        |b: &FileBackend| status(b.open(level, repo)),
+        // SAFETY: `repo` is NULL or a live repository that outlives the
+        // backend (the `open` slot's contract, sys/config.h).
+        |b: &FileBackend| status(unsafe { b.open(level, repo) }),
     }
     /// `config_file_get`.
     fn get(@cfg, key: *const c_char, out: *mut *mut git_config_backend_entry) -> c_int {
         on panic: slot_panicked(),
         on busy: slot_busy(),
-        // SAFETY: `key` is NUL-terminated (the slot's contract).
-        |b: &FileBackend| match b.get(cfg, unsafe { arg(key) }) {
-            Ok(e) => {
-                // SAFETY: `out` is the slot's writable out-parameter.
-                unsafe { out.write(e) };
-                0
+        |b: &FileBackend| {
+            // SAFETY: `cfg` is this slot's live table.
+            let t = unsafe { table(cfg) };
+            // SAFETY: `key` is a NUL-terminated string, unwritten for the
+            // call (the slot's contract).
+            match b.get(t, unsafe { arg(key) }) {
+                Ok(e) => {
+                    // SAFETY: `out` is aligned and writable for the call (the
+                    // slot's contract), and nothing references `*out`.
+                    unsafe { out.write(e) };
+                    0
+                }
+                Err(e) => e.raw(),
             }
-            Err(e) => e.raw(),
         },
     }
     /// `config_file_set`.
     fn set(@cfg, name: *const c_char, value: *const c_char) -> c_int {
         on panic: slot_panicked(),
         on busy: slot_busy(),
-        // SAFETY: the strings are NULL or NUL-terminated (the contract).
-        |b: &FileBackend| status(b.set(cfg, unsafe { arg(name) }, unsafe { opt(value) }.map(CStr::to_bytes))),
+        |b: &FileBackend| {
+            // SAFETY: `cfg` is this slot's live table.
+            let t = unsafe { table(cfg) };
+            // SAFETY: the strings are NULL or NUL-terminated, unwritten for
+            // the call (the slot's contract).
+            status(b.set(t, unsafe { arg(name) }, unsafe { opt(value) }.map(CStr::to_bytes)))
+        },
     }
     /// `config_file_set_multivar`.
     fn set_multivar(@cfg, name: *const c_char, regexp: *const c_char, value: *const c_char) -> c_int {
         on panic: slot_panicked(),
         on busy: slot_busy(),
         |b: &FileBackend| {
+            // SAFETY: `cfg` is this slot's live table.
+            let t = unsafe { table(cfg) };
             // SAFETY: as for `set`.
             let name = unsafe { arg(name) };
             // SAFETY: as for `set`.
             let regexp = unsafe { opt(regexp) };
             // SAFETY: as for `set`.
             let value = unsafe { opt(value) }.map(CStr::to_bytes);
-            status(b.set_multivar(cfg, name, regexp, value))
+            status(b.set_multivar(t, name, regexp, value))
         },
     }
     /// `config_file_delete`.
     fn del(@cfg, name: *const c_char) -> c_int {
         on panic: slot_panicked(),
         on busy: slot_busy(),
-        // SAFETY: as for `set`.
-        |b: &FileBackend| status(b.delete(cfg, unsafe { arg(name) })),
+        // SAFETY: as for `set`: this slot's table and string.
+        |b: &FileBackend| status(b.delete(unsafe { table(cfg) }, unsafe { arg(name) })),
     }
     /// `config_file_delete_multivar`.
     fn del_multivar(@cfg, name: *const c_char, regexp: *const c_char) -> c_int {
         on panic: slot_panicked(),
         on busy: slot_busy(),
-        // SAFETY: as for `set`.
-        |b: &FileBackend| status(b.delete_multivar(cfg, unsafe { arg(name) }, unsafe { opt(regexp) })),
+        // SAFETY: as for `set`: this slot's table and strings.
+        |b: &FileBackend| status(b.delete_multivar(unsafe { table(cfg) }, unsafe { arg(name) }, unsafe { opt(regexp) })),
     }
     /// `config_file_iterator`.
     fn iterator(out: *mut *mut git_config_iterator, @cfg) -> c_int {
         on panic: slot_panicked(),
         on busy: slot_busy(),
-        |b: &FileBackend| match b.iterator(cfg) {
+        // SAFETY: `cfg` is this slot's live table.
+        |b: &FileBackend| match b.iterator(unsafe { table(cfg) }) {
             Ok(it) => {
-                // SAFETY: `out` is the slot's writable out-parameter.
+                // SAFETY: `out` is aligned and writable for the call (the
+                // slot's contract), and nothing references `*out`.
                 unsafe { out.write(it) };
                 0
             }
@@ -1004,8 +1034,9 @@ pub fn backend_from_file(path: &[u8]) -> Result<Backend> {
         locked: Mutex::new(None),
     };
     let t = CTable::<ConfigBackendCell, FileBackend>::new(state).into_c();
-    // SAFETY: a table surrendered just now, released through its `free`
-    // slot (`CTable::release`), which `Backend`'s policy calls.
+    // SAFETY: `t` is the table `into_c` surrendered just now, owned by
+    // nothing else, and released through its `free` slot
+    // (`CTable::release`), which `Backend`'s policy calls.
     Ok(unsafe { Backend::from_c(t.as_ptr().cast()) }.unwrap_or_else(|| unreachable!()))
 }
 
@@ -1048,28 +1079,32 @@ fn repository_head_symbolic_target(
     // end; the repository keeps the refdb live meanwhile either way.
     let refdb = repo.refdb_weak()?;
     let mut head = core::ptr::null_mut();
-    // SAFETY: `head` is writable; `refdb` is the repository's live refdb;
-    // the name is NUL-terminated.
+    // SAFETY: `head` is a local out-parameter; `refdb` is the repository's
+    // refdb, kept live by `repo` for the call; the name is a static
+    // NUL-terminated string.
     ErrorCode::check(unsafe {
         crate::refdb::ffi::git_refdb_lookup(&raw mut head, refdb.as_ptr(), c"HEAD".as_ptr())
     })?;
-    // SAFETY: `head` is the live reference just returned.
+    // SAFETY: `head` is the live reference the lookup just returned (it
+    // succeeded), owned here.
     let result = if unsafe { r::git_reference_type(head) }
         != crate::repository::handles::GIT_REFERENCE_SYMBOLIC
     {
         None
     } else {
-        // SAFETY: as above; the target is NUL-terminated (or NULL) and
-        // lives as long as `head`, which it is copied before.
+        // SAFETY: `head` is the live reference owned here, as above.
         let p = unsafe { r::git_reference_symbolic_target(head) };
         Some(if p.is_null() {
             Vec::new()
         } else {
-            // SAFETY: as above.
+            // SAFETY: a non-null target is a NUL-terminated string owned by
+            // `head`, which is freed only after this copy, and that nothing
+            // writes.
             unsafe { core::ffi::CStr::from_ptr(p) }.to_bytes().to_vec()
         })
     };
-    // SAFETY: `head` is ours, released once.
+    // SAFETY: `head` is the reference the lookup gave us, released once;
+    // nothing borrowed from it is used afterwards.
     unsafe { r::git_reference_free(head) };
     Ok(result)
 }
