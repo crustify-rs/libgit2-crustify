@@ -176,6 +176,17 @@ impl<'a> RawCStr<'a> {
     pub(crate) unsafe fn new(p: core::ptr::NonNull<c_char>) -> RawCStr<'a> {
         RawCStr(p.cast(), core::marker::PhantomData)
     }
+
+    /// The string of a C string argument (`None` for NULL), still without
+    /// a `strlen`.
+    #[inline(always)]
+    pub(crate) fn from_arg(s: crate::util::cabi::CStrArg<'a>) -> Option<RawCStr<'a>> {
+        let p = core::ptr::NonNull::new(s.as_ptr().cast_mut())?;
+        // SAFETY: `CStrArg`'s invariant: a non-null pointer is a
+        // NUL-terminated string readable and unwritten for `'a`, which is
+        // `new`'s contract.
+        Some(unsafe { RawCStr::new(p) })
+    }
 }
 
 impl<'b> CBytes for RawCStr<'b> {
@@ -300,8 +311,12 @@ impl Piece {
 /// `data` fits and lies outside the buffer).
 #[inline(always)]
 fn set_bytes(buf: &mut GitStr, data: &[u8]) -> Result<()> {
-    // SAFETY: `data` is readable for its length; the fast path checks that
-    // it lies outside the allocation.
+    // SAFETY: `data` is readable and initialized for its length (a
+    // slice). `try_set_fast` writes only `buf`'s owned allocation, which
+    // only `buf` reaches in safe code and `&mut buf` excludes any other
+    // borrow of: `data` is not in it, so no write lands under the shared
+    // reference that covers `data` (the case `try_set_fast`'s "no
+    // reference" condition is about).
     if unsafe { buf.try_set_fast(data.as_ptr(), data.len()) } {
         return Ok(());
     }
@@ -481,21 +496,9 @@ fn trim_slashes(path: &mut GitStr) {
 /// unallocated string is left alone).
 #[inline]
 pub fn to_dir(path: &mut GitStr) -> Result<()> {
-    let len = path.len();
-    if path.capacity() > 0 && len > 0 && path.as_bytes().last().is_some_and(|&c| c != b'/') {
-        // `git_str_putc`, in place when the slash and the NUL fit.
-        // SAFETY: the NUL is written back right away (`spare[1]`).
-        let spare = unsafe { path.spare_with_nul_mut() };
-        if spare.len() >= 2 {
-            spare[0].write(b'/');
-            spare[1].write(0);
-            // SAFETY: owned (it has spare room); the first `len` bytes are
-            // the contents and byte `len` was just written, followed by the
-            // NUL.
-            unsafe { path.set_len(len + 1) };
-        } else {
-            let _ = path.putc(b'/');
-        }
+    if path.capacity() > 0 && path.as_bytes().last().is_some_and(|&c| c != b'/') {
+        // `git_str_putc` (in place when the slash and the NUL fit).
+        let _ = path.putc(b'/');
     }
     if path.is_oom() {
         Err(ErrorCode::GENERIC)
@@ -1090,6 +1093,11 @@ impl PathCell for GitStr {
 }
 
 /// A directory stream that is closed on drop.
+///
+/// Invariant (kept by this module, which alone sees the field): the
+/// pointer is a stream from `opendir`, not yet closed, used by this value
+/// only; [`GitFsPathDiriter::next`] makes a `ManuallyDrop` one over the
+/// iterator's stream for its reads.
 struct Dir(core::ptr::NonNull<libc::DIR>);
 
 impl Dir {
@@ -1187,8 +1195,11 @@ pub struct GitFsPathDiriter {
     dir: *mut libc::DIR,
 }
 
-// SAFETY: the directory stream belongs to this iterator alone (its
-// invariant), and may be used from any one thread at a time.
+// SAFETY: `path` is a `GitStr` (`Send`), `parent_len` and `flags` are
+// integers; `dir` is NULL or a `DIR` stream that this iterator alone
+// opened and uses (the invariant: no other value holds the pointer), and a
+// stream has no thread affinity: moving the iterator moves its only user,
+// so one thread at a time uses it (`readdir`/`closedir` need no more).
 unsafe impl Send for GitFsPathDiriter {}
 
 impl Default for GitFsPathDiriter {

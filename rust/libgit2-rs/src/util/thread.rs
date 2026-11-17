@@ -54,10 +54,16 @@ pub struct GitMutex(UnsafeCell<libc::pthread_mutex_t>);
 // SAFETY: a pthread mutex is made to be shared and locked from any thread;
 // every access to the inner value goes through the pthread functions.
 unsafe impl Sync for GitMutex {}
-// SAFETY: an unlocked pthread mutex is not tied to a thread; a locked one is
+// `Send` is automatic (`UnsafeCell` of a `pthread_mutex_t`, plain bytes):
+// an unlocked pthread mutex is not tied to a thread, and a locked one is
 // only reachable through `&self` (a guard borrows it), so it cannot move
-// while locked.
-unsafe impl Send for GitMutex {}
+// while locked. The same holds for `GitRwLock` and `GitCond`.
+const _: () = {
+    const fn send<T: Send>() {}
+    send::<GitMutex>();
+    send::<GitRwLock>();
+    send::<GitCond>();
+};
 
 impl GitMutex {
     /// An unlocked mutex (`PTHREAD_MUTEX_INITIALIZER`, what
@@ -175,10 +181,9 @@ impl Drop for GitMutexGuard<'_> {
 #[repr(transparent)]
 pub struct GitRwLock(UnsafeCell<libc::pthread_rwlock_t>);
 
-// SAFETY: as for `GitMutex`.
+// SAFETY: as for `GitMutex`: a pthread rwlock is made to be shared and
+// locked from any thread, only through the pthread functions.
 unsafe impl Sync for GitRwLock {}
-// SAFETY: as for `GitMutex`.
-unsafe impl Send for GitRwLock {}
 
 impl GitRwLock {
     /// An unlocked lock (`GIT_RWLOCK_STATIC_INIT`).
@@ -264,10 +269,10 @@ impl Drop for GitWriteGuard<'_> {
 #[repr(transparent)]
 pub struct GitCond(UnsafeCell<libc::pthread_cond_t>);
 
-// SAFETY: as for `GitMutex`.
+// SAFETY: as for `GitMutex`: a pthread condition variable is made to be
+// waited on and signalled from any thread, only through the pthread
+// functions.
 unsafe impl Sync for GitCond {}
-// SAFETY: as for `GitMutex`.
-unsafe impl Send for GitCond {}
 
 impl GitCond {
     /// A condition variable (`git_cond_init`).
@@ -473,12 +478,11 @@ impl GitRefcount {
     ///
     /// `p` addresses a live `GitRefcount`.
     unsafe fn count<'a>(p: *const GitRefcount) -> &'a Atomic32 {
-        // SAFETY: the caller's contract: a projection of a live count's
-        // place, which forms no reference.
-        let f = unsafe { &raw const (*p).refcount };
-        // SAFETY: the caller's contract; a pointer to the field alone, so
-        // only the atomic is borrowed.
-        unsafe { &*f }
+        // SAFETY: `p` addresses a live, aligned `GitRefcount` (this fn's
+        // contract); `&(*p).refcount` borrows that field alone (a place
+        // projection forms no reference to the whole), an atomic, which
+        // tolerates the concurrent atomic accesses C and Rust make.
+        unsafe { &(*p).refcount }
     }
 
     /// The owner's atomic, borrowed alone.
@@ -487,11 +491,8 @@ impl GitRefcount {
     ///
     /// As [`count`](Self::count).
     unsafe fn owner_cell<'a>(p: *const GitRefcount) -> &'a AtomicPtr<c_void> {
-        // SAFETY: the caller's contract: a projection of a live count's
-        // place, which forms no reference.
-        let f = unsafe { &raw const (*p).owner };
-        // SAFETY: as above.
-        unsafe { &*f }
+        // SAFETY: as in `count`, for the `owner` atomic.
+        unsafe { &(*p).owner }
     }
 
     /// One reference and no owner, for an object nothing else reaches
@@ -502,7 +503,8 @@ impl GitRefcount {
     /// `p` addresses a live count of an object nothing else reaches.
     #[inline]
     pub unsafe fn init(p: *const GitRefcount) {
-        // SAFETY: the caller's contract.
+        // SAFETY: `p` addresses a live count (this fn's contract), `count`'s
+        // requirement.
         unsafe { Self::count(p) }.set(1);
         // SAFETY: as above.
         unsafe { Self::owner_cell(p) }.store(core::ptr::null_mut(), Ordering::SeqCst);
@@ -517,7 +519,8 @@ impl GitRefcount {
     #[inline]
     #[must_use]
     pub unsafe fn inc(p: *const GitRefcount) -> bool {
-        // SAFETY: the caller's contract.
+        // SAFETY: `p` addresses a live count (this fn's contract; the
+        // caller's reference keeps it so), `count`'s requirement.
         let c = unsafe { Self::count(p) };
         let mut n = c.0.load(Ordering::SeqCst);
         while n < REFCOUNT_MAX {
@@ -543,7 +546,8 @@ impl GitRefcount {
     #[inline]
     #[must_use]
     pub unsafe fn dec(p: *const GitRefcount) -> bool {
-        // SAFETY: the caller's contract.
+        // SAFETY: `p` addresses a live count (this fn's contract: the
+        // caller still holds the reference it gives up here).
         let v = unsafe { Self::count(p) }.dec();
         // SAFETY: as above: the object is live until its last reference
         // is dropped, which is this one only if `v == 0` and no owner
@@ -562,7 +566,8 @@ impl GitRefcount {
     /// `p` addresses a live count on which the caller holds a reference.
     #[inline]
     pub unsafe fn sole(p: *const GitRefcount) -> bool {
-        // SAFETY: the caller's contract.
+        // SAFETY: `p` addresses a live count (this fn's contract; the
+        // caller's reference keeps it so).
         unsafe { Self::count(p) }.get() == 1
             // SAFETY: as above.
             && unsafe { Self::owner_cell(p) }.load(Ordering::SeqCst).is_null()
@@ -578,7 +583,9 @@ impl GitRefcount {
     /// dereferences the owner as that type).
     #[inline]
     pub unsafe fn own(p: *const GitRefcount, owner: *mut c_void) {
-        // SAFETY: the caller's contract.
+        // SAFETY: `p` addresses a live count (this fn's contract), what
+        // `owner_cell` requires; `owner`'s liveness is the caller's
+        // promise to the object's later readers, not needed here.
         unsafe { Self::owner_cell(p) }.swap(owner, Ordering::SeqCst);
     }
 
@@ -625,7 +632,8 @@ pub(crate) unsafe trait StartsWithRefcount: ffibox::CCounted {
     /// As [`GitRefcount::own`].
     #[inline]
     unsafe fn own(s: &ffibox::CShared<Self>, owner: *mut c_void) {
-        // SAFETY: the caller's contract; `s` keeps the object live and the
+        // SAFETY: `owner` is as `GitRefcount::own` requires (this fn's
+        // contract); `s` keeps the object live and the
         // count is at offset 0.
         unsafe { GitRefcount::own(ffibox::CShared::as_ptr(s).cast_const().cast(), owner) }
     }
@@ -656,29 +664,36 @@ macro_rules! impl_ccounted {
             type Alloc = $alloc;
             #[inline]
             unsafe fn c_init(this: core::ptr::NonNull<Self>) {
-                // SAFETY: the caller's contract.
+                // SAFETY: `this` is a live object nothing else reaches
+                // (`c_init`'s contract), whose count is at offset 0 (checked
+                // above): `GitRefcount::init`'s requirement.
                 unsafe { $crate::util::thread::GitRefcount::init($crate::util::thread::refcount_of(this)) }
             }
             #[inline]
             unsafe fn c_up_ref(this: core::ptr::NonNull<Self>) -> bool {
-                // SAFETY: the caller's contract.
+                // SAFETY: `this` is live with a reference the caller holds
+                // (`c_up_ref`'s contract), its count at offset 0.
                 unsafe { $crate::util::thread::GitRefcount::inc($crate::util::thread::refcount_of(this)) }
             }
             #[inline]
             unsafe fn c_down_ref(this: core::ptr::NonNull<Self>) -> bool {
-                // SAFETY: the caller's contract.
+                // SAFETY: `this` is live and the caller gives up its
+                // reference (`c_down_ref`'s contract), its count at offset 0.
                 unsafe { $crate::util::thread::GitRefcount::dec($crate::util::thread::refcount_of(this)) }
             }
             #[inline]
             unsafe fn c_is_sole_owner(this: core::ptr::NonNull<Self>) -> bool {
-                // SAFETY: the caller's contract.
+                // SAFETY: `this` is live with a reference the caller holds
+                // (`c_is_sole_owner`'s contract), its count at offset 0.
                 unsafe { $crate::util::thread::GitRefcount::sole($crate::util::thread::refcount_of(this)) }
             }
             $(
             #[inline]
             unsafe fn c_release(this: core::ptr::NonNull<Self>) {
                 let f: unsafe fn(core::ptr::NonNull<$t>) = $rel;
-                // SAFETY: the caller's contract: the last reference.
+                // SAFETY: `this` is the object whose last reference was
+                // dropped (`c_release`'s contract), which the release
+                // function named in `impl_ccounted!` takes over.
                 unsafe { f(this) }
             }
             )?
@@ -700,23 +715,29 @@ pub type TlsdataDestroyFn = unsafe extern "C" fn(*mut c_void);
 /// no error message on failure (the error state is itself thread-local).
 pub mod ffi {
     use super::*;
+    use crate::util::cabi::Out;
 
     /// `git_tlsdata_init`.
     ///
     /// # Safety
     ///
-    /// `key` is valid for a write; `destroy_fn` is NULL or sound to call at
-    /// thread exit with each value set for the key.
+    /// `key` is NULL (the key is made, not stored) or valid for a write;
+    /// `destroy_fn` is NULL or sound to call at thread exit with each
+    /// value set for the key.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tlsdata_init(
-        key: *mut TlsdataKey,
+        mut key: Out<'_, TlsdataKey>,
         destroy_fn: Option<TlsdataDestroyFn>,
     ) -> c_int {
-        // SAFETY: the caller passes a writable `key` and vouches for
-        // `destroy_fn`.
-        if unsafe { libc::pthread_key_create(key, destroy_fn) } != 0 {
+        let mut k: TlsdataKey = 0;
+        // SAFETY: `k` is a writable local; `destroy_fn` is NULL or sound to
+        // call at thread exit with the key's values (this export's
+        // contract).
+        if unsafe { libc::pthread_key_create(&raw mut k, destroy_fn) } != 0 {
             -1
         } else {
+            // `pthread_key_create` wrote the key only on success, as here.
+            key.write(k);
             0
         }
     }
@@ -863,7 +884,7 @@ mod tests {
         let mut v = 7u32;
         // SAFETY: a key created here, used and disposed on this thread.
         unsafe {
-            assert_eq!(ffi::git_tlsdata_init(&mut key, None), 0);
+            assert_eq!(ffi::git_tlsdata_init((&mut key).into(), None), 0);
             assert!(ffi::git_tlsdata_get(key).is_null());
             assert_eq!(ffi::git_tlsdata_set(key, (&raw mut v).cast()), 0);
             assert_eq!(ffi::git_tlsdata_get(key), (&raw mut v).cast());

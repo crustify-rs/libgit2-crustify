@@ -550,16 +550,12 @@ pub unsafe fn create_from_stream(
     ErrorCode::check(unsafe { p::git_repository__item_path(Some(&mut path), repo_ref, 4) })?;
     path.joinpath_self(b"streamed")?;
     let mut fbuf = Box::new(GitFilebuf::new());
-    // SAFETY: the filebuf is boxed: it does not move until the stream's
-    // drop cleans it up.
-    unsafe {
-        fbuf.open_withsize(
-            path.as_bytes(),
-            GIT_FILEBUF_TEMPORARY,
-            0o666,
-            2 * 1024 * 1024,
-        )
-    }?;
+    fbuf.open_withsize(
+        path.as_bytes(),
+        GIT_FILEBUF_TEMPORARY,
+        0o666,
+        2 * 1024 * 1024,
+    )?;
     Ok(CTable::new(BlobWriteStream {
         fbuf,
         repo,

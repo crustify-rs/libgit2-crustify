@@ -51,11 +51,9 @@ impl Drop for Scratch {
     }
 }
 
-/// `GitFilebuf::open` on a local that the test never moves.
+/// `GitFilebuf::open`.
 fn open_fb(f: &mut GitFilebuf, path: &[u8], flags: c_int, mode: u32) -> errors::Result<()> {
-    // SAFETY: the tests' filebufs are locals that stay in place until they
-    // are cleaned up (or dropped after cleanup).
-    unsafe { f.open(path, flags, mode) }
+    f.open(path, flags, mode)
 }
 
 fn last() -> (ErrorClass, String) {
@@ -218,6 +216,21 @@ fn readbuffer_and_writebuffer() {
     unsafe { posix::close(fd) }.unwrap();
     assert_eq!(b.as_bytes(), &data[..]);
 
+    // A failing read (a directory: EISDIR) is C's error, and the string is
+    // left empty (it was a length of `usize::MAX` before the check).
+    let fd = futils::open_ro(&t.c("")).unwrap();
+    assert_eq!(
+        futils::readbuffer_fd_full(&mut b, fd),
+        Err(ErrorCode::GENERIC)
+    );
+    assert_eq!(
+        last().1.split(':').next().unwrap(),
+        "failed to read descriptor"
+    );
+    assert_eq!((b.len(), b.capacity()), (0, 0));
+    // SAFETY: a descriptor this code opened, closed once.
+    unsafe { posix::close(fd) }.unwrap();
+
     let fd = futils::open_ro(&t.c("big")).unwrap();
     assert!(futils::readbuffer_fd(&mut b, fd, 40000).is_err());
     assert_eq!(
@@ -245,6 +258,13 @@ fn readbuffer_and_writebuffer() {
         -1
     );
     assert_eq!(last().1, "invalid argument: 'path && *path'");
+
+    // The path in the buffer the call replaces (and frees): read first.
+    b.sets(&t.path("big")).unwrap();
+    let in_b = b.as_ptr();
+    // SAFETY: a valid git_str, and a C string within its buffer.
+    assert_eq!(unsafe { git_futils_readbuffer(&mut b, in_b) }, 0);
+    assert_eq!(b.as_bytes(), &data[..]);
 }
 
 #[test]

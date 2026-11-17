@@ -380,31 +380,46 @@ impl HashCtx {
     /// `git_hash_ctx_init` on `ctx`, whose contents (maybe uninitialized)
     /// are overwritten: record `raw` and start a computation, or fail with
     /// "unknown hash algorithm" (then `raw` is still recorded, as C does,
-    /// and there is no computation).
+    /// and there is no computation). If a known algorithm fails to start
+    /// (OpenSSL's `SHA256_Init`), `NONE` is recorded instead of `raw` (C
+    /// recorded `raw` over a failed context): a known algorithm promises
+    /// [`hasher`](Self::hasher) a computation that is not there.
     ///
     /// # Safety
     ///
-    /// `ctx` is valid for writes of a `HashCtx`, and nothing else accesses
-    /// it during the call.
+    /// `ctx` is aligned and valid for writes of a `HashCtx`, and nothing
+    /// else accesses it during the call.
     pub(crate) unsafe fn init_raw(ctx: *mut HashCtx, raw: c_int) -> Result<()> {
-        // SAFETY: the caller's contract; fields are reached and written as
-        // raw places, so no reference covers the uninitialized storage.
-        #[allow(clippy::multiple_unsafe_ops_per_block)]
-        unsafe {
-            (&raw mut (*ctx).algorithm).write(raw)
+        // The fields' places, without a reference to the (maybe
+        // uninitialized) storage: `HashCtx` is `repr(C)`, so they lie at
+        // their offsets within the `HashCtx` that `ctx` is valid for.
+        let algorithm_at = ctx
+            .wrapping_byte_add(core::mem::offset_of!(HashCtx, algorithm))
+            .cast::<c_int>();
+        let hasher_at = ctx
+            .wrapping_byte_add(core::mem::offset_of!(HashCtx, hasher))
+            .cast::<MaybeUninit<Hasher>>();
+        // SAFETY: `algorithm_at` is the aligned `algorithm` field of the
+        // `HashCtx` that `ctx` is valid for writes of, which nothing else
+        // accesses (this fn's contract).
+        unsafe { algorithm_at.write(raw) };
+        let h = match Hasher::new(algorithm(raw)?) {
+            Ok(h) => h,
+            Err(e) => {
+                // SAFETY: as above.
+                unsafe { algorithm_at.write(raw_algorithm::NONE) };
+                return Err(e);
+            }
         };
-        let h = Hasher::new(algorithm(raw)?)?;
-        // SAFETY: as above.
-        #[allow(clippy::multiple_unsafe_ops_per_block)]
-        unsafe {
-            (&raw mut (*ctx).hasher).write(MaybeUninit::new(h))
-        };
+        // SAFETY: as above, for the `hasher` field.
+        unsafe { hasher_at.write(MaybeUninit::new(h)) };
         Ok(())
     }
 
     /// `git_hash_ctx_init` with a known algorithm, on a valid context.
     pub(crate) fn init(&mut self, algorithm: HashAlgorithm) -> Result<()> {
-        // SAFETY: `self` is a valid, exclusive `HashCtx`.
+        // SAFETY: `self` is an aligned `HashCtx` that this `&mut` alone
+        // accesses, so valid for writes of one.
         unsafe {
             HashCtx::init_raw(
                 self,
@@ -421,10 +436,12 @@ impl HashCtx {
     ///
     /// # Safety
     ///
-    /// The context went through `git_hash_ctx_init` ([`init_raw`](Self::init_raw)
-    /// or [`new`](Self::new)) with the algorithm it records.
+    /// The context went through `git_hash_ctx_init` ([`init_raw`](Self::init_raw),
+    /// [`init`](Self::init) or [`new`](Self::new)), and was not changed
+    /// since except by these methods: its computation is initialized when
+    /// it records a known algorithm.
     pub(crate) unsafe fn restart(&mut self) -> Result<()> {
-        // SAFETY: forwarded to the caller.
+        // SAFETY: `restart`'s contract is `hasher`'s.
         unsafe { self.hasher() }?.reset()
     }
 
@@ -437,8 +454,9 @@ impl HashCtx {
         if HashAlgorithm::from_raw(self.algorithm).is_none() {
             return Err(unknown_algorithm());
         }
-        // SAFETY: a known algorithm is recorded, so (the caller vouches)
-        // `init_raw` wrote the computation.
+        // SAFETY: a known algorithm is recorded and the context went
+        // through `init_raw` (the contract), which records one only after
+        // writing the computation.
         Ok(unsafe { self.hasher.assume_init_mut() })
     }
 }
@@ -472,20 +490,6 @@ pub mod ffi {
         0
     }
 
-    /// Convert a context pointer.
-    ///
-    /// # Safety
-    ///
-    /// A non-null `ctx` points to a `git_hash_ctx` that went through
-    /// `git_hash_ctx_init` (so its `algorithm` is initialized), and that
-    /// nothing else accesses during the call.
-    unsafe fn ctx<'a>(ctx: *mut HashCtx) -> Result<&'a mut HashCtx> {
-        git_assert_arg!(!ctx.is_null(), "ctx");
-        // SAFETY: the caller's contract: an initialized `algorithm` makes a
-        // valid `HashCtx` (its computation is `MaybeUninit`).
-        Ok(unsafe { &mut *ctx })
-    }
-
     /// `git_hash_ctx_init`.
     ///
     /// # Safety
@@ -496,7 +500,9 @@ pub mod ffi {
     pub unsafe extern "C" fn git_hash_ctx_init(ctx: *mut HashCtx, algorithm: c_int) -> c_int {
         barrier(|| {
             git_assert_arg!(!ctx.is_null(), "ctx", -1);
-            // SAFETY: forwarded to the caller.
+            // SAFETY: the non-null `ctx` is storage for a `git_hash_ctx`
+            // (aligned, writable) that nothing else accesses during the
+            // call (this export's contract), which is `init_raw`'s.
             status(unsafe { HashCtx::init_raw(ctx, algorithm) })
         })
     }
@@ -516,13 +522,16 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `ctx` went through `git_hash_ctx_init`, and nothing else accesses it
-    /// during the call.
+    /// `ctx` is NULL or went through `git_hash_ctx_init` (and only the
+    /// `git_hash_*` functions changed it since), and nothing else accesses
+    /// it during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_hash_init(ctx_: *mut HashCtx) -> c_int {
+    pub unsafe extern "C" fn git_hash_init(ctx: Option<&mut HashCtx>) -> c_int {
         barrier(|| {
-            // SAFETY: forwarded to the caller (both calls).
-            status(unsafe { ctx(ctx_) }.and_then(|c| unsafe { c.restart() }))
+            let c = crate::git_arg!(ctx, "ctx", -1);
+            // SAFETY: `c` went through `git_hash_ctx_init` (this export's
+            // contract), `restart`'s requirement.
+            status(unsafe { c.restart() })
         })
     }
 
@@ -534,30 +543,21 @@ pub mod ffi {
     /// 0) and not written during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_hash_update(
-        ctx_: *mut HashCtx,
+        ctx: Option<&mut HashCtx>,
         data: *const c_void,
         len: usize,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: forwarded to the caller.
-            let r = unsafe { ctx(ctx_) }.and_then(|c| {
-                // SAFETY: the caller initialized the context.
-                let h = unsafe { c.hasher() }?;
-                // SAFETY: the caller's contract on `data`.
+            let c = crate::git_arg!(ctx, "ctx", -1);
+            // SAFETY: `c` went through `git_hash_ctx_init` (this export's
+            // contract), `hasher`'s requirement.
+            let r = unsafe { c.hasher() }.and_then(|h| {
+                // SAFETY: `data` is readable for `len` bytes (or `len` is 0)
+                // and unwritten during the call (this export's contract).
                 h.update(unsafe { bytes(data.cast::<c_char>(), len) })
             });
             status(r)
         })
-    }
-
-    /// Write the first `n` bytes of `d` to `out`.
-    ///
-    /// # Safety
-    ///
-    /// `out` is writable for `n <= MAX_SIZE` bytes.
-    unsafe fn write_out(out: *mut u8, d: &[u8; MAX_SIZE], n: usize) {
-        // SAFETY: the caller's contract; `d` is a distinct local.
-        unsafe { core::ptr::copy_nonoverlapping(d.as_ptr(), out, n) };
     }
 
     /// Finish `h` into `out` as `git_hash_final` does: the digest is
@@ -565,12 +565,15 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` is writable for `h`'s digest size.
+    /// `out` is valid for writes of `h`'s digest size (maybe uninitialized
+    /// bytes), and no reference covers them.
     unsafe fn final_into(out: *mut u8, h: &mut Hasher) -> Result<()> {
         let mut d = [0; MAX_SIZE];
         let collision = h.finalize_raw(&mut d)?;
-        // SAFETY: forwarded to the caller.
-        unsafe { write_out(out, &d, h.algorithm().size()) };
+        let n = h.algorithm().size();
+        // SAFETY: `out` is writable for `n` bytes (this fn's contract);
+        // `d` is a distinct local of `MAX_SIZE >= n` bytes.
+        unsafe { core::ptr::copy_nonoverlapping(d.as_ptr(), out, n) };
         if collision {
             Err(collision_error())
         } else {
@@ -582,15 +585,17 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// As `git_hash_init`; `out` is writable for the digest's size.
+    /// As `git_hash_init`; `out` is writable for the digest's size, and
+    /// does not overlap `ctx`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_hash_final(out: *mut u8, ctx_: *mut HashCtx) -> c_int {
+    pub unsafe extern "C" fn git_hash_final(out: *mut u8, ctx: Option<&mut HashCtx>) -> c_int {
         barrier(|| {
-            // SAFETY: forwarded to the caller.
-            let r = unsafe { ctx(ctx_) }.and_then(|c| {
-                // SAFETY: the caller initialized the context.
-                let h = unsafe { c.hasher() }?;
-                // SAFETY: the caller's contract on `out`.
+            let c = crate::git_arg!(ctx, "ctx", -1);
+            // SAFETY: `c` went through `git_hash_ctx_init` (this export's
+            // contract), `hasher`'s requirement.
+            let r = unsafe { c.hasher() }.and_then(|h| {
+                // SAFETY: `out` is writable for the digest's size, apart
+                // from `ctx` (this export's contract).
                 unsafe { final_into(out, h) }
             });
             status(r)
@@ -601,8 +606,9 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `data` is readable for `len` bytes (or `len` is 0); `out` is
-    /// writable for the algorithm's digest size.
+    /// `data` is readable for `len` bytes (or `len` is 0) and unwritten
+    /// during the call; `out` is writable for the algorithm's digest size
+    /// and does not overlap `data`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_hash_buf(
         out: *mut u8,
@@ -612,11 +618,13 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             let r = super::algorithm(algorithm).and_then(|a| {
-                // SAFETY: the caller's contract on `data`.
+                // SAFETY: `data` is readable for `len` bytes (or `len` is 0)
+                // and unwritten during the call (this export's contract).
                 let data = unsafe { bytes(data.cast::<c_char>(), len) };
                 with_oneshot(a, |h| {
                     h.update(data)?;
-                    // SAFETY: the caller's contract on `out`.
+                    // SAFETY: `out` is writable for the digest's size (this
+                    // export's contract), and does not overlap `data`.
                     unsafe { final_into(out, h) }
                 })
             });
@@ -629,7 +637,8 @@ pub mod ffi {
     /// # Safety
     ///
     /// `vec` holds `n` entries (or `n` is 0), each readable for its `len`
-    /// bytes; `out` is writable for the algorithm's digest size.
+    /// bytes; nothing writes them during the call; `out` is writable for
+    /// the algorithm's digest size and overlaps none of them.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_hash_vec(
         out: *mut u8,
@@ -642,15 +651,21 @@ pub mod ffi {
                 let vec: &[GitStrVec] = if n == 0 || vec.is_null() {
                     &[]
                 } else {
-                    // SAFETY: the caller passes `n` entries.
+                    // SAFETY: `vec` holds `n` readable entries, unwritten
+                    // during the call (this export's contract), so `n *
+                    // size_of::<GitStrVec>()` fits a readable range (at most
+                    // `isize::MAX`); `GitStrVec` is plain data.
                     unsafe { core::slice::from_raw_parts(vec, n) }
                 };
                 with_oneshot(a, |h| {
                     for v in vec {
-                        // SAFETY: the caller's contract on each entry.
+                        // SAFETY: each entry's `data` is readable for its
+                        // `len` bytes (or `len` is 0), unwritten during the
+                        // call (this export's contract).
                         h.update(unsafe { bytes(v.data.cast::<c_char>(), v.len) })?;
                     }
-                    // SAFETY: the caller's contract on `out`.
+                    // SAFETY: `out` is writable for the digest's size (this
+                    // export's contract), and overlaps no input.
                     unsafe { final_into(out, h) }
                 })
             });
@@ -672,11 +687,16 @@ pub mod ffi {
         hash_len: usize,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract on `hash`.
+            // SAFETY: `hash` is readable for `hash_len` bytes, unwritten
+            // during the call (this export's contract; `out` does not
+            // overlap it).
             let hash = unsafe { bytes(hash.cast::<c_char>(), hash_len) };
             const HEX: &[u8; 16] = b"0123456789abcdef";
-            // SAFETY: the caller's contract on `out` (writable, maybe
-            // uninitialized, so only written), disjoint from `hash`.
+            // SAFETY: `out` is writable for `2 * hash_len + 1` bytes (this
+            // export's contract; `bytes` checked `hash_len <= isize::MAX`,
+            // so no overflow, and a writable range is at most `isize::MAX`
+            // long), disjoint from `hash`, and accessed by nothing else;
+            // as `MaybeUninit` it may be uninitialized, and is only written.
             let out = unsafe {
                 core::slice::from_raw_parts_mut(out.cast::<MaybeUninit<u8>>(), 2 * hash_len + 1)
             };

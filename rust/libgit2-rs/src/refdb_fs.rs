@@ -507,9 +507,7 @@ pub struct LockFile(Option<Box<GitFilebuf>>);
 impl LockFile {
     fn open(path: &[u8], flags: c_int, mode: u32) -> Result<LockFile> {
         let mut f = Box::new(GitFilebuf::new());
-        // SAFETY: the box keeps the filebuf in place until it is cleaned
-        // up (`Drop`, or the commit); only the box pointer ever moves.
-        unsafe { f.open(path, flags, mode) }?;
+        f.open(path, flags, mode)?;
         Ok(LockFile(Some(f)))
     }
 

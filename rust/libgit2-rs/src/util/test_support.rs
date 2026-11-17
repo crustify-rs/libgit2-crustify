@@ -52,9 +52,15 @@ fn init_library() {
 
 #[cfg(not(all(feature = "link-c", not(miri))))]
 fn init_library() {
+    /// # Safety
+    ///
+    /// None (an `InitFn`, whose type is `unsafe`).
     unsafe extern "C" fn alloc_init() -> c_int {
         crate::util::export::status(alloc::global_init())
     }
+    /// # Safety
+    ///
+    /// None (as `alloc_init`).
     unsafe extern "C" fn error_init() -> c_int {
         crate::util::export::status(crate::util::errors::global_init())
     }
@@ -105,6 +111,12 @@ fn blocks<R>(f: impl FnOnce(&mut std::collections::HashMap<usize, usize>) -> R) 
     f(g.get_or_insert_with(Default::default))
 }
 
+/// The limited allocator's `gmalloc`.
+///
+/// # Safety
+///
+/// None beyond `git__allocator`'s: any size (the file and line are not
+/// read).
 unsafe extern "C" fn cl_malloc(len: usize, _file: *const c_char, _line: c_int) -> *mut c_void {
     if len > BYTES_AVAILABLE.load(Ordering::SeqCst) {
         return core::ptr::null_mut();
@@ -120,6 +132,12 @@ unsafe extern "C" fn cl_malloc(len: usize, _file: *const c_char, _line: c_int) -
     p
 }
 
+/// The limited allocator's `gfree`.
+///
+/// # Safety
+///
+/// `ptr` is NULL or a live `malloc` block (one of this allocator's, or one
+/// the default allocator made), not used after.
 unsafe extern "C" fn cl_free(ptr: *mut c_void) {
     if ptr.is_null() {
         return;
@@ -132,6 +150,11 @@ unsafe extern "C" fn cl_free(ptr: *mut c_void) {
     unsafe { libc::free(ptr) };
 }
 
+/// The limited allocator's `grealloc`.
+///
+/// # Safety
+///
+/// `ptr` is as in [`cl_free`]; on success it is not used after.
 unsafe extern "C" fn cl_realloc(
     ptr: *mut c_void,
     size: usize,

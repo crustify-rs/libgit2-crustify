@@ -16,6 +16,8 @@
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
+
 use super::errors::{self, Result};
 
 pub use libc::{mode_t, off_t, stat as Stat};
@@ -101,8 +103,27 @@ pub fn creat(path: &CStr, mode: mode_t) -> SysResult<c_int> {
 /// something else owns lets the number be reused under it (I/O safety).
 #[inline]
 pub unsafe fn close(fd: c_int) -> SysResult<()> {
-    // SAFETY: the caller gives up its descriptor.
+    // SAFETY: `close` of any number is memory-safe; the I/O-safety
+    // condition (`fd` is the caller's to give up) is this fn's contract.
     check(unsafe { libc::close(fd) })
+}
+
+/// [`open`], the new descriptor owned: it is closed once, when the
+/// [`OwnedFd`] is dropped (ignoring the result) or given to
+/// [`close_owned`].
+pub fn open_owned(path: &CStr, flags: c_int, mode: mode_t) -> SysResult<OwnedFd> {
+    let fd = open(path, flags, mode)?;
+    // SAFETY: `open` just returned `fd` (non-negative), so it is an open
+    // descriptor that nothing else in the process owns or will close.
+    Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+}
+
+/// `p_close` of an owned descriptor, with `close`'s result (which dropping
+/// the [`OwnedFd`] ignores).
+pub fn close_owned(fd: OwnedFd) -> SysResult<()> {
+    // SAFETY: `into_raw_fd` hands `fd`'s ownership to this call, so it is
+    // closed here once and nothing else owns the number.
+    check(unsafe { libc::close(fd.into_raw_fd()) })
 }
 
 /// `p_read` over raw memory: read up to `len` bytes into `buf`, looping on
@@ -117,7 +138,9 @@ pub unsafe fn read_raw(fd: c_int, buf: *mut u8, len: usize) -> isize {
     // kernel judges the length.
     let mut done = 0usize;
     while done < len {
-        // SAFETY: `buf + done` has `len - done` writable bytes (caller).
+        // SAFETY: `done < len` and `read` returns at most what it is asked, so
+        // `buf + done` starts `len - done` bytes that are writable (this fn's
+        // contract).
         let r = unsafe { libc::read(fd, buf.wrapping_add(done).cast::<c_void>(), len - done) };
         if r < 0 {
             let e = errors::errno();
@@ -175,14 +198,16 @@ pub fn fsync(fd: c_int) -> SysResult<()> {
     check(unsafe { libc::fsync(fd) })
 }
 
-fn stat_with(
-    f: unsafe extern "C" fn(*const c_char, *mut Stat) -> c_int,
-    path: &CStr,
-) -> SysResult<Stat> {
+/// `stat`, or `lstat` when `link`, of `path`.
+fn stat_with(link: bool, path: &CStr) -> SysResult<Stat> {
     let mut st = core::mem::MaybeUninit::<Stat>::uninit();
-    // SAFETY: `path` is NUL-terminated and `st` writable; `f` is `stat` or
-    // `lstat`.
-    let r = unsafe { f(path.as_ptr(), st.as_mut_ptr()) };
+    let r = if link {
+        // SAFETY: `path` is NUL-terminated and `st` writable for a `stat`.
+        unsafe { libc::lstat(path.as_ptr(), st.as_mut_ptr()) }
+    } else {
+        // SAFETY: as above.
+        unsafe { libc::stat(path.as_ptr(), st.as_mut_ptr()) }
+    };
     if r < 0 {
         return Err(last_errno());
     }
@@ -192,12 +217,12 @@ fn stat_with(
 
 /// `p_stat`.
 pub fn stat(path: &CStr) -> SysResult<Stat> {
-    stat_with(libc::stat, path)
+    stat_with(false, path)
 }
 
 /// `p_lstat` (and `p_lstat_posixly`).
 pub fn lstat(path: &CStr) -> SysResult<Stat> {
-    stat_with(libc::lstat, path)
+    stat_with(true, path)
 }
 
 /// `p_fstat`.
@@ -407,7 +432,10 @@ pub fn mmap(len: usize, prot: c_int, flags: c_int, fd: c_int, offset: i64) -> Re
 /// is empty; no reference into the mapping outlives the call.
 pub unsafe fn munmap(map: &mut GitMap) {
     if !map.data.is_null() {
-        // SAFETY: the caller's contract: a live mapping of `len` bytes.
+        // SAFETY: a non-null `data` is, by this fn's contract, a mapping of
+        // `len` bytes made by `mmap` and not unmapped since, with no
+        // reference into it outliving the call: unmapping it invalidates
+        // nothing in use.
         unsafe { libc::munmap(map.data, map.len) };
     }
     map.data = core::ptr::null_mut();
@@ -435,18 +463,19 @@ pub fn page_size() -> Result<usize> {
 pub mod ffi {
     use super::*;
     use crate::util::alloc;
-    use crate::util::export::{barrier, cstr};
+    use crate::util::cabi::{CStrArg, Out};
+    use crate::util::export::barrier;
 
     /// The body of `p_open` (whose variadic shim is in `rust_shims.c`).
     ///
     /// # Safety
     ///
-    /// `path` is a NUL-terminated string.
+    /// `path` is NULL (`EFAULT`) or a NUL-terminated string that stays
+    /// readable and unwritten during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__p_open(path: *const c_char, flags: c_int, mode: mode_t) -> c_int {
+    pub unsafe extern "C" fn git__p_open(path: CStrArg<'_>, flags: c_int, mode: mode_t) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes a NUL-terminated path.
-            let Some(path) = (unsafe { cstr(path) }) else {
+            let Some(path) = path.get() else {
                 errors::set_errno(libc::EFAULT);
                 return -1;
             };
@@ -458,12 +487,11 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `path` is a NUL-terminated string.
+    /// As [`git__p_open`].
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn p_creat(path: *const c_char, mode: mode_t) -> c_int {
+    pub unsafe extern "C" fn p_creat(path: CStrArg<'_>, mode: mode_t) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes a NUL-terminated path.
-            let Some(path) = (unsafe { cstr(path) }) else {
+            let Some(path) = path.get() else {
                 errors::set_errno(libc::EFAULT);
                 return -1;
             };
@@ -475,10 +503,12 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `buf` is valid for writes of `cnt` bytes.
+    /// `buf` is valid for writes of `cnt` bytes (which need not be
+    /// initialized), and nothing else accesses them during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn p_read(fd: c_int, buf: *mut c_void, cnt: usize) -> isize {
-        // SAFETY: forwarded.
+        // SAFETY: `buf` is valid for writes of `cnt` bytes (this export's
+        // contract), which is `read_raw`'s requirement.
         barrier(|| unsafe { read_raw(fd, buf.cast(), cnt) })
     }
 
@@ -486,7 +516,8 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `buf` is valid for reads of `cnt` bytes.
+    /// `buf` is valid for reads of `cnt` initialized bytes, which nothing
+    /// writes during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn p_write(fd: c_int, buf: *const c_void, cnt: usize) -> c_int {
         barrier(|| {
@@ -495,7 +526,9 @@ pub mod ffi {
                 errors::set_errno(libc::EINVAL);
                 return -1;
             }
-            // SAFETY: the caller passes `cnt` readable bytes.
+            // SAFETY: `buf` has `cnt <= isize::MAX` readable, initialized
+            // bytes that nothing writes during the call (this export's
+            // contract); `bytes` returns `&[]` for `cnt == 0`.
             let b = unsafe { crate::util::export::bytes(buf.cast(), cnt) };
             match write(fd, b) {
                 Ok(()) => 0,
@@ -510,25 +543,32 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `buffer_out` is valid for writes of `size` bytes.
+    /// `buffer_out` is NULL or valid for writes of `size` bytes (which need
+    /// not be initialized), and nothing else accesses them during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn p_getcwd(buffer_out: *mut c_char, size: usize) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!buffer_out.is_null(), "buffer_out", -1);
             crate::git_assert_arg!(size > 0, "size > 0", -1);
-            // SAFETY: the caller passes `size` writable bytes.
+            // SAFETY: `buffer_out` is non-null and writable for `size > 0`
+            // bytes (this export's contract), which is what `getcwd` writes
+            // at most.
             if unsafe { libc::getcwd(buffer_out, size) }.is_null() {
                 return -1;
             }
-            // SAFETY: `getcwd` wrote a NUL-terminated string into the buffer
-            // (whose other bytes may be uninitialized: no slice is made).
+            // SAFETY: `getcwd` succeeded, so it wrote a NUL-terminated
+            // string within the `size` bytes, which nothing else writes
+            // while this reads it (the contract); no slice is made over the
+            // bytes after the NUL, which may be uninitialized.
             let end = unsafe { CStr::from_ptr(buffer_out) }.to_bytes().len();
             let p = buffer_out.cast::<u8>();
             // `git_fs_path_string_to_dir`, keeping both bytes in the buffer
             // (C wrote the NUL at `buffer_out[size]` when only the slash fit).
-            // SAFETY: `end - 1` is within the string when `end > 0`.
+            // SAFETY: `end > 0` (tested first), so `end - 1` indexes a byte
+            // of the string `getcwd` just wrote.
             if end > 0 && end + 1 < size && unsafe { p.wrapping_add(end - 1).read() } != b'/' {
-                // SAFETY: `end + 1 < size`: both bytes are in the buffer.
+                // SAFETY: `end + 1 < size`: bytes `end` and `end + 1` are in
+                // the writable buffer (the contract).
                 unsafe { p.wrapping_add(end).write(b'/') };
                 // SAFETY: as above.
                 unsafe { p.wrapping_add(end + 1).write(0) };
@@ -541,12 +581,12 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `from` and `to` are NUL-terminated strings.
+    /// `from` and `to` are each NULL (`EFAULT`) or a NUL-terminated string
+    /// that stays readable and unwritten during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn p_rename(from: *const c_char, to: *const c_char) -> c_int {
+    pub unsafe extern "C" fn p_rename(from: CStrArg<'_>, to: CStrArg<'_>) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes NUL-terminated strings.
-            let (Some(from), Some(to)) = (unsafe { cstr(from) }, unsafe { cstr(to) }) else {
+            let (Some(from), Some(to)) = (from.get(), to.get()) else {
                 errors::set_errno(libc::EFAULT);
                 return -1;
             };
@@ -562,22 +602,29 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `pathname` is a NUL-terminated string; `resolved` is NULL or valid
-    /// for writes of `PATH_MAX` bytes.
+    /// `pathname` is NULL (`EINVAL`) or a NUL-terminated string, readable
+    /// and unwritten during the call; `resolved` is NULL or valid for
+    /// writes of `PATH_MAX` bytes that nothing else accesses during the
+    /// call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn p_realpath(
         pathname: *const c_char,
         resolved: *mut c_char,
     ) -> *mut c_char {
         barrier(|| {
-            // SAFETY: the caller's contract is `realpath`'s.
+            // SAFETY: `realpath`'s requirements are this export's contract:
+            // `pathname` NULL or a readable C string, `resolved` NULL or
+            // `PATH_MAX` writable bytes.
             let result = unsafe { libc::realpath(pathname, resolved) };
             if result.is_null() || !resolved.is_null() {
                 return result;
             }
-            // SAFETY: `realpath` allocated a NUL-terminated string.
+            // SAFETY: with a NULL `resolved`, a non-null result is a
+            // NUL-terminated string `realpath` allocated for this call and
+            // nothing else references; it is freed only below.
             let dup = alloc::strdup(unsafe { CStr::from_ptr(result) });
-            // SAFETY: allocated by the C library's `malloc`, freed once.
+            // SAFETY: `result` came from the C library's `malloc` (inside
+            // `realpath`), is freed once, and the `CStr` above is gone.
             unsafe { libc::free(result.cast()) };
             dup
         })
@@ -587,13 +634,13 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `page_size` is writable.
+    /// `page_size` is NULL (nothing is written) or valid for a write of a
+    /// `size_t`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__page_size(page_size: *mut usize) -> c_int {
+    pub unsafe extern "C" fn git__page_size(mut page_size: Out<'_, usize>) -> c_int {
         barrier(|| match super::page_size() {
             Ok(n) => {
-                // SAFETY: the caller passes a writable `size_t`.
-                unsafe { page_size.write(n) };
+                page_size.write(n);
                 0
             }
             Err(e) => e.raw(),
@@ -604,10 +651,11 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `alignment` is writable.
+    /// As [`git__page_size`].
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__mmap_alignment(alignment: *mut usize) -> c_int {
-        // SAFETY: forwarded.
+    pub unsafe extern "C" fn git__mmap_alignment(alignment: Out<'_, usize>) -> c_int {
+        // SAFETY: `alignment` is the `Out` this export received, whose
+        // invariant is `git__page_size`'s requirement.
         unsafe { git__page_size(alignment) }
     }
 
@@ -615,10 +663,11 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` is NULL or a writable `git_map`.
+    /// `out` is NULL (an assertion error) or valid for writes of a
+    /// `git_map`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn p_mmap(
-        out: *mut GitMap,
+        mut out: Out<'_, GitMap>,
         len: usize,
         prot: c_int,
         flags: c_int,
@@ -634,12 +683,10 @@ pub mod ffi {
             if let Err(e) = mmap_args(len, prot, flags) {
                 return e.raw();
             }
-            // SAFETY: the caller passes a writable `git_map`.
-            unsafe { out.write(GitMap::default()) };
+            out.write(GitMap::default());
             match mmap(len, prot, flags, fd, offset) {
                 Ok(m) => {
-                    // SAFETY: as above.
-                    unsafe { out.write(m) };
+                    out.write(m);
                     0
                 }
                 Err(e) => e.raw(),
@@ -651,15 +698,16 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `map` is NULL or a `git_map` filled by `p_mmap` (or empty).
+    /// `map` is NULL (an assertion error) or a `git_map` that nothing else
+    /// accesses during the call, filled by `p_mmap` and not unmapped since
+    /// (or empty), into whose mapping no reference outlives the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn p_munmap(map: *mut GitMap) -> c_int {
+    pub unsafe extern "C" fn p_munmap(map: Option<&mut GitMap>) -> c_int {
         barrier(|| {
-            crate::git_assert_arg!(!map.is_null(), "map", -1);
-            // SAFETY: the caller passes a valid `git_map`, used by no one
-            // during the call.
-            let map = unsafe { &mut *map };
-            // SAFETY: a mapping from `p_mmap` (or empty).
+            let map = crate::git_arg!(map, "map", -1);
+            // SAFETY: `map` is a live mapping from `p_mmap` (or empty), with
+            // no reference into it outliving the call (this export's
+            // contract), which is `munmap`'s requirement.
             unsafe { munmap(map) };
             0
         })

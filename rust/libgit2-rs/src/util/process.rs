@@ -171,31 +171,35 @@ unsafe extern "C" {
     static mut environ: *const *const c_char;
 }
 
-/// This process's environment, as `environ` lists it. The slices borrow
-/// the C library's strings: `'a` is the caller's scope, during which (the
-/// header's contract for `git_process_new`) the environment must not be
-/// changed.
-fn environ_entries<'a>() -> Vec<&'a [u8]> {
+/// Run `f` on this process's environment, as `environ` lists it. The
+/// slices borrow the C library's strings for the call of `f` only, during
+/// which (the header's contract for `git_process_new`) the environment
+/// must not be changed: as for std's `env::var`, its writers (`setenv`,
+/// `putenv`, std's `unsafe` `set_var`) are the ones whose contract
+/// excludes concurrent readers.
+fn with_environ<R>(f: impl FnOnce(&[&[u8]]) -> R) -> R {
     let mut v = Vec::new();
     // SAFETY: a read of the C library's pointer through a raw place (no
     // reference to the mutable static is formed).
     let mut p = unsafe { (&raw const environ).read() };
-    if p.is_null() {
-        return v;
-    }
-    loop {
-        // SAFETY: `environ` is a NULL-terminated array of NUL-terminated
-        // strings, which (per the contract) nothing changes meanwhile.
-        let s = unsafe { *p };
-        if s.is_null() {
-            break;
+    if !p.is_null() {
+        loop {
+            // SAFETY: `environ` is a NULL-terminated array of pointers to
+            // NUL-terminated strings, which nothing changes during this
+            // call (above); `p` is at most at its terminating NULL.
+            let s = unsafe { *p };
+            if s.is_null() {
+                break;
+            }
+            // SAFETY: as above; the slice is used only until `f` returns,
+            // within this call.
+            v.push(unsafe { CStr::from_ptr(s) }.to_bytes());
+            // `p` was not the terminating NULL: the next entry is in the
+            // array.
+            p = p.wrapping_add(1);
         }
-        // SAFETY: as above; the caller uses the slices within its scope.
-        v.push(unsafe { CStr::from_ptr(s) }.to_bytes());
-        // SAFETY: not past the terminating NULL.
-        p = unsafe { p.add(1) };
     }
-    v
+    f(&v)
 }
 
 /// `merge_env`: `env` (less its `NAME=` entries), then the `inherited`
@@ -349,17 +353,20 @@ struct ChildPlan {
     reset_sigpipe: bool,
 }
 
-/// `try_write_status`: write all of `len` bytes at `buf` unless `write`
-/// fails or makes no progress. Async-signal-safe.
-fn child_write_all(fd: c_int, buf: *const u8, len: usize) -> bool {
+/// `try_write_status`: write all of `buf` unless `write` fails or makes
+/// no progress. Async-signal-safe (no slicing: pointer arithmetic, so no
+/// bounds check and no panic edge).
+fn child_write_all(fd: c_int, buf: &[u8]) -> bool {
+    let len = buf.len();
     let mut written = 0usize;
     while written < len {
-        // SAFETY: `buf` has `len` readable bytes (a local array or a
-        // static string); `write` is async-signal-safe.
+        // SAFETY: `written < len`, so `buf + written` starts `len -
+        // written` readable bytes of the slice; `write` is
+        // async-signal-safe.
         let ret = unsafe {
             libc::write(
                 fd,
-                buf.wrapping_add(written).cast(),
+                buf.as_ptr().wrapping_add(written).cast(),
                 len.wrapping_sub(written),
             )
         };
@@ -386,11 +393,11 @@ fn child_write_status(fd: c_int, name: &'static [u8], error: c_int, os_error: c_
         e[0], e[1], e[2], e[3], o[0], o[1], o[2], o[3], l[0], l[1], l[2], l[3],
     ];
     // Do our best effort to write all the status.
-    if !child_write_all(fd, buffer.as_ptr(), STATUS_LEN) {
+    if !child_write_all(fd, &buffer) {
         return;
     }
     if !name.is_empty() {
-        child_write_all(fd, name.as_ptr(), name.len());
+        child_write_all(fd, name);
     }
 }
 
@@ -478,12 +485,11 @@ impl GitProcess {
         git_assert_arg!(!args.is_empty(), "out && args && args_len > 0");
         let use_shell = opts.is_some_and(|o| o.use_shell);
         let argv = setup_args(args, use_shell)?;
-        let inherited = if opts.is_some_and(|o| o.exclude_env) {
-            Vec::new()
+        let envv = if opts.is_some_and(|o| o.exclude_env) {
+            merge_env(env, &[])?
         } else {
-            environ_entries()
+            with_environ(|inherited| merge_env(env, inherited))?
         };
-        let envv = merge_env(env, &inherited)?;
 
         let mut p = GitProcess {
             args: argv,
@@ -695,7 +701,9 @@ impl GitProcess {
     /// `buf` is valid for writes of `count` bytes (any pointer if 0).
     unsafe fn read_fd(fd: c_int, buf: *mut u8, count: usize) -> Result<usize> {
         let count = count.min(isize::MAX as usize);
-        // SAFETY: the caller's contract; `read` writes at most `count`.
+        // SAFETY: `buf` is valid for writes of `count` bytes (this fn's
+        // contract; `count` only shrank), and `read` writes at most
+        // `count` of them, without reading.
         let ret = unsafe { libc::read(fd, buf.cast(), count) };
         if ret < 0 {
             let _ = git_error_set!(ErrorClass::OS, "could not read from child process");
@@ -825,8 +833,8 @@ fn sigpipe_set() -> libc::sigset_t {
 /// the previous mask.
 fn disable_signals() -> Result<libc::sigset_t> {
     let mask = sigpipe_set();
-    // SAFETY: plain data, written by `pthread_sigmask`.
-    let mut saved: libc::sigset_t = unsafe { core::mem::zeroed() };
+    // Any initialized set: `pthread_sigmask` overwrites it.
+    let mut saved = mask;
     // pthread reports failure with a positive value, which the C's `< 0`
     // never sees; so here.
     // SAFETY: valid sets.
@@ -841,8 +849,8 @@ fn disable_signals() -> Result<libc::sigset_t> {
 /// restore the mask.
 fn restore_signals(saved: &libc::sigset_t) -> Result<()> {
     let mask = sigpipe_set();
-    // SAFETY: plain data, written by `sigpending`.
-    let mut pending: libc::sigset_t = unsafe { core::mem::zeroed() };
+    // Any initialized set: `sigpending` overwrites it.
+    let mut pending = mask;
     // SAFETY: a valid set to write.
     if unsafe { libc::sigpending(&raw mut pending) } < 0 {
         let _ = git_error_set!(ErrorClass::OS, "could not examine pending signals");
@@ -1035,36 +1043,40 @@ pub mod ffi {
         }
         v.try_reserve_exact(len).map_err(|_| errors::oom())?;
         for i in 0..len {
-            // SAFETY: the caller's contract: `len` pointers at `p`.
+            // SAFETY: `p` has `len` readable pointers (this fn's
+            // contract), and `i < len`.
             let s = unsafe { *p.wrapping_add(i) };
-            // SAFETY: a NUL-terminated string.
+            // SAFETY: each is a valid string pointer whose string outlives
+            // the result (the contract); `cstr_bytes` maps NULL to `""`.
             v.push(unsafe { cstr_bytes(s) });
         }
         Ok(v)
     }
 
-    fn options(o: &GitProcessOptions) -> ProcessOptions {
+    /// What `git_process_new` reads of C's options.
+    ///
+    /// # Safety
+    ///
+    /// `o.cwd` is NULL or a NUL-terminated string, readable during the
+    /// call.
+    unsafe fn options(o: &GitProcessOptions) -> ProcessOptions {
         ProcessOptions {
             use_shell: o.flags.is_set(flags::USE_SHELL),
             capture_in: o.flags.is_set(flags::CAPTURE_IN),
             capture_out: o.flags.is_set(flags::CAPTURE_OUT),
             capture_err: o.flags.is_set(flags::CAPTURE_ERR),
             exclude_env: o.flags.is_set(flags::EXCLUDE_ENV),
-            // SAFETY: `cwd` is NULL or a NUL-terminated string (the
-            // options' contract).
+            // SAFETY: a non-null `cwd` is a NUL-terminated string,
+            // readable during the call (this fn's contract), copied here.
             cwd: (!o.cwd.is_null()).then(|| unsafe { cstr_bytes(o.cwd) }.to_vec()),
         }
     }
 
-    /// The process behind a C pointer.
-    ///
-    /// # Safety
-    ///
-    /// `p` is a live process in this thread's exclusive use.
-    unsafe fn process<'a>(p: *mut GitProcess) -> &'a mut GitProcess {
-        // SAFETY: the caller's contract.
-        unsafe { &mut *p }
-    }
+    // `git_process *` arguments: a process `git_process_new` returned, not
+    // freed, that nothing else accesses during the call (one thread at a
+    // time). The exports whose C dereferences it unchecked take `&mut
+    // GitProcess` (NULL was, and is, undefined); those whose C asserts
+    // take `Option<&mut GitProcess>`.
 
     /// `git_process_new`.
     ///
@@ -1072,16 +1084,16 @@ pub mod ffi {
     ///
     /// `out` is NULL or writable; `args` is NULL or has `args_len` valid
     /// string pointers; `env` is NULL or has `env_len`; `opts` is NULL or
-    /// valid (with `cwd` NULL or a string). The environment does not change
-    /// during the call.
+    /// valid (with `cwd` NULL or a string). Nothing writes them during the
+    /// call, and the environment does not change during it.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_process_new(
-        out: *mut *mut GitProcess,
+        mut out: Out<'_, *mut GitProcess>,
         args: *const *const c_char,
         args_len: usize,
         env: *const *const c_char,
         env_len: usize,
-        opts: *mut GitProcessOptions,
+        opts: Option<&GitProcessOptions>,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(
@@ -1089,24 +1101,24 @@ pub mod ffi {
                 "out && args && args_len > 0",
                 -1
             );
-            // SAFETY: `out` is writable.
-            unsafe { out.write(core::ptr::null_mut()) };
-            // SAFETY: the caller's contract.
-            let opts = unsafe { opts.as_ref() }.map(options);
-            // SAFETY: the caller's contract.
+            out.write(core::ptr::null_mut());
+            // SAFETY: `opts.cwd` is NULL or a string (this export's
+            // contract), `options`' requirement.
+            let opts = opts.map(|o| unsafe { options(o) });
+            // SAFETY: `args` has `args_len` valid string pointers, whose
+            // strings outlive `args` (used only in this call).
             let args = match unsafe { strings(args, args_len) } {
                 Ok(a) => a,
                 Err(e) => return e.raw(),
             };
-            // SAFETY: the caller's contract.
+            // SAFETY: as for `args`, with `env` (NULL: none).
             let env = match unsafe { strings(env, env_len) } {
                 Ok(e) => e,
                 Err(e) => return e.raw(),
             };
             match GitProcess::new(&args, &env, opts.as_ref()) {
                 Ok(p) => {
-                    // SAFETY: `out` is writable.
-                    unsafe { out.write(Box::into_raw(Box::new(p))) };
+                    out.write(Box::into_raw(Box::new(p)));
                     0
                 }
                 Err(_) => -1,
@@ -1121,54 +1133,54 @@ pub mod ffi {
     /// As [`git_process_new`], with `cmdline` a string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_process_new_from_cmdline(
-        out: *mut *mut GitProcess,
+        out: Out<'_, *mut GitProcess>,
         cmdline: *const c_char,
         env: *const *const c_char,
         env_len: usize,
-        opts: *mut GitProcessOptions,
+        opts: Option<&GitProcessOptions>,
     ) -> c_int {
-        let mut merged = GitProcessOptions {
+        let mut merged = opts.copied().unwrap_or(GitProcessOptions {
             flags: CBitfield::new(0),
             cwd: core::ptr::null_mut(),
-        };
-        if !opts.is_null() {
-            // SAFETY: valid options.
-            merged = unsafe { opts.read() };
-        }
+        });
         merged.flags.set_flag(flags::USE_SHELL, true);
         let args = [cmdline];
-        // SAFETY: forwarded; `args` is one string pointer.
-        unsafe { git_process_new(out, args.as_ptr(), 1, env, env_len, &raw mut merged) }
+        // SAFETY: `out`, `env` and `merged.cwd` (C's) are as this export's
+        // contract, which is `git_process_new`'s; `args` is one pointer to
+        // the string `cmdline`, alive for the call.
+        unsafe { git_process_new(out, args.as_ptr(), 1, env, env_len, Some(&merged)) }
     }
 
     /// `git_process_start`.
     ///
     /// # Safety
     ///
-    /// `process` is a live process.
+    /// `process` is a live process that nothing else accesses during the
+    /// call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_process_start(process: *mut GitProcess) -> c_int {
-        // SAFETY: the caller's contract.
-        barrier(|| to_status(unsafe { super::ffi::process(process) }.start()))
+    pub unsafe extern "C" fn git_process_start(process: &mut GitProcess) -> c_int {
+        barrier(|| to_status(process.start()))
     }
 
     /// `git_process_id`.
     ///
     /// # Safety
     ///
-    /// `out` is NULL or writable; `process` NULL or a live process.
+    /// `out` is NULL or writable; `process` NULL or a live process that
+    /// nothing writes during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_process_id(
-        out: *mut libc::pid_t,
-        process: *mut GitProcess,
+        mut out: Out<'_, libc::pid_t>,
+        process: Option<&GitProcess>,
     ) -> c_int {
         barrier(|| {
-            git_assert!(!out.is_null() && !process.is_null(), "out && process", -1);
-            // SAFETY: the caller's contract.
-            match unsafe { super::ffi::process(process) }.id() {
+            git_assert!(!out.is_null() && process.is_some(), "out && process", -1);
+            let Some(process) = process else {
+                return -1; // Not reached: asserted above.
+            };
+            match process.id() {
                 Ok(pid) => {
-                    // SAFETY: writable.
-                    unsafe { out.write(pid) };
+                    out.write(pid);
                     0
                 }
                 Err(e) => e.raw(),
@@ -1187,21 +1199,21 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `process` is NULL or a live process; `buf` is valid for writes of
-    /// `count` bytes (it need not be initialized).
+    /// `process` is NULL or a live process that nothing else accesses
+    /// during the call; `buf` is valid for writes of `count` bytes (it need
+    /// not be initialized), which nothing else accesses during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_process_read(
-        process: *mut GitProcess,
+        process: Option<&mut GitProcess>,
         buf: *mut c_void,
         count: usize,
     ) -> isize {
         barrier(|| {
-            git_assert_arg!(!process.is_null(), "process", -1);
-            // SAFETY: the caller's contract.
-            let p = unsafe { super::ffi::process(process) };
+            let p = git_arg!(process, "process", -1);
             git_assert!(p.capture_out, "process->capture_out", -1);
             let count = count.min(isize::MAX as usize);
-            // SAFETY: writable for `count` bytes (maybe uninitialized).
+            // SAFETY: `buf` is writable for `count` bytes, maybe
+            // uninitialized (this export's contract), `read_fd`'s.
             ssize(unsafe { GitProcess::read_fd(p.child_out, buf.cast(), count) })
         })
     }
@@ -1213,14 +1225,12 @@ pub mod ffi {
     /// As [`git_process_read`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_process_read_err(
-        process: *mut GitProcess,
+        process: Option<&mut GitProcess>,
         buf: *mut c_void,
         count: usize,
     ) -> isize {
         barrier(|| {
-            git_assert_arg!(!process.is_null(), "process", -1);
-            // SAFETY: the caller's contract.
-            let p = unsafe { super::ffi::process(process) };
+            let p = git_arg!(process, "process", -1);
             git_assert!(p.capture_err, "process->capture_err", -1);
             let count = count.min(isize::MAX as usize);
             // SAFETY: as in `git_process_read`.
@@ -1232,21 +1242,22 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `process` is NULL or a live process; `buf` is readable for `count`
-    /// bytes.
+    /// `process` is NULL or a live process that nothing else accesses
+    /// during the call; `buf` is readable for `count` bytes, which nothing
+    /// writes during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_process_write(
-        process: *mut GitProcess,
+        process: Option<&mut GitProcess>,
         buf: *const c_void,
         count: usize,
     ) -> isize {
         barrier(|| {
-            git_assert_arg!(!process.is_null(), "process", -1);
-            // SAFETY: the caller's contract.
-            let p = unsafe { super::ffi::process(process) };
+            let p = git_arg!(process, "process", -1);
             git_assert!(p.capture_in, "process->capture_in", -1);
             let count = count.min(isize::MAX as usize);
-            // SAFETY: readable for `count` bytes.
+            // SAFETY: `buf` is readable for `count` (at most `isize::MAX`)
+            // bytes that nothing writes during the call (this export's
+            // contract).
             let buf = unsafe { crate::util::export::bytes(buf.cast(), count) };
             ssize(p.write(buf))
         })
@@ -1256,16 +1267,16 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `result` is NULL or writable; `process` a live process.
+    /// `result` is NULL or writable; `process` a live process that nothing
+    /// else accesses during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_process_wait(
         mut result: Out<'_, GitProcessResult>,
-        process: *mut GitProcess,
+        process: &mut GitProcess,
     ) -> c_int {
         barrier(|| {
             result.write(GitProcessResult::default());
-            // SAFETY: the caller's contract.
-            match unsafe { super::ffi::process(process) }.wait() {
+            match process.wait() {
                 Ok(r) => {
                     result.write(r);
                     0
@@ -1279,45 +1290,45 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `process` is a live process.
+    /// `process` is a live process that nothing else accesses during the
+    /// call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_process_close_in(process: *mut GitProcess) -> c_int {
-        // SAFETY: the caller's contract.
-        barrier(|| to_status(unsafe { super::ffi::process(process) }.close_in()))
+    pub unsafe extern "C" fn git_process_close_in(process: &mut GitProcess) -> c_int {
+        barrier(|| to_status(process.close_in()))
     }
 
     /// `git_process_close_out`.
     ///
     /// # Safety
     ///
-    /// `process` is a live process.
+    /// `process` is a live process that nothing else accesses during the
+    /// call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_process_close_out(process: *mut GitProcess) -> c_int {
-        // SAFETY: the caller's contract.
-        barrier(|| to_status(unsafe { super::ffi::process(process) }.close_out()))
+    pub unsafe extern "C" fn git_process_close_out(process: &mut GitProcess) -> c_int {
+        barrier(|| to_status(process.close_out()))
     }
 
     /// `git_process_close_err`.
     ///
     /// # Safety
     ///
-    /// `process` is a live process.
+    /// `process` is a live process that nothing else accesses during the
+    /// call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_process_close_err(process: *mut GitProcess) -> c_int {
-        // SAFETY: the caller's contract.
-        barrier(|| to_status(unsafe { super::ffi::process(process) }.close_err()))
+    pub unsafe extern "C" fn git_process_close_err(process: &mut GitProcess) -> c_int {
+        barrier(|| to_status(process.close_err()))
     }
 
     /// `git_process_close`.
     ///
     /// # Safety
     ///
-    /// `process` is a live process.
+    /// `process` is a live process that nothing else accesses during the
+    /// call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_process_close(process: *mut GitProcess) -> c_int {
+    pub unsafe extern "C" fn git_process_close(process: &mut GitProcess) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            unsafe { super::ffi::process(process) }.close();
+            process.close();
             0
         })
     }
@@ -1378,6 +1389,20 @@ mod tests {
 
     fn strs(v: &[CString]) -> Vec<&[u8]> {
         v.iter().map(|c| c.to_bytes()).collect()
+    }
+
+    #[test]
+    fn environ_is_lent_to_the_closure() {
+        // The entries are `NAME=value` slices of C's strings, without
+        // their NUL, valid while the closure runs.
+        let n = with_environ(|entries| {
+            for e in entries {
+                assert!(!e.contains(&0));
+            }
+            entries.len()
+        });
+        let m = with_environ(|entries| entries.iter().filter(|e| e.contains(&b'=')).count());
+        assert_eq!(n, m);
     }
 
     #[test]

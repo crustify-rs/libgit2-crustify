@@ -62,7 +62,8 @@ impl Runtime {
         let ret = *count;
         if ret == 1 {
             for f in init_fns {
-                // SAFETY: the caller vouches for each init function.
+                // SAFETY: `f` is sound to call here, with the lock held
+                // (this fn's contract).
                 if unsafe { f() } != 0 {
                     return -1;
                 }
@@ -134,7 +135,8 @@ static RUNTIME: Runtime = Runtime::new();
 ///
 /// As [`Runtime::init`].
 pub unsafe fn init(init_fns: &[InitFn]) -> c_int {
-    // SAFETY: forwarded.
+    // SAFETY: each of `init_fns` is sound to call with the runtime's lock
+    // held (this fn's contract, which is `Runtime::init`'s).
     unsafe { RUNTIME.init(init_fns) }
 }
 
@@ -175,12 +177,17 @@ pub mod ffi {
             let fns: &[Option<InitFn>] = if cnt == 0 || init_fns.is_null() {
                 &[]
             } else {
-                // SAFETY: the caller passes `cnt` readable entries.
+                // SAFETY: `init_fns` has `cnt` readable entries (this
+                // export's contract), unwritten during the call, so their
+                // size fits a readable range (at most `isize::MAX`); an
+                // `Option` of a function pointer is valid for any pointer
+                // value C stores (NULL is `None`).
                 unsafe { core::slice::from_raw_parts(init_fns, cnt) }
             };
             // A NULL entry would crash the C; treat the list as ending there.
             let fns: Vec<InitFn> = fns.iter().map_while(|f| *f).collect();
-            // SAFETY: the caller vouches for each init function.
+            // SAFETY: each entry is sound to call during initialization
+            // (this export's contract), which runs under the lock.
             unsafe { init(&fns) }
         })
     }
@@ -215,7 +222,8 @@ pub mod ffi {
         barrier(|| {
             // C stores NULL and skips it at shutdown.
             let Some(cb) = callback else { return 0 };
-            // SAFETY: the caller vouches for `callback`.
+            // SAFETY: `cb` is sound to call at the last shutdown (this
+            // export's contract), which runs it with the lock held.
             status(unsafe { RUNTIME.shutdown_register(cb) })
         })
     }
