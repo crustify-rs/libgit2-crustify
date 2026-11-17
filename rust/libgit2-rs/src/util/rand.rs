@@ -84,11 +84,11 @@ fn getseed() -> Result<u64> {
     let mut s: u64 = 0;
     s |= (tv.tv_usec as u64) << 40;
     s |= tv.tv_sec as u64;
+    // `getpid()` and `getppid()` (as `u32`: the same bits for the positive
+    // `pid_t`s they return).
+    let pid = std::process::id();
+    let ppid = std::os::unix::process::parent_id();
     // SAFETY: these process queries have no preconditions.
-    let pid = unsafe { libc::getpid() };
-    // SAFETY: as above.
-    let ppid = unsafe { libc::getppid() };
-    // SAFETY: as above.
     let pgid = unsafe { libc::getpgid(0) };
     // SAFETY: as above.
     let sid = unsafe { libc::getsid(0) };
