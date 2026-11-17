@@ -444,9 +444,9 @@ pub(crate) unsafe fn set_head_detached_from_annotated(
     repo: &GitRepository,
     commit: NonNull<c_void>,
 ) -> Result<()> {
-    // SAFETY: the caller's contract.
+    // SAFETY: a live annotated commit for the call (the contract).
     let id = unsafe { crate::sys::annotated_commit::id(commit) };
-    // SAFETY: the caller's contract.
+    // SAFETY: as above.
     let desc = unsafe { crate::sys::annotated_commit::description(commit) };
     detach(repo, Some(id), desc)
 }
@@ -831,7 +831,8 @@ pub(crate) unsafe fn set_objectformat(
         return Err(ErrorCode::GENERIC);
     }
     if repo.oid_type_raw() != oid_type {
-        // SAFETY: the caller's contract.
+        // SAFETY: no weak pointer to the old index, odb or refdb is used
+        // after the call (the contract), as the setters require.
         unsafe { repo.set_index(None) };
         // SAFETY: as above.
         unsafe { repo.set_odb(None) };
@@ -877,8 +878,7 @@ pub(crate) fn commit_parents(
     if parents.try_reserve(1).is_err() {
         return Err(errors::oom());
     }
-    // SAFETY: an object's pointer is not NULL.
-    parents.push(unsafe { NonNull::new_unchecked(first.into_raw().cast()) });
+    parents.push(NonNull::new(first.into_raw().cast()).expect("an object is not NULL"));
 
     struct Data<'a> {
         repo: &'a GitRepository,

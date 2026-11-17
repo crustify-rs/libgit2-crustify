@@ -11,10 +11,10 @@
 //! refdb and index, the caches). Not allowed, as in C:
 //!
 //! - the setters that replace a string field (`set_workdir`, `set_bare`,
-//!   `set_namespace`) and `git_repository_free` / `__cleanup` while
-//!   anything else uses the repository, or while a string returned by
-//!   `git_repository_path`, `workdir`, `commondir` or `get_namespace` is
-//!   still in use;
+//!   `set_namespace`, `set_ident`), `submodule_cache_clear` and
+//!   `git_repository_free` / `__cleanup` while anything else uses the
+//!   repository, or while a string returned by `git_repository_path`,
+//!   `workdir`, `commondir`, `get_namespace` or `ident` is still in use;
 //! - the setters that replace the odb, config, refdb or index
 //!   (`set_odb`, `set_config`, `set_refdb`, `set_index`,
 //!   `__set_objectformat`) while a weak pointer to the old object (from a
@@ -1869,7 +1869,10 @@ pub unsafe extern "C" fn git_repository_set_ident(
         with_repo!(repo_, "repo", |r| {
             let n = name.get().map(CStr::to_owned);
             let e = email.get().map(CStr::to_owned);
-            status(r.set_ident(n.as_deref(), e.as_deref()))
+            // SAFETY: no string `git_repository_ident` returned is used
+            // after the call (the module's contract for the replacing
+            // setters).
+            status(unsafe { r.set_ident(n.as_deref(), e.as_deref()) })
         })
     })
 }
@@ -1895,7 +1898,13 @@ pub unsafe extern "C" fn git_repository_submodule_cache_all(
 pub unsafe extern "C" fn git_repository_submodule_cache_clear(
     repo_: Option<&GitRepository>,
 ) -> c_int {
-    barrier(|| with_repo!(repo_, "repo", GitRepository::submodule_cache_clear))
+    barrier(|| {
+        with_repo!(repo_, "repo", |r| {
+            // SAFETY: nothing else uses the submodule cache during the call
+            // (the module's contract for the replacing setters).
+            unsafe { r.submodule_cache_clear() }
+        })
+    })
 }
 
 /// `git_repository_oid_type` (0 for NULL).

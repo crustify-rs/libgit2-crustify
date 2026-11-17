@@ -228,11 +228,27 @@ pub struct GitRepository {
     submodule_cache: AtomicPtr<c_void>,
 }
 
-// SAFETY: every field is an atomic or behind an `UnsafeCell` that only C
-// (or this module, under C's rules) touches; the objects it points to are
-// released from any thread.
+// SAFETY: the fields, and why each may move to and be shared between
+// threads:
+// - `odb`, `refdb`, `config`, `index`, `gitlink` … `ident_email`, `grafts`,
+//   `shallow_grafts`: `CAtomicOwner`s (an atomic pointer to an owned
+//   `CShared` / `GitCStr` / `GraftsBox`), published with compare-and-swap
+//   and replaced only by the `unsafe` setters, whose contracts keep other
+//   users away; the owned objects are refcounted with atomics or plain
+//   strings, released from any thread;
+// - `objects`: `GitCache`, `Sync` (its map is behind its rwlock);
+// - `attrcache`, `diff_drivers`, `submodule_cache`: `AtomicPtr`s to C
+//   objects that C creates with compare-and-swap and guards with its own
+//   locks (as in C, which shares them between threads);
+// - `bits`, `oid_type`, `refdb_type`, `lru_counter`, `attr_session_key`,
+//   `configmap_cache`: atomics;
+// - `reserved_names`: an `UnsafeCell`, written only by `alloc` (before the
+//   repository is shared) and `free` (after its last user), never while
+//   shared.
+// Nothing is tied to the thread that made the repository.
 unsafe impl Send for GitRepository {}
-// SAFETY: as above: shared access goes through atomics.
+// SAFETY: as for `Send`: every access through `&GitRepository` is atomic,
+// behind a lock, or (`reserved_names`) does not happen while shared.
 unsafe impl Sync for GitRepository {}
 
 /// Which string field ([`GitRepository::replace_string`]).
@@ -272,7 +288,9 @@ impl GitRepository {
             unsafe { alloc::free(repo.cast()) };
             return ptr::null_mut();
         }
-        // SAFETY: the array is the repository's alone.
+        // SAFETY: the repository is ours alone (not yet returned), so no
+        // other reference to the cell's contents exists; the old value is
+        // all zero (nothing to drop).
         unsafe {
             *r.reserved_names.get() = ReservedNames {
                 ptr: names,
@@ -295,34 +313,40 @@ impl GitRepository {
             return;
         }
         {
-            // SAFETY: the caller's contract.
+            // SAFETY: a live repository from `alloc` (the contract), aligned;
+            // the reference ends with this block.
             let r = unsafe { &*repo };
-            // SAFETY: the caller's contract: nothing uses the repository.
+            // SAFETY: nothing uses the repository or its weak pointers any
+            // more (the contract), as `cleanup` requires.
             let _ = unsafe { r.cleanup() };
         }
-        // SAFETY: the caller's contract: nothing else uses the repository,
-        // and no reference to it is live.
+        // SAFETY: nothing else uses the repository (the contract) and no
+        // reference to it is live (the one above has ended): the `&mut`
+        // to its cache is the only one.
         unsafe { (*repo).objects.dispose() };
         {
-            // SAFETY: the caller's contract.
+            // SAFETY: as above, for this block.
             let r = unsafe { &*repo };
-            // SAFETY: the registry, set by C with compare-and-swap, no
-            // longer used.
+            // SAFETY: the registry (NULL or C's, set with compare-and-swap),
+            // taken out of the repository, which nothing uses any more.
             unsafe {
                 crate::sys::diff_driver::registry_free(
                     r.diff_drivers.swap(ptr::null_mut(), Ordering::AcqRel),
                 )
             };
-            // SAFETY: the repository's own array, no longer used.
+            // SAFETY: the repository's own array, which nothing else uses
+            // now (the contract): the only reference to the cell's contents.
             let names = unsafe { &mut *r.reserved_names.get() };
             for i in 0..names.size {
-                // SAFETY: entries `0..size` are initialized strings.
-                let name = unsafe { names.ptr.add(i) };
-                // SAFETY: as above; nothing else references it.
+                let name = names.ptr.wrapping_add(i);
+                // SAFETY: entries `0..size` (`size <= asize`) of the
+                // array, aligned, are initialized strings that nothing
+                // else references.
                 let name = unsafe { &mut *name };
                 name.dispose();
             }
-            // SAFETY: the array's buffer, from `git__allocator`.
+            // SAFETY: the array's buffer, from `git__allocator`, freed
+            // once.
             unsafe { alloc::free(names.ptr.cast()) };
             for f in [
                 &r.gitlink,
@@ -333,15 +357,16 @@ impl GitRepository {
                 &r.ident_name,
                 &r.ident_email,
             ] {
-                // SAFETY: the caller's contract: no borrow of the
-                // repository's strings is live.
+                // SAFETY: no borrow of the repository's strings is live
+                // (the contract: nothing uses the repository), so the old
+                // string may be freed.
                 drop(unsafe { f.replace(None) });
             }
         }
-        // SAFETY: the whole allocation, no longer referenced; then freed
-        // (`git__memzero` + `git__free`).
+        // SAFETY: the whole allocation (`alloc`'s), no longer referenced;
+        // then freed (`git__memzero` + `git__free`).
         unsafe { ptr::write_bytes(repo.cast::<u8>(), 0, size_of::<GitRepository>()) };
-        // SAFETY: as above.
+        // SAFETY: as above: from `git__allocator`, freed once.
         unsafe { alloc::free(repo.cast()) };
     }
 
@@ -354,17 +379,20 @@ impl GitRepository {
     /// of this repository is used after the call, and nothing uses the
     /// repository concurrently (C's rule).
     pub(crate) unsafe fn cleanup(&self) -> Result<()> {
-        let _ = self.submodule_cache_clear();
+        // SAFETY: nothing uses the repository concurrently (the contract),
+        // so nothing uses its submodule cache.
+        let _ = unsafe { self.submodule_cache_clear() };
         self.objects.clear();
         let _ = crate::sys::attrcache::flush(self);
-        // SAFETY: the caller's contract: the grafts are not used after.
+        // SAFETY: the grafts are not used after the call (the contract),
+        // so the old ones may be freed.
         drop(unsafe { self.grafts.replace(None) });
         // SAFETY: as above.
         drop(unsafe { self.shallow_grafts.replace(None) });
-        // SAFETY: the caller's contract: no weak pointer is used after.
-        unsafe {
-            self.set_config(None);
-        }
+        // SAFETY: no weak pointer of the old config (or of the others
+        // below) is used after the call and none is borrowed (the
+        // contract), as the setters require.
+        unsafe { self.set_config(None) };
         // SAFETY: as above.
         unsafe { self.set_index(None) };
         // SAFETY: as above.
@@ -458,7 +486,8 @@ impl GitRepository {
     /// No string borrowed from this field (through any `&GitRepository`,
     /// or by C) is used after the call.
     pub(crate) unsafe fn replace_string(&self, f: StrField, v: Option<GitCStr>) {
-        // SAFETY: the caller's contract.
+        // SAFETY: no borrow of the old string is used after the call (the
+        // contract), so it may be freed.
         drop(unsafe { self.string_field(f).replace(v) });
     }
 
@@ -541,7 +570,7 @@ impl GitRepository {
     /// `git_repository_odb__weakptr`) is used after the call, and no
     /// borrow of it is live.
     pub(crate) unsafe fn set_odb(&self, odb: Option<NonNull<GitOdb>>) {
-        // SAFETY: the caller's contract.
+        // SAFETY: this function's contract is `set_owned`'s.
         unsafe { self.set_owned(&self.odb, odb) };
     }
     /// `set_refdb`.
@@ -550,7 +579,7 @@ impl GitRepository {
     ///
     /// As [`GitRepository::set_odb`], for a `git_refdb`.
     pub(crate) unsafe fn set_refdb(&self, refdb: Option<NonNull<GitRefdb>>) {
-        // SAFETY: the caller's contract.
+        // SAFETY: this function's contract is `set_owned`'s.
         unsafe { self.set_owned(&self.refdb, refdb) };
     }
     /// `set_config`: also clears the configmap cache.
@@ -560,7 +589,7 @@ impl GitRepository {
     /// As [`GitRepository::set_odb`], for a `git_config` (and no
     /// `&GitConfig` from [`GitRepository::config_weak`] is used after).
     pub(crate) unsafe fn set_config(&self, config: Option<NonNull<GitConfig>>) {
-        // SAFETY: the caller's contract.
+        // SAFETY: this function's contract is `set_owned`'s.
         unsafe { self.set_owned(&self.config, config) };
         self.configmap_cache_clear();
     }
@@ -571,7 +600,7 @@ impl GitRepository {
     /// As [`GitRepository::set_odb`], for a `git_index` of the index
     /// module.
     pub(crate) unsafe fn set_index(&self, index: Option<NonNull<GitIndex>>) {
-        // SAFETY: the caller's contract.
+        // SAFETY: this function's contract is `set_owned`'s.
         unsafe { self.set_owned(&self.index, index) };
     }
 
@@ -587,7 +616,8 @@ impl GitRepository {
         slot: &CAtomicOwner<CShared<T>>,
         new: Option<NonNull<T>>,
     ) {
-        // SAFETY: the caller holds a reference to the live object.
+        // SAFETY: the caller holds a reference to the live object (the
+        // contract), so taking another is sound.
         let new = new.and_then(|p| unsafe { CShared::from_borrowed(p.as_ptr()) });
         if let Some(n) = &new {
             // SAFETY: the repository owns the object from now until it
@@ -595,8 +625,9 @@ impl GitRepository {
             // `cleanup`), and outlives it while it does.
             unsafe { T::own(n, self.as_ptr()) };
         }
-        // SAFETY: the caller's contract: no borrow of the old object (and no
-        // weak pointer C keeps) is used, or live, after this.
+        // SAFETY: no borrow of the old object (and no weak pointer C keeps)
+        // is used, or live, after this (the contract), so the slot may drop
+        // its reference.
         let old = unsafe { slot.replace(new) };
         if let Some(old) = old {
             // SAFETY: NULL: the object is no longer the repository's.
@@ -700,7 +731,12 @@ impl GitRepository {
         if let Some(db) = self.refdb.get() {
             return Ok(shared_nn(db));
         }
-        // SAFETY: this live repository, for the call (`Sync`).
+        // SAFETY: this live repository (`Sync`). The refdb and its backend
+        // keep the pointer as C's weak `db->repo`, followed only while the
+        // repository is live: the repository owns them, and a count taken
+        // past its life (C's `git_repository_refdb`, the safe API's
+        // `Refdb<'r>`) may not reach the repository after it is freed (C's
+        // rule; the safe API's lifetime).
         let me = unsafe { crate::refs::deps::RepoPtr::new(NonNull::from(self)) };
         let db = crate::refdb::open(me)?;
         Ok(shared_nn(self.publish(&self.refdb, db)))
@@ -775,18 +811,28 @@ impl GitRepository {
     }
 
     /// `git_repository_submodule_cache_clear`.
-    pub(crate) fn submodule_cache_clear(&self) -> c_int {
-        let cache = self.submodule_cache.load(Ordering::Acquire);
-        // SAFETY: the repository's cache, no longer reachable from it after
-        // the store below (as the C, which frees then clears).
-        let r = unsafe { crate::sys::submodule::cache_free(cache) };
-        self.submodule_cache
-            .store(ptr::null_mut(), Ordering::Release);
-        r
+    ///
+    /// # Safety
+    ///
+    /// Nothing else uses the submodule cache during the call (C's rule: a
+    /// lookup that loaded the cache pointer would use freed memory).
+    pub(crate) unsafe fn submodule_cache_clear(&self) -> c_int {
+        // Taken out first (C frees, then clears): two clears cannot free the
+        // same cache.
+        let cache = self.submodule_cache.swap(ptr::null_mut(), Ordering::AcqRel);
+        // SAFETY: NULL or the repository's cache, no longer reachable from
+        // it and used by nobody else (the contract).
+        unsafe { crate::sys::submodule::cache_free(cache) }
     }
 
     /// `git_repository_set_ident`.
-    pub(crate) fn set_ident(&self, name: Option<&CStr>, email: Option<&CStr>) -> Result<()> {
+    ///
+    /// # Safety
+    ///
+    /// No string returned by [`ident_name`](Self::ident_name) /
+    /// [`ident_email`](Self::ident_email) (or `git_repository_ident`) is
+    /// used after the call: the old strings are freed.
+    pub(crate) unsafe fn set_ident(&self, name: Option<&CStr>, email: Option<&CStr>) -> Result<()> {
         let n = match name {
             Some(n) => Some(alloc_cstr(n.to_bytes())?),
             None => None,
@@ -795,8 +841,8 @@ impl GitRepository {
             Some(e) => Some(alloc_cstr(e.to_bytes())?),
             None => None,
         };
-        // SAFETY: C swaps and frees the old strings the same way: by C's
-        // rules no borrow of them is live while the identity is set.
+        // SAFETY: no borrow of the old strings is used after the call (the
+        // contract), so they may be freed (C swaps and frees them too).
         drop(unsafe { self.ident_name.replace(n) });
         // SAFETY: as above.
         drop(unsafe { self.ident_email.replace(e) });

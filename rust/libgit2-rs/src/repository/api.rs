@@ -436,7 +436,11 @@ pub struct Repository {
     repo: NonNull<GitRepository>,
 }
 
-// SAFETY: the repository and what it owns are released from any thread.
+// SAFETY: the one field owns a `GitRepository` (made by `alloc`, `Send +
+// Sync`, see there), which `Drop` frees with `GitRepository::free`: that
+// releases the odb, config, refdb and index (atomically counted), the
+// caches and strings (`git__allocator`), from whichever thread drops the
+// owner. Nothing in it is thread-local.
 unsafe impl Send for Repository {}
 // SAFETY: every field of `GitRepository` is atomic or behind its own lock
 // (it is `Sync`), and what `&self` reaches is libgit2's thread-safe part:
@@ -452,7 +456,9 @@ unsafe impl Sync for Repository {}
 
 impl Drop for Repository {
     fn drop(&mut self) {
-        // SAFETY: the repository this owner holds alone.
+        // SAFETY: the repository this owner holds alone (from `alloc`);
+        // dropping the owner ends every borrow of it (`'repo` handles), so
+        // nothing uses it after.
         unsafe { GitRepository::free(self.repo.as_ptr()) }
     }
 }
@@ -477,7 +483,8 @@ impl Repository {
     }
 
     pub(crate) fn raw(&self) -> &GitRepository {
-        // SAFETY: the repository this owner holds, live until drop.
+        // SAFETY: the repository this owner holds, live (and aligned) until
+        // drop, which `&self` excludes; only read through `&`.
         unsafe { self.repo.as_ref() }
     }
 
@@ -766,7 +773,9 @@ impl Repository {
     pub fn set_ident(&mut self, name: Option<&[u8]>, email: Option<&[u8]>) -> Result<()> {
         let n = name.map(|n| c_string(n, "name")).transpose()?;
         let e = email.map(|e| c_string(e, "email")).transpose()?;
-        Ok(self.raw().set_ident(n.as_deref(), e.as_deref())?)
+        // SAFETY: `&mut self`: no borrow of the repository, so none of
+        // its identity strings (`ident`), is live.
+        Ok(unsafe { self.raw().set_ident(n.as_deref(), e.as_deref()) }?)
     }
 
     /// `git_repository_hashfile`: the id the file at `path` would get as
@@ -890,7 +899,9 @@ impl Repository {
     ///
     /// `&mut self`: no lookup may use the cache meanwhile.
     pub fn submodule_cache_clear(&mut self) -> Result<()> {
-        ErrorCode::check(self.raw().submodule_cache_clear())?;
+        // SAFETY: `&mut self`: no other use of the repository, so of its
+        // submodule cache, is in progress.
+        ErrorCode::check(unsafe { self.raw().submodule_cache_clear() })?;
         Ok(())
     }
 
