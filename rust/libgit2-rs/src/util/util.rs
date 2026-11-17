@@ -637,7 +637,7 @@ pub fn strsep(buf: &mut [u8], pos: &mut usize, sep: &[u8]) -> Option<core::ops::
 pub mod ffi {
     use super::*;
     use crate::git_arg;
-    use crate::util::cabi::{CStrArg, Out};
+    use crate::util::cabi::{self, CStrArg, Out};
     use crate::util::export::{barrier, bytes, status};
 
     /// The bytes of `s`, bounded to what a comparison with a `bound`-byte
@@ -779,30 +779,34 @@ pub mod ffi {
         })
     }
 
-    /// `git__strcmp_cb`.
+    /// `git__strcmp_cb` (C's `strcmp`, whose result it returns).
     ///
     /// # Safety
     ///
-    /// Both arguments are NUL-terminated strings.
+    /// Both arguments are NUL-terminated strings, unwritten during the
+    /// call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git__strcmp_cb(a: *const c_void, b: *const c_void) -> c_int {
-        // SAFETY: the caller passes NUL-terminated strings.
+        // SAFETY: both are NUL-terminated strings, unwritten for the call
+        // (this export's contract), as `strcmp` requires.
         barrier(|| unsafe { libc::strcmp(a.cast(), b.cast()) })
     }
 
-    /// `git__strcasecmp_cb`.
+    /// `git__strcasecmp_cb` (a `void *` comparison: the parameters keep C's
+    /// type, as C passes it as a function pointer).
     ///
     /// # Safety
     ///
-    /// Both arguments are NUL-terminated strings.
+    /// Both arguments are NUL-terminated strings, unwritten during the
+    /// call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git__strcasecmp_cb(a: *const c_void, b: *const c_void) -> c_int {
-        // SAFETY: a NUL-terminated string (the contract), read for the call.
+        // SAFETY: `a` is a NUL-terminated string, unwritten for the call
+        // (this export's contract).
         let a = unsafe { CStrArg::from_ptr(a.cast()) };
-        // SAFETY: as above.
+        // SAFETY: as for `a`.
         let b = unsafe { CStrArg::from_ptr(b.cast()) };
-        // SAFETY: no precondition beyond the strings'.
-        unsafe { git__strcasecmp(a, b) }
+        barrier(|| strcasecmp(a.to_bytes(), b.to_bytes()))
     }
 
     /// `git__prefixcmp`.
@@ -887,11 +891,46 @@ pub mod ffi {
     /// `s` is a writable NUL-terminated string, not otherwise accessed for
     /// `'a`.
     unsafe fn cstr_mut<'a>(s: *mut c_char) -> &'a mut [u8] {
-        // SAFETY: the caller's string ends at a NUL.
+        // SAFETY: `s` is NUL-terminated (this fn's contract).
         let len = unsafe { libc::strlen(s) };
-        // SAFETY: `len + 1` bytes (the string and its NUL) are writable and
-        // exclusively ours for `'a`.
-        unsafe { core::slice::from_raw_parts_mut(s.cast::<u8>(), len + 1) }
+        // SAFETY: `s` is NUL-terminated, so `prefix_mut` may read up to the
+        // NUL at `len`; the bytes are writable and ours for `'a` (this fn's
+        // contract).
+        unsafe { prefix_mut(s, len) }
+    }
+
+    /// The first `n + 1` bytes of the string at `s`, mutable: up to and
+    /// including byte `n`, which is the NUL or precedes it.
+    ///
+    /// # Safety
+    ///
+    /// `s` is a writable NUL-terminated string whose NUL is at or after
+    /// byte `n`, not otherwise accessed for `'a`.
+    unsafe fn prefix_mut<'a>(s: *mut c_char, n: usize) -> &'a mut [u8] {
+        // SAFETY: bytes `0..=n` lie within the string or are its NUL: one
+        // allocation, initialized, writable and accessed by nothing else
+        // for `'a` (this fn's contract); `u8` needs no alignment.
+        unsafe { core::slice::from_raw_parts_mut(s.cast::<u8>(), n + 1) }
+    }
+
+    /// The index of the first byte of the string at `s`, from `from` on,
+    /// that is its NUL or for which `stop` holds. Reads byte by byte, as
+    /// C's loops, so no further than that byte.
+    ///
+    /// # Safety
+    ///
+    /// `s` is a NUL-terminated string whose NUL is at or after byte `from`.
+    unsafe fn scan(s: *const c_char, from: usize, stop: impl Fn(u8) -> bool) -> usize {
+        let mut i = from;
+        loop {
+            // SAFETY: `from <= i <= ` the NUL's index (the loop stops at
+            // it): within the string (this fn's contract).
+            let c = unsafe { s.wrapping_add(i).read() } as u8;
+            if c == 0 || stop(c) {
+                return i;
+            }
+            i += 1;
+        }
     }
 
     /// `git__strntolower`.
@@ -921,25 +960,38 @@ pub mod ffi {
         barrier(|| strntolower(unsafe { cstr_mut(str) }))
     }
 
-    /// `git__strtok`.
+    /// `git__strtok`. The string is read as C reads it: up to the end of
+    /// the token (a caller that tokenizes a long buffer stays linear).
     ///
     /// # Safety
     ///
-    /// `*end` is a writable NUL-terminated string; `sep` is NUL-terminated.
+    /// `end` is valid for reads and writes; `*end` is a writable
+    /// NUL-terminated string, which nothing else accesses during the call
+    /// (`end` does not point into it); `sep` is NULL or NUL-terminated.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__strtok(end: *mut *mut c_char, sep: CStrArg<'_>) -> *mut c_char {
+    pub unsafe extern "C" fn git__strtok(
+        end: Option<&mut *mut c_char>,
+        sep: CStrArg<'_>,
+    ) -> *mut c_char {
         barrier(|| {
-            // SAFETY: the caller passes a valid `end`.
-            let base = unsafe { *end };
-            // SAFETY: `*end` is a writable NUL-terminated string.
-            let buf = unsafe { cstr_mut(base) };
+            let end = git_arg!(end, "end", core::ptr::null_mut());
+            let base = *end;
             let sep = sep.to_bytes();
+            // The leading separators, then the token: `e` is the index of
+            // the byte after it (a separator, or the NUL).
+            // SAFETY: `base` is NUL-terminated (this export's contract).
+            let k = unsafe { scan(base, 0, |c| !sep.contains(&c)) };
+            // SAFETY: as above; `k` is at most the NUL's index.
+            let e = unsafe { scan(base, k, |c| sep.contains(&c)) };
+            // SAFETY: byte `e` is the NUL or precedes it; the string is
+            // writable and accessed by nothing else (this export's
+            // contract).
+            let buf = unsafe { prefix_mut(base, e) };
             let mut pos = 0;
             match strtok(buf, &mut pos, sep) {
                 Some(r) => {
-                    // SAFETY: `end` is writable; `pos` is within the string
-                    // or at its NUL.
-                    unsafe { *end = base.wrapping_add(pos) };
+                    // `pos` is within the string or at its NUL.
+                    *end = base.wrapping_add(pos);
                     base.wrapping_add(r.start)
                 }
                 // C leaves `*end` as it was when there is no token.
@@ -948,24 +1000,32 @@ pub mod ffi {
         })
     }
 
-    /// `git__strsep`.
+    /// `git__strsep`. The string is read as C reads it: up to the first
+    /// separator (a caller that splits a long buffer stays linear).
     ///
     /// # Safety
     ///
     /// As `git__strtok`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__strsep(end: *mut *mut c_char, sep: CStrArg<'_>) -> *mut c_char {
+    pub unsafe extern "C" fn git__strsep(
+        end: Option<&mut *mut c_char>,
+        sep: CStrArg<'_>,
+    ) -> *mut c_char {
         barrier(|| {
-            // SAFETY: the caller passes a valid `end`.
-            let base = unsafe { *end };
-            // SAFETY: `*end` is a writable NUL-terminated string.
-            let buf = unsafe { cstr_mut(base) };
+            let end = git_arg!(end, "end", core::ptr::null_mut());
+            let base = *end;
             let sep = sep.to_bytes();
+            // SAFETY: `base` is NUL-terminated (this export's contract).
+            let e = unsafe { scan(base, 0, |c| sep.contains(&c)) };
+            // SAFETY: byte `e` is the NUL or precedes it; the string is
+            // writable and accessed by nothing else (this export's
+            // contract).
+            let buf = unsafe { prefix_mut(base, e) };
             let mut pos = 0;
             match strsep(buf, &mut pos, sep) {
                 Some(_) => {
-                    // SAFETY: `end` is writable; `pos` is within the string.
-                    unsafe { *end = base.wrapping_add(pos) };
+                    // `pos` is within the string.
+                    *end = base.wrapping_add(pos);
                     base
                 }
                 None => core::ptr::null_mut(),
@@ -1050,9 +1110,9 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `array` holds `array_len` pointers (or `array_len` is 0); `compare`
-    /// is sound to call with `key` and each of them; `position` is NULL or
-    /// writable.
+    /// `array` holds `array_len` pointers (or `array_len` is 0), unwritten
+    /// during the call; `compare` is sound to call with `key` and each of
+    /// them; `position` is NULL or writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git__bsearch(
         array: *mut *mut c_void,
@@ -1062,13 +1122,11 @@ pub mod ffi {
         mut position: Out<'_, usize>,
     ) -> c_int {
         barrier(|| {
-            let a: &[*mut c_void] = if array_len == 0 {
-                &[]
-            } else {
-                // SAFETY: the caller passes `array_len` readable pointers.
-                unsafe { core::slice::from_raw_parts(array, array_len) }
-            };
-            // SAFETY: the caller vouches for `compare` on `key` and each element.
+            // SAFETY: `array` holds `array_len` readable pointers, unwritten
+            // during the call (this export's contract).
+            let a: &[*mut c_void] = unsafe { cabi::slice(array.cast_const(), array_len) };
+            // SAFETY: `bsearch` passes elements of `a`; `compare` is sound
+            // with `key` and each (this export's contract).
             let r = bsearch(a, |e| unsafe { compare(key, *e) });
             let (pos, ret) = match r {
                 Ok(p) => (p, 0),
@@ -1094,13 +1152,10 @@ pub mod ffi {
         mut position: Out<'_, usize>,
     ) -> c_int {
         barrier(|| {
-            let a: &[*mut c_void] = if array_len == 0 {
-                &[]
-            } else {
-                // SAFETY: the caller passes `array_len` readable pointers.
-                unsafe { core::slice::from_raw_parts(array, array_len) }
-            };
-            // SAFETY: the caller vouches for `compare_r`.
+            // SAFETY: as in `git__bsearch`.
+            let a: &[*mut c_void] = unsafe { cabi::slice(array.cast_const(), array_len) };
+            // SAFETY: `bsearch` passes elements of `a`; `compare_r` is sound
+            // with `key`, each and `payload` (this export's contract).
             let r = bsearch(a, |e| unsafe { compare_r(key, *e, payload) });
             let (pos, ret) = match r {
                 Ok(p) => (p, 0),
@@ -1169,7 +1224,9 @@ pub mod ffi {
         cmp: SortRCmp,
         payload: *mut c_void,
     ) {
-        // SAFETY: forwarded to the caller's contract.
+        // SAFETY: `els` holds `nel` elements of `elsize` bytes, and `cmp`
+        // is sound with pointers to two of them and `payload` (this
+        // export's contract), which is what `qsort_r` requires.
         barrier(|| unsafe { libc::qsort_r(els, nel, elsize, Some(cmp), payload) })
     }
 
@@ -1179,11 +1236,11 @@ pub mod ffi {
     ///
     /// `out` is a valid `git_str`; `name` is NUL-terminated.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__getenv(out: Option<&mut GitStr>, name: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git__getenv(out: Option<&mut GitStr>, name: CStrArg<'_>) -> c_int {
         barrier(|| {
             let out = git_arg!(out, "out", -1);
-            // SAFETY: the caller passes a NUL-terminated `name`.
-            let name = unsafe { CStr::from_ptr(name) };
+            // (C passes NULL to `getenv`, which crashes.)
+            let name = git_arg!(name.get(), "name", -1);
             status(getenv(out, name))
         })
     }
@@ -1312,6 +1369,45 @@ mod tests {
         assert_eq!(strsep(&mut b, &mut pos, b","), Some(2..2));
         assert_eq!(strsep(&mut b, &mut pos, b","), None);
         assert_eq!(pos, 3);
+    }
+
+    #[test]
+    #[allow(clippy::multiple_unsafe_ops_per_block)] // C-style call sequences
+    fn strtok_strsep_exports() {
+        use core::ffi::{CStr, c_char};
+        // Through the exports, as C's callers tokenize a buffer in place.
+        let mut b = *b",,ab,,c\0";
+        let base = b.as_mut_ptr().cast::<c_char>();
+        let mut p = base;
+        // SAFETY: `p` points to a writable NUL-terminated string, and
+        // `&mut p` is valid; the separators are a static string.
+        unsafe {
+            let t = ffi::git__strtok(Some(&mut p), c",".into());
+            assert_eq!(CStr::from_ptr(t), c"ab");
+            assert_eq!(p.offset_from(base), 5);
+            let t = ffi::git__strtok(Some(&mut p), c",".into());
+            assert_eq!(CStr::from_ptr(t), c"c");
+            assert_eq!(p.offset_from(base), 7);
+            assert!(ffi::git__strtok(Some(&mut p), c",".into()).is_null());
+            assert_eq!(p.offset_from(base), 7);
+        }
+        let mut b = *b"a\nb\n\nc\0";
+        let base = b.as_mut_ptr().cast::<c_char>();
+        let mut p = base;
+        let mut lines = Vec::new();
+        // SAFETY: as above.
+        unsafe {
+            loop {
+                let l = ffi::git__strsep(Some(&mut p), c"\n".into());
+                if l.is_null() {
+                    break;
+                }
+                lines.push(CStr::from_ptr(l).to_bytes().to_vec());
+            }
+            assert_eq!(p.offset_from(base), 5);
+            assert!(ffi::git__strsep(None, c"\n".into()).is_null());
+        }
+        assert_eq!(lines, [&b"a"[..], b"b", b""]);
     }
 
     #[test]
