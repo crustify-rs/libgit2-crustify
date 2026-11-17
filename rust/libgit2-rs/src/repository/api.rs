@@ -679,10 +679,16 @@ impl Repository {
 
     /// `git_repository_config`.
     pub fn config(&self) -> Result<Config<'_>> {
-        let c = self.raw().config_weak()?;
-        // SAFETY: the repository's live config; a new reference, bound to
-        // the repository.
-        Ok(unsafe { Config::new_ref(NonNull::from(c)) })
+        let r = self.raw();
+        r.config_weak()?;
+        // The published pointer, with the allocation's provenance (one made
+        // from the `&GitConfig` may not be freed through, and the handle's
+        // count may become the last one).
+        let p = NonNull::new(r.config_ptr()).ok_or(ErrorCode::GENERIC)?;
+        // SAFETY: the repository's live config (just published, and the
+        // repository keeps its count while borrowed); a new reference,
+        // bound to the repository.
+        Ok(unsafe { Config::new_ref(p) })
     }
 
     /// `git_repository_config_snapshot`.
