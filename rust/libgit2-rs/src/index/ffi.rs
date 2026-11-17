@@ -5,6 +5,15 @@
 //! argument (`GIT_ASSERT_ARG`), the export does with the same message;
 //! where the C dereferenced a NULL index or path, the export fails the same
 //! check instead (see `rust/DEFECTS.md`).
+//!
+//! An `index` that an export's `# Safety` calls live is, besides, used as
+//! libgit2 documents: by one thread at a time, except that several threads
+//! may run the read-only exports on it at once (C's read paths, as
+//! `threads::diff` does: entry count and lookups, snapshots, `read`); and
+//! no reference into it is held across the call. The read-only exports
+//! borrow it shared ([`IndexPtr::get_ref`], [`IndexPtr::sorted`]), the
+//! others exclusively ([`IndexPtr::get`]), each for one statement that
+//! calls no foreign code.
 
 use crate::git_arg;
 use crate::util::cabi::{CStrArg, Out};
@@ -36,14 +45,16 @@ pub type GitIndexMatchedPathCb = unsafe extern "C" fn(
 ///
 /// # Safety
 ///
-/// `path` is readable for `path_len` bytes, or a string when `path_len` is
-/// 0, for `'a`.
+/// `path` is NULL, or readable for `path_len` bytes, or a string when
+/// `path_len` is 0, unwritten for `'a`.
 unsafe fn path_arg<'a>(path: *const c_char, path_len: usize) -> &'a [u8] {
     if path_len == 0 {
-        // SAFETY: the caller's contract.
+        // SAFETY: NULL or a string, unwritten for `'a` (this fn's contract).
         unsafe { cstr_bytes(path) }
     } else {
-        // SAFETY: the caller's contract.
+        // SAFETY: NULL or `path_len` readable bytes, unwritten for `'a`
+        // (this fn's contract), which one object holds (so `path_len <=
+        // isize::MAX`).
         unsafe { crate::util::export::bytes(path, path_len) }
     }
 }
@@ -52,10 +63,12 @@ unsafe fn path_arg<'a>(path: *const c_char, path_len: usize) -> &'a [u8] {
 ///
 /// # Safety
 ///
-/// `index` is NULL or a live index (this module's), used on this thread.
+/// `index` is NULL or a live index (this module's), used as the module
+/// documentation says while the handle is.
 #[inline(always)]
 unsafe fn handle(index: *const GitIndex) -> Option<IndexPtr> {
-    // SAFETY: the caller's contract.
+    // SAFETY: a non-NULL `index` is a live index, used as `IndexPtr::new`
+    // requires while the handle is (this fn's contract).
     NonNull::new(index.cast_mut()).map(|p| unsafe { IndexPtr::new(p) })
 }
 
@@ -66,12 +79,14 @@ unsafe fn handle(index: *const GitIndex) -> Option<IndexPtr> {
 ///
 /// As [`IndexPtr::sorted`].
 unsafe fn sorted_names<'a>(ix: IndexPtr) -> &'a GitIndex {
-    // SAFETY: the caller's contract.
+    // SAFETY: `get_ref`'s contract (this fn's); the borrow ends with the
+    // statement.
     if !unsafe { ix.get_ref() }.names.is_sorted() {
-        // SAFETY: as above.
+        // SAFETY: `get`'s contract, this fn's when the records are not
+        // sorted; the borrow ends with the statement.
         unsafe { ix.get() }.sort_names();
     }
-    // SAFETY: as above.
+    // SAFETY: `get_ref`'s contract (this fn's).
     unsafe { ix.get_ref() }
 }
 
@@ -81,12 +96,12 @@ unsafe fn sorted_names<'a>(ix: IndexPtr) -> &'a GitIndex {
 ///
 /// As [`IndexPtr::sorted`].
 unsafe fn sorted_reuc<'a>(ix: IndexPtr) -> &'a GitIndex {
-    // SAFETY: the caller's contract.
+    // SAFETY: as in `sorted_names`.
     if !unsafe { ix.get_ref() }.reuc.is_sorted() {
-        // SAFETY: as above.
+        // SAFETY: as in `sorted_names`.
         unsafe { ix.get() }.sort_reuc();
     }
-    // SAFETY: as above.
+    // SAFETY: as in `sorted_names`.
     unsafe { ix.get_ref() }
 }
 
@@ -114,34 +129,32 @@ unsafe fn c_callback<'a>(
 // Comparison and search functions (C sorts and searches with them)
 // ---------------------------------------------------------------------------
 
-/// The path of any `git_index_entry` (a C string).
+/// A `git_index_entry` and its path (a C string), borrowed for `'a`.
 ///
 /// # Safety
 ///
-/// `e` is a live entry with a string path.
-unsafe fn any_path<'a>(e: *const GitIndexEntry) -> &'a [u8] {
-    // SAFETY: the caller's contract.
-    let p = unsafe { (*e).path };
-    // SAFETY: as above.
-    unsafe { cstr_bytes(p) }
+/// `e` is a live `git_index_entry` whose path is a string, both unwritten
+/// for `'a`.
+unsafe fn any_entry<'a>(e: *const c_void) -> (&'a GitIndexEntry, &'a [u8]) {
+    // SAFETY: a live, unwritten entry (this fn's contract).
+    let e = unsafe { &*e.cast::<GitIndexEntry>() };
+    // SAFETY: as above: its path is a string, unwritten for `'a`.
+    (e, unsafe { cstr_bytes(e.path) })
 }
 
 /// `git_index_entry_cmp`.
 ///
 /// # Safety
 ///
-/// `a` and `b` are live `git_index_entry`s with string paths.
+/// `a` and `b` are live `git_index_entry`s with string paths, unwritten
+/// during the call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_entry_cmp(a: *const c_void, b: *const c_void) -> c_int {
-    let (a, b) = (a.cast::<GitIndexEntry>(), b.cast::<GitIndexEntry>());
-    // SAFETY: the caller's contract.
-    let a = unsafe { &*a };
-    // SAFETY: as above.
-    let b = unsafe { &*b };
-    // SAFETY: as above.
-    let pa = unsafe { any_path(a) };
-    // SAFETY: as above.
-    let pb = unsafe { any_path(b) };
+    // SAFETY: a live entry with a string path, unwritten during the call
+    // (this export's contract).
+    let (a, pa) = unsafe { any_entry(a) };
+    // SAFETY: as above, for `b`.
+    let (b, pb) = unsafe { any_entry(b) };
     let d = crate::util::util::strcmp(pa, pb);
     if d != 0 { d } else { a.stage() - b.stage() }
 }
@@ -153,15 +166,10 @@ pub unsafe extern "C" fn git_index_entry_cmp(a: *const c_void, b: *const c_void)
 /// As [`git_index_entry_cmp`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_entry_icmp(a: *const c_void, b: *const c_void) -> c_int {
-    let (a, b) = (a.cast::<GitIndexEntry>(), b.cast::<GitIndexEntry>());
-    // SAFETY: the caller's contract.
-    let a = unsafe { &*a };
-    // SAFETY: as above.
-    let b = unsafe { &*b };
-    // SAFETY: as above.
-    let pa = unsafe { any_path(a) };
-    // SAFETY: as above.
-    let pb = unsafe { any_path(b) };
+    // SAFETY: as in `git_index_entry_cmp`.
+    let (a, pa) = unsafe { any_entry(a) };
+    // SAFETY: as in `git_index_entry_cmp`.
+    let (b, pb) = unsafe { any_entry(b) };
     let d = crate::util::util::strcasecmp(pa, pb);
     if d != 0 { d } else { a.stage() - b.stage() }
 }
@@ -183,13 +191,14 @@ pub struct EntrySrchKey {
 /// # Safety
 ///
 /// `key` is an [`EntrySrchKey`] whose path is readable for `pathlen`
-/// bytes; `array_member` an index entry (`entry_internal`).
+/// bytes; `array_member` a live index entry (`entry_internal`); neither
+/// written during the call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_entry_srch(
     key: *const c_void,
     array_member: *const c_void,
 ) -> c_int {
-    // SAFETY: the caller's contract.
+    // SAFETY: `srch`'s contract is this export's.
     unsafe { srch(key, array_member, false) }
 }
 
@@ -203,7 +212,7 @@ pub unsafe extern "C" fn git_index_entry_isrch(
     key: *const c_void,
     array_member: *const c_void,
 ) -> c_int {
-    // SAFETY: the caller's contract.
+    // SAFETY: `srch`'s contract is this export's.
     unsafe { srch(key, array_member, true) }
 }
 
@@ -213,11 +222,13 @@ pub unsafe extern "C" fn git_index_entry_isrch(
 ///
 /// As [`git_index_entry_srch`].
 unsafe fn srch(key: *const c_void, member: *const c_void, icase: bool) -> c_int {
-    // SAFETY: the caller's contract.
+    // SAFETY: `key` is a live, unwritten key (this fn's contract).
     let k = unsafe { &*key.cast::<EntrySrchKey>() };
-    // SAFETY: as above.
+    // SAFETY: as above: its path is readable and unwritten for `pathlen`
+    // bytes, which one object holds (so within `isize::MAX`).
     let path = unsafe { crate::util::export::bytes(k.path, k.pathlen) };
-    // SAFETY: as above.
+    // SAFETY: `member` is a live `entry_internal` (an `entry_alloc` entry),
+    // unwritten during the call (this fn's contract).
     unsafe { entry_srch(path, k.stage, member.cast(), icase) }
 }
 
@@ -363,9 +374,11 @@ pub unsafe extern "C" fn git_index_new_ext(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_free(index: *mut GitIndex) {
     barrier(|| {
-        // SAFETY: the contract.
+        // SAFETY: NULL or a live index on which the caller holds a
+        // reference (this export's contract), used only below.
         if let Some(ix) = unsafe { handle(index) } {
-            // SAFETY: the caller's reference.
+            // SAFETY: the caller's reference, which it gives up (this
+            // export's contract).
             unsafe { ix.decref() };
         }
     })
@@ -380,7 +393,9 @@ pub unsafe extern "C" fn git_index_free(index: *mut GitIndex) {
 pub unsafe extern "C" fn git_index_clear(index: Option<IndexPtr>) -> c_int {
     barrier(|| {
         let ix = git_arg!(index, "index", -1);
-        // SAFETY: no foreign call.
+        // SAFETY: the index is live, and no other thread uses it (this
+        // export's contract); this export holds no other reference to it, and
+        // `clear` calls no foreign code: the borrow ends with the statement.
         status(unsafe { ix.get() }.clear())
     })
 }
@@ -407,7 +422,9 @@ pub unsafe extern "C" fn git_index_owner(index: Option<IndexPtr>) -> *mut c_void
 pub unsafe extern "C" fn git_index_path(index: Option<IndexPtr>) -> *const c_char {
     barrier(|| {
         let ix = git_arg!(index, "index", ptr::null());
-        // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
+        // SAFETY: the index is live, and other threads only read it (this
+        // export's contract: C's read paths); this export holds no `&mut` to
+        // it, and the shared borrow ends before any foreign call.
         unsafe { ix.get_ref() }.index_file_path
     })
 }
@@ -421,7 +438,9 @@ pub unsafe extern "C" fn git_index_path(index: Option<IndexPtr>) -> *const c_cha
 pub unsafe extern "C" fn git_index_caps(index: Option<IndexPtr>) -> c_int {
     barrier(|| {
         let ix = git_arg!(index, "index", 0);
-        // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
+        // SAFETY: the index is live, and other threads only read it (this
+        // export's contract: C's read paths); this export holds no `&mut` to
+        // it, and the shared borrow ends before any foreign call.
         let i = unsafe { ix.get_ref() };
         (if i.ignore_case() {
             super::GIT_INDEX_CAPABILITY_IGNORE_CASE
@@ -461,7 +480,9 @@ pub unsafe extern "C" fn git_index_set_caps(index: Option<IndexPtr>, caps: c_int
 pub unsafe extern "C" fn git_index_version(index: Option<IndexPtr>) -> c_uint {
     barrier(|| {
         let ix = git_arg!(index, "index", c_uint::MAX);
-        // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
+        // SAFETY: the index is live, and other threads only read it (this
+        // export's contract: C's read paths); this export holds no `&mut` to
+        // it, and the shared borrow ends before any foreign call.
         unsafe { ix.get_ref() }.version
     })
 }
@@ -478,7 +499,9 @@ pub unsafe extern "C" fn git_index_set_version(index: Option<IndexPtr>, version:
         if !(INDEX_VERSION_NUMBER_LB..=INDEX_VERSION_NUMBER_UB).contains(&version) {
             return git_error_set!(ErrorClass::INDEX, "invalid version number").raw();
         }
-        // SAFETY: no foreign call.
+        // SAFETY: the index is live, and no other thread uses it (this
+        // export's contract); this export holds no other reference to it:
+        // the borrow ends with the assignment.
         unsafe { ix.get() }.version = version;
         0
     })
@@ -578,7 +601,8 @@ pub unsafe extern "C" fn git_index_write_tree_to(
     barrier(|| {
         git_assert_arg!(!oid.is_null(), "oid", -1);
         let ix = git_arg!(index, "index", -1);
-        // SAFETY: a live repository (the contract).
+        // SAFETY: NULL or a live repository for the call (this export's
+        // contract), for which the handle is used.
         let Some(repo) = (unsafe { Repo::new(repo) }) else {
             let _ = errors::assert_arg_failed("repo");
             return -1;
@@ -610,7 +634,9 @@ pub unsafe extern "C" fn git_index_write_tree_to(
 pub unsafe extern "C" fn git_index_entrycount(index: Option<IndexPtr>) -> usize {
     barrier(|| {
         let ix = git_arg!(index, "index", usize::MAX);
-        // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
+        // SAFETY: the index is live, and other threads only read it (this
+        // export's contract: C's read paths); this export holds no `&mut` to
+        // it, and the shared borrow ends before any foreign call.
         unsafe { ix.get_ref() }.entries.len()
     })
 }
@@ -627,7 +653,10 @@ pub unsafe extern "C" fn git_index_get_byindex(
 ) -> *const GitIndexEntry {
     barrier(|| {
         let ix = git_arg!(index, "index", ptr::null());
-        // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
+        // SAFETY: the index is live, and other threads only read it (this
+        // export's contract: C's read paths); this export holds no other
+        // reference to it, and the borrow, shared but for a needed sort,
+        // ends before any foreign call.
         let i = unsafe { ix.sorted() };
 
         i.entry_at(n).map_or(ptr::null(), |e| {
@@ -650,7 +679,9 @@ pub unsafe extern "C" fn git_index_get_bypath(
     barrier(|| {
         let ix = git_arg!(index, "index", ptr::null());
         let path = path.to_bytes();
-        // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
+        // SAFETY: the index is live, and other threads only read it (this
+        // export's contract: C's read paths); this export holds no `&mut` to
+        // it, and the shared borrow ends before any foreign call.
         match unsafe { ix.get_ref() }.get_bypath(path, stage) {
             Some(e) => e.as_ptr().as_ptr().cast::<GitIndexEntry>().cast_const(),
             None => {
@@ -716,9 +747,11 @@ pub unsafe extern "C" fn git_index_entry_is_conflict(entry: Option<&GitIndexEntr
 ///
 /// # Safety
 ///
-/// `source` is NULL or a readable entry with a NULL or string path.
+/// `source` is NULL or a readable entry with a NULL or string path, both
+/// unwritten for `'a`.
 unsafe fn source_arg<'a>(source: *const GitIndexEntry) -> Option<(&'a GitIndexEntry, &'a [u8])> {
-    // SAFETY: the caller's contract.
+    // SAFETY: NULL or a readable entry, unwritten for `'a` (this fn's
+    // contract).
     let s = unsafe { source.as_ref() }?;
     if s.path.is_null() {
         return None;
@@ -740,7 +773,8 @@ pub unsafe extern "C" fn git_index_add(
 ) -> c_int {
     barrier(|| {
         let ix = git_arg!(index, "index", -1);
-        // SAFETY: the contract.
+        // SAFETY: NULL or a readable entry with a NULL or string path
+        // (this export's contract), unwritten until it is copied just below.
         let Some((src, path)) = (unsafe { source_arg(source_entry) }) else {
             return errors::assert_arg_failed("source_entry && source_entry->path").raw();
         };
@@ -765,7 +799,8 @@ pub unsafe extern "C" fn git_index_add_from_buffer(
 ) -> c_int {
     barrier(|| {
         let ix = git_arg!(index, "index", -1);
-        // SAFETY: the contract.
+        // SAFETY: NULL or a readable entry with a NULL or string path
+        // (this export's contract), unwritten until it is copied just below.
         let Some((src, path)) = (unsafe { source_arg(source_entry) }) else {
             return errors::assert_arg_failed("source_entry && source_entry->path").raw();
         };
@@ -814,7 +849,9 @@ pub unsafe extern "C" fn git_index_remove_bypath(
         let ix = git_arg!(index, "index", -1);
         let path = git_arg!(path.get(), "path", -1);
         let p = path.to_bytes().to_vec();
-        // SAFETY: no foreign call.
+        // SAFETY: the index is live, and no other thread uses it (this
+        // export's contract); this export holds no other reference to it, and
+        // `remove_bypath` calls no foreign code: the borrow ends with the statement.
         status(ops::remove_bypath(unsafe { ix.get() }, &p))
     })
 }
@@ -859,7 +896,9 @@ pub unsafe extern "C" fn git_index_remove(
         let ix = git_arg!(index, "index", -1);
         let path = git_arg!(path.get(), "path", -1);
         let p = path.to_bytes().to_vec();
-        // SAFETY: no foreign call.
+        // SAFETY: the index is live, and no other thread uses it (this
+        // export's contract); this export holds no other reference to it, and
+        // `remove` calls no foreign code: the borrow ends with the statement.
         status(unsafe { ix.get() }.remove(&p, stage))
     })
 }
@@ -885,7 +924,9 @@ pub unsafe extern "C" fn git_index_remove_directory(
         if let Err(e) = crate::util::fs_path::to_dir(&mut pfx) {
             return e.raw();
         }
-        // SAFETY: no foreign call.
+        // SAFETY: the index is live, and no other thread uses it (this
+        // export's contract); this export holds no other reference to it, and
+        // `remove_directory` calls no foreign code: the borrow ends with the statement.
         status(unsafe { ix.get() }.remove_directory(pfx.as_bytes(), stage))
     })
 }
@@ -905,7 +946,10 @@ pub unsafe extern "C" fn git_index_find_prefix(
         let ix = git_arg!(index, "index", -1);
         let prefix = git_arg!(prefix.get(), "prefix", -1);
         let p = prefix.to_bytes();
-        // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
+        // SAFETY: the index is live, and other threads only read it (this
+        // export's contract: C's read paths); this export holds no other
+        // reference to it, and the borrow, shared but for a needed sort,
+        // ends before any foreign call.
         match unsafe { ix.sorted() }.find_prefix_sorted(p) {
             Some(pos) => {
                 at_pos.write(pos);
@@ -933,9 +977,13 @@ pub unsafe extern "C" fn git_index__find_pos(
     barrier(|| {
         let ix = git_arg!(index, "index", -1);
         git_assert_arg!(!path.is_null(), "path", -1);
-        // SAFETY: the contract.
+        // SAFETY: readable for `path_len` bytes, or a string when 0, and
+        // unwritten during the call (this export's contract).
         let p = unsafe { path_arg(path, path_len) };
-        // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
+        // SAFETY: the index is live, and other threads only read it (this
+        // export's contract: C's read paths); this export holds no other
+        // reference to it, and the borrow, shared but for a needed sort,
+        // ends before any foreign call.
         let r = unsafe { ix.sorted() }.find_sorted(p, stage);
         let (pos, ret) = match r {
             Ok(p) => (p, 0),
@@ -961,7 +1009,10 @@ pub unsafe extern "C" fn git_index_find(
         let ix = git_arg!(index, "index", -1);
         let path = git_arg!(path.get(), "path", -1);
         let p = path.to_bytes();
-        // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
+        // SAFETY: the index is live, and other threads only read it (this
+        // export's contract: C's read paths); this export holds no other
+        // reference to it, and the borrow, shared but for a needed sort,
+        // ends before any foreign call.
         match unsafe { ix.sorted() }.find_path_sorted(p) {
             Some(pos) => {
                 at_pos.write(pos);
@@ -979,6 +1030,19 @@ pub unsafe extern "C" fn git_index_find(
 // Conflicts
 // ---------------------------------------------------------------------------
 
+/// A copy of the caller's entry `p` and of its path, or `None` for NULL.
+///
+/// # Safety
+///
+/// `p` is NULL or a readable entry whose path is NULL or a string.
+unsafe fn entry_copy(p: *const GitIndexEntry) -> Option<(GitIndexEntry, Vec<u8>)> {
+    // SAFETY: NULL or a readable entry (this fn's contract), copied before
+    // anything else runs.
+    let e = unsafe { p.as_ref() }?;
+    // SAFETY: as above: its path is NULL or a string.
+    Some((*e, unsafe { cstr_bytes(e.path) }.to_vec()))
+}
+
 /// `git_index_conflict_add`.
 ///
 /// # Safety
@@ -994,15 +1058,9 @@ pub unsafe extern "C" fn git_index_conflict_add(
     barrier(|| {
         let ix = git_arg!(index, "index", -1);
         // the entries are copied first (they may be the index's own)
-        let copy = |p: *const GitIndexEntry| -> Option<(GitIndexEntry, Vec<u8>)> {
-            // SAFETY: the contract.
-            let e = unsafe { p.as_ref() }?;
-            // SAFETY: as above.
-            Some((*e, unsafe { cstr_bytes(e.path) }.to_vec()))
-        };
-        let a = copy(ancestor_entry);
-        let o = copy(our_entry);
-        let t = copy(their_entry);
+        // SAFETY: each is NULL or a readable entry with a string path (this
+        // export's contract), unwritten until copied here.
+        let [a, o, t] = [ancestor_entry, our_entry, their_entry].map(|p| unsafe { entry_copy(p) });
         fn side(x: &Option<(GitIndexEntry, Vec<u8>)>) -> Option<(&GitIndexEntry, &[u8])> {
             x.as_ref().map(|(e, p)| (e, p.as_slice()))
         }
@@ -1071,7 +1129,9 @@ pub unsafe extern "C" fn git_index_conflict_remove(
         let ix = git_arg!(index, "index", -1);
         let path = git_arg!(path.get(), "path", -1);
         let p = path.to_bytes().to_vec();
-        // SAFETY: no foreign call.
+        // SAFETY: the index is live, and no other thread uses it (this
+        // export's contract); this export holds no other reference to it, and
+        // `conflict_remove` calls no foreign code: the borrow ends with the statement.
         status(unsafe { ix.get() }.conflict_remove(Some(&p)))
     })
 }
@@ -1085,7 +1145,9 @@ pub unsafe extern "C" fn git_index_conflict_remove(
 pub unsafe extern "C" fn git_index_conflict_cleanup(index: Option<IndexPtr>) -> c_int {
     barrier(|| {
         let ix = git_arg!(index, "index", -1);
-        // SAFETY: no foreign call.
+        // SAFETY: the index is live, and no other thread uses it (this
+        // export's contract); this export holds no other reference to it, and
+        // `conflict_remove` calls no foreign code: the borrow ends with the statement.
         status(unsafe { ix.get() }.conflict_remove(None))
     })
 }
@@ -1099,7 +1161,9 @@ pub unsafe extern "C" fn git_index_conflict_cleanup(index: Option<IndexPtr>) -> 
 pub unsafe extern "C" fn git_index_has_conflicts(index: Option<IndexPtr>) -> c_int {
     barrier(|| {
         let ix = git_arg!(index, "index", -1);
-        // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
+        // SAFETY: the index is live, and other threads only read it (this
+        // export's contract: C's read paths); this export holds no `&mut` to
+        // it, and the shared borrow ends before any foreign call.
         c_int::from(unsafe { ix.get_ref() }.has_conflicts())
     })
 }
@@ -1118,7 +1182,9 @@ pub unsafe extern "C" fn git_index__conflict_to_reuc(
         let ix = git_arg!(index, "index", -1);
         let path = git_arg!(path.get(), "path", -1);
         let p = path.to_bytes().to_vec();
-        // SAFETY: no foreign call.
+        // SAFETY: the index is live, and no other thread uses it (this
+        // export's contract); this export holds no other reference to it, and
+        // `conflict_to_reuc` calls no foreign code: the borrow ends with the statement.
         status(ops::conflict_to_reuc(unsafe { ix.get() }, &p))
     })
 }
@@ -1192,7 +1258,9 @@ pub unsafe extern "C" fn git_index_iterator_free(it: *mut GitIndexIterator) {
         if it.is_null() {
             return;
         }
-        // SAFETY: made by `Box::into_raw`, freed once.
+        // SAFETY: an iterator of `git_index_iterator_new` (its
+        // `Box::into_raw`), which the caller gives up (this export's
+        // contract): freed once.
         let it = unsafe { Box::from_raw(it) };
         let GitIndexIterator { index, snap, .. } = *it;
         // SAFETY: the iterator's snapshot, with its reader and reference
@@ -1264,7 +1332,9 @@ pub unsafe extern "C" fn git_index_conflict_next(
 pub unsafe extern "C" fn git_index_conflict_iterator_free(iterator: *mut GitIndexConflictIterator) {
     barrier(|| {
         if !iterator.is_null() {
-            // SAFETY: made by `Box::into_raw`, freed once.
+            // SAFETY: an iterator of `git_index_conflict_iterator_new` (its
+            // `Box::into_raw`), which the caller gives up (this export's
+            // contract): freed once.
             drop(unsafe { Box::from_raw(iterator) });
         }
     })
@@ -1333,7 +1403,8 @@ pub unsafe extern "C" fn git_index_snapshot_find(
     stage: c_int,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the contract.
+        // SAFETY: readable for `path_len` bytes, or a string when 0, and
+        // unwritten during the call (this export's contract).
         let p = unsafe { path_arg(path, path_len) };
         let snap = git_arg!(snap, "v", -1);
         let v = snap;
@@ -1372,7 +1443,9 @@ pub unsafe extern "C" fn git_index_snapshot_find(
                 stage,
             };
             let mut pos = 0;
-            // SAFETY: the caller vouches for the functions on the vector.
+            // SAFETY: `srch` is sound on the vector's elements with an
+            // `entry_srch_key` (this export's contract), and `key` is one,
+            // whose path (`p`) is readable for the call.
             let r = unsafe { v.bsearch2(Some(&mut pos), srch, (&raw const key).cast()) };
             match r {
                 Ok(()) => Ok(pos),
@@ -1398,7 +1471,9 @@ pub unsafe extern "C" fn git_index_snapshot_find(
 pub unsafe extern "C" fn git_index__set_ignore_case(index: Option<IndexPtr>, ignore_case: bool) {
     barrier(|| {
         let ix = git_arg!(index, "index", ());
-        // SAFETY: no foreign call.
+        // SAFETY: the index is live, and no other thread uses it (this
+        // export's contract); this export holds no other reference to it, and
+        // `set_ignore_case` calls no foreign code: the borrow ends with the statement.
         unsafe { ix.get() }.set_ignore_case(ignore_case);
     })
 }
@@ -1419,7 +1494,8 @@ pub unsafe extern "C" fn git_index_read_tree(
             let _ = errors::assert_arg_failed("tree");
             return -1;
         };
-        // SAFETY: a live tree for the call.
+        // SAFETY: a live tree for the call (this export's contract), which
+        // the handle does not outlive.
         status(ops::read_tree(ix, unsafe { TreeRef::new(t) }))
     })
 }
@@ -1580,7 +1656,9 @@ pub unsafe extern "C" fn git_index_extension_lookup(
         out.ptr = ptr::null_mut();
         let sig = sig_arg(signature);
         let key = &sig[..sig.iter().position(|&b| b == 0).unwrap_or(4)];
-        // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
+        // SAFETY: the index is live, and other threads only read it (this
+        // export's contract: C's read paths); this export holds no `&mut` to
+        // it, and the shared borrow ends before any foreign call.
         let index = unsafe { ix.get_ref() };
         let Ok(pos) = index.extension_find(key) else {
             return ErrorCode::NOT_FOUND.raw();
@@ -1590,7 +1668,8 @@ pub unsafe extern "C" fn git_index_extension_lookup(
         if p.is_null() {
             return -1;
         }
-        // SAFETY: `p` has room for the data; distinct.
+        // SAFETY: `p` is a fresh `git__allocator` block of `data.len()`
+        // bytes, writable and distinct from the index's data.
         unsafe { ptr::copy_nonoverlapping(data.as_ptr(), p, data.len()) };
         out.ptr = p.cast();
         out.size = data.len();
@@ -1642,7 +1721,9 @@ pub unsafe extern "C" fn git_index_extension_remove(
         let signature = git_arg!(signature.get(), "signature", -1);
         let sig = sig_arg(signature);
         let key = &sig[..sig.iter().position(|&b| b == 0).unwrap_or(4)];
-        // SAFETY: no foreign call.
+        // SAFETY: the index is live, and no other thread uses it (this
+        // export's contract); this export holds no other reference to it, and
+        // `extension_remove` calls no foreign code: the borrow ends with the statement.
         status(unsafe { ix.get() }.extension_remove(key))
     })
 }
@@ -1660,7 +1741,9 @@ pub unsafe extern "C" fn git_index_extension_remove(
 pub unsafe extern "C" fn git_index_name_entrycount(index: Option<IndexPtr>) -> usize {
     barrier(|| {
         let ix = git_arg!(index, "index", usize::MAX);
-        // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
+        // SAFETY: the index is live, and other threads only read it (this
+        // export's contract: C's read paths); this export holds no `&mut` to
+        // it, and the shared borrow ends before any foreign call.
         unsafe { ix.get_ref() }.names.len()
     })
 }
@@ -1677,7 +1760,10 @@ pub unsafe extern "C" fn git_index_name_get_byindex(
 ) -> *const GitIndexNameEntry {
     barrier(|| {
         let ix = git_arg!(index, "index", ptr::null());
-        // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
+        // SAFETY: the index is live, and other threads only read it (this
+        // export's contract: C's read paths); this export holds no other
+        // reference to it, and the borrow, shared but for a needed sort,
+        // ends before any foreign call.
         let i = unsafe { sorted_names(ix) };
 
         i.names
@@ -1707,7 +1793,9 @@ pub unsafe extern "C" fn git_index_name_add(
         );
         let ix = git_arg!(index, "index", -1);
         let [a, o, t] = [ancestor, ours, theirs].map(CStrArg::get);
-        // SAFETY: no foreign call.
+        // SAFETY: the index is live, and no other thread uses it (this
+        // export's contract); this export holds no other reference to it, and
+        // `name_add` calls no foreign code: the borrow ends with the statement.
         status(unsafe { ix.get() }.name_add(a, o, t))
     })
 }
@@ -1721,7 +1809,9 @@ pub unsafe extern "C" fn git_index_name_add(
 pub unsafe extern "C" fn git_index_name_clear(index: Option<IndexPtr>) -> c_int {
     barrier(|| {
         let ix = git_arg!(index, "index", -1);
-        // SAFETY: no foreign call.
+        // SAFETY: the index is live, and no other thread uses it (this
+        // export's contract); this export holds no other reference to it, and
+        // `name_clear` calls no foreign code: the borrow ends with the statement.
         unsafe { ix.get() }.name_clear();
         0
     })
@@ -1736,7 +1826,9 @@ pub unsafe extern "C" fn git_index_name_clear(index: Option<IndexPtr>) -> c_int 
 pub unsafe extern "C" fn git_index_reuc_entrycount(index: Option<IndexPtr>) -> usize {
     barrier(|| {
         let ix = git_arg!(index, "index", usize::MAX);
-        // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
+        // SAFETY: the index is live, and other threads only read it (this
+        // export's contract: C's read paths); this export holds no `&mut` to
+        // it, and the shared borrow ends before any foreign call.
         unsafe { ix.get_ref() }.reuc.len()
     })
 }
@@ -1761,10 +1853,14 @@ pub unsafe extern "C" fn git_index_reuc_add(
     barrier(|| {
         let ix = git_arg!(index, "index", -1);
         let path = git_arg!(path.get(), "path", -1);
-        // SAFETY: readable or NULL.
+        // (raw: an id may be one of the index's REUC records, which the
+        // call frees; each is copied here, before anything runs)
+        // SAFETY: each NULL or a readable id (this export's contract).
         let oids = [ancestor_id, our_id, their_id].map(|p| unsafe { p.as_ref() }.copied());
         let p = path.to_bytes().to_vec();
-        // SAFETY: no foreign call.
+        // SAFETY: the index is live, and no other thread uses it (this
+        // export's contract); this export holds no other reference to it, and
+        // `reuc_add` calls no foreign code: the borrow ends with the statement.
         status(unsafe { ix.get() }.reuc_add(&p, [ancestor_mode, our_mode, their_mode], oids))
     })
 }
@@ -1785,7 +1881,10 @@ pub unsafe extern "C" fn git_index_reuc_find(
         let ix = git_arg!(index, "index", -1);
         let path = git_arg!(path.get(), "key", -1);
         let p = path.to_bytes();
-        // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
+        // SAFETY: the index is live, and other threads only read it (this
+        // export's contract: C's read paths); this export holds no other
+        // reference to it, and the borrow, shared but for a needed sort,
+        // ends before any foreign call.
         let (pos, r) = match unsafe { sorted_reuc(ix) }.reuc_find_sorted(p) {
             Ok(pos) => (pos, 0),
             Err(pos) => (pos, ErrorCode::NOT_FOUND.raw()),
@@ -1808,7 +1907,9 @@ pub unsafe extern "C" fn git_index_reuc_get_bypath(
     barrier(|| {
         let ix = git_arg!(index, "index", ptr::null());
         let path = git_arg!(path.get(), "path", ptr::null());
-        // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
+        // SAFETY: the index is live, and other threads only read it (this
+        // export's contract: C's read paths); this export holds no `&mut` to
+        // it, and the shared borrow ends before any foreign call.
         let i = unsafe { ix.get_ref() };
         if i.reuc.is_empty() {
             return ptr::null();
@@ -1841,7 +1942,9 @@ pub unsafe extern "C" fn git_index_reuc_get_byindex(
 ) -> *const GitIndexReucEntry {
     barrier(|| {
         let ix = git_arg!(index, "index", ptr::null());
-        // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
+        // SAFETY: the index is live, and other threads only read it (this
+        // export's contract: C's read paths); this export holds no `&mut` to
+        // it, and the shared borrow ends before any foreign call.
         let i = unsafe { ix.get_ref() };
         git_assert!(
             i.reuc.is_sorted(),
@@ -1863,7 +1966,9 @@ pub unsafe extern "C" fn git_index_reuc_get_byindex(
 pub unsafe extern "C" fn git_index_reuc_remove(index: Option<IndexPtr>, position: usize) -> c_int {
     barrier(|| {
         let ix = git_arg!(index, "index", -1);
-        // SAFETY: no foreign call.
+        // SAFETY: the index is live, and no other thread uses it (this
+        // export's contract); this export holds no other reference to it, and
+        // `reuc_remove` calls no foreign code: the borrow ends with the statement.
         status(unsafe { ix.get() }.reuc_remove(position))
     })
 }
@@ -1877,7 +1982,9 @@ pub unsafe extern "C" fn git_index_reuc_remove(index: Option<IndexPtr>, position
 pub unsafe extern "C" fn git_index_reuc_clear(index: Option<IndexPtr>) -> c_int {
     barrier(|| {
         let ix = git_arg!(index, "index", -1);
-        // SAFETY: no foreign call.
+        // SAFETY: the index is live, and no other thread uses it (this
+        // export's contract); this export holds no other reference to it, and
+        // `reuc_clear` calls no foreign code: the borrow ends with the statement.
         unsafe { ix.get() }.reuc_clear();
         0
     })
