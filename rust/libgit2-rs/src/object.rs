@@ -2559,7 +2559,8 @@ mod tests {
             )
         };
         assert_eq!(rc, 0);
-        let t = o.cast::<crate::tag::GitTag>();
+        // SAFETY: the live tag just made, only read.
+        let t = unsafe { o.cast::<crate::tag::GitTag>().as_ref() };
         // SAFETY: a live tag.
         let name = unsafe { crate::tag::ffi::git_tag_name(t) };
         // SAFETY: its NUL-terminated name.

@@ -51,8 +51,11 @@ pub use crate::signature::ffi::{
 ///
 /// `tag` is a live tag object.
 pub unsafe fn git_tag_target_id(tag: *const git_object) -> *const Oid {
-    // SAFETY: per the contract (a tag object is a `git_tag`).
-    unsafe { crate::tag::ffi::git_tag_target_id(tag.cast()) }
+    // SAFETY: `tag` is a live tag object (the contract), and a tag object
+    // is a `git_tag`, only read once published.
+    let tag = unsafe { tag.cast::<crate::tag::GitTag>().as_ref() };
+    // SAFETY: NULL or a live tag, as the export requires.
+    unsafe { crate::tag::ffi::git_tag_target_id(tag) }
 }
 
 /// `git_commit_lookup` (object_api.c).
