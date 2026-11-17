@@ -60,7 +60,7 @@ use ffibox::{CAtomicBitfield, CAtomicOwner, CBits, CShared};
 pub mod api;
 pub mod ffi;
 pub mod handles;
-mod head;
+pub(crate) mod head;
 mod init;
 mod open;
 #[cfg(test)]

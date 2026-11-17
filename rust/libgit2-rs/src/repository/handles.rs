@@ -194,10 +194,19 @@ owner!(
 pub use crate::refs::{GIT_REFERENCE_DIRECT, GIT_REFERENCE_SYMBOLIC};
 
 impl<'r> Reference<'r> {
+    /// The getters' view of the reference, borrowed with `self`.
+    fn view(&self) -> crate::refs::RefView<'_> {
+        // SAFETY: this owner holds a live reference (`from_raw`'s
+        // contract): a `git_reference` block that nothing else frees, and
+        // that is never written once made (only `git_reference__realloc`
+        // and `git_reference_free` touch a block, and both need its owner,
+        // which `&self` borrows).
+        unsafe { crate::refs::RefView::from_ptr(self.0) }
+    }
+
     /// `git_reference_type`.
     pub fn kind(&self) -> c_int {
-        // SAFETY: a live reference.
-        unsafe { crate::refs::ffi::git_reference_type(self.as_ptr()) }
+        self.view().raw_kind()
     }
 
     /// Whether it is symbolic.
@@ -207,54 +216,41 @@ impl<'r> Reference<'r> {
 
     /// `git_reference_name`.
     pub fn name(&self) -> &CStr {
-        // SAFETY: a live reference's name lives as long as it.
-        let p = unsafe { crate::refs::ffi::git_reference_name(self.as_ptr()) };
-        // SAFETY: the name lives as long as the reference.
-        unsafe { opt_cstr(p) }.unwrap_or(c"")
+        self.view().name_cstr()
     }
 
     /// `git_reference_symbolic_target` (`None` for a direct reference).
     pub fn symbolic_target(&self) -> Option<&CStr> {
-        // SAFETY: as `name`.
-        let p = unsafe { crate::refs::ffi::git_reference_symbolic_target(self.as_ptr()) };
-        // SAFETY: as `name`.
-        unsafe { opt_cstr(p) }
+        self.view().symbolic_target_cstr()
     }
 
     /// `git_reference_target` (`None` for a symbolic reference).
     pub fn target(&self) -> Option<&Oid> {
-        // SAFETY: NULL or the id inside the live reference.
-        let p = unsafe { crate::refs::ffi::git_reference_target(self.as_ptr()) };
-        // SAFETY: NULL or the id inside the live reference.
-        unsafe { p.as_ref() }
+        self.view().target()
     }
 
     /// `git_reference_is_branch`.
     pub fn is_branch(&self) -> bool {
-        // SAFETY: a live reference.
-        unsafe { crate::refs::ffi::git_reference_is_branch(self.as_ptr()) != 0 }
+        crate::refs::is_branch(self.view().name())
     }
 
     /// `git_reference_is_tag`.
     pub fn is_tag(&self) -> bool {
-        // SAFETY: a live reference.
-        unsafe { crate::refs::ffi::git_reference_is_tag(self.as_ptr()) != 0 }
+        crate::refs::is_tag(self.view().name())
     }
 
     /// `git_reference_is_remote`.
     pub fn is_remote(&self) -> bool {
-        // SAFETY: a live reference.
-        unsafe { crate::refs::ffi::git_reference_is_remote(self.as_ptr()) != 0 }
+        crate::refs::is_remote(self.view().name())
     }
 
     /// `git_reference_peel`.
     pub(crate) fn peel(&self, t: c_int) -> Result<Object<'r>> {
-        let mut out = ptr::null_mut();
-        // SAFETY: a live reference, a local out-parameter.
-        check(unsafe { crate::refs::ffi::git_reference_peel(&raw mut out, self.as_ptr(), t) })?;
+        let out = crate::refs::peel(self.view(), t)?.into_raw();
         let out = NonNull::new(out.cast()).ok_or(ErrorCode::GENERIC)?;
-        // SAFETY: the object the peel returned, ours; of the reference's
-        // repository (which outlives `'r`).
+        // SAFETY: the object the peel returned, whose reference is ours;
+        // of the reference's repository, which outlives `'r` (`from_raw`'s
+        // contract).
         Ok(unsafe { Object::adopt(out) })
     }
 }
@@ -271,32 +267,28 @@ pub(crate) mod refname {
 
     /// `git_reference__is_branch`.
     pub fn is_branch(name: &CStr) -> bool {
-        // SAFETY: a NUL-terminated name.
-        unsafe { crate::refs::ffi::git_reference__is_branch(name.as_ptr()) != 0 }
+        crate::refs::is_branch(name.to_bytes())
     }
     /// `git_reference__is_tag`.
     pub fn is_tag(name: &CStr) -> bool {
-        // SAFETY: as above.
-        unsafe { crate::refs::ffi::git_reference__is_tag(name.as_ptr()) != 0 }
+        crate::refs::is_tag(name.to_bytes())
     }
     /// `git_reference__is_remote`.
     pub fn is_remote(name: &CStr) -> bool {
-        // SAFETY: as above.
-        unsafe { crate::refs::ffi::git_reference__is_remote(name.as_ptr()) != 0 }
+        crate::refs::is_remote(name.to_bytes())
     }
     /// `git_reference__shorthand`: a suffix of `name`.
     pub fn shorthand(name: &CStr) -> &CStr {
-        // SAFETY: the result points into `name` (a suffix), so it lives
-        // as long as it.
-        let p = unsafe { crate::refs::ffi::git_reference__shorthand(name.as_ptr()) };
-        // SAFETY: a suffix of `name`.
-        unsafe { opt_cstr(p) }.unwrap_or(name)
+        let off = crate::refs::shorthand_offset(name.to_bytes());
+        // `shorthand_offset` is at most the name's length, so the suffix
+        // keeps the NUL.
+        CStr::from_bytes_with_nul(&name.to_bytes_with_nul()[off..]).unwrap_or(name)
     }
     /// `git_reference_name_is_valid`.
     pub fn is_valid(name: &CStr) -> Result<bool> {
-        let mut v: c_int = 0;
-        // SAFETY: a NUL-terminated name, a local out.
-        check(unsafe { crate::refs::ffi::git_reference_name_is_valid(&raw mut v, name.as_ptr()) })?;
-        Ok(v != 0)
+        crate::refs::name_is_valid(
+            name.to_bytes(),
+            crate::refs::GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL,
+        )
     }
 }

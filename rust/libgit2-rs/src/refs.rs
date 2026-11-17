@@ -143,7 +143,15 @@ fn target_ptr(r: *mut GitReference) -> *mut RefTarget {
 }
 
 /// A borrowed reference, which C (or a [`RefBox`]) owns: the getters.
+///
+/// Invariant (from [`from_ptr`](Self::from_ptr), the one constructor, or
+/// an export's `Option<RefView<'_>>` parameter, whose contract is the
+/// same): `ptr` is a live `git_reference` block that nothing writes or
+/// frees during `'a`. `#[repr(transparent)]` over the pointer (the
+/// `PhantomData` is a ZST), so `Option<RefView<'_>>` has the ABI of a C
+/// `const git_reference *` (NULL is `None`).
 #[derive(Clone, Copy)]
+#[repr(transparent)]
 pub struct RefView<'a> {
     ptr: NonNull<GitReference>,
     _life: PhantomData<&'a GitReference>,
@@ -184,7 +192,9 @@ impl<'a> RefView<'a> {
 
     /// `ref->type`.
     pub fn raw_kind(self) -> c_int {
-        // SAFETY: a live reference (the view's invariant).
+        // SAFETY: `ptr` is a live block (the view's invariant), aligned
+        // (`git__allocator` memory, see `alloc_ref`); `kind` is initialized
+        // (zeroed, then set) and nothing writes it during `'a`.
         unsafe { (*self.ptr.as_ptr()).kind }
     }
 
@@ -200,8 +210,9 @@ impl<'a> RefView<'a> {
     /// `ref->name`.
     pub fn name_cstr(self) -> &'a CStr {
         // SAFETY: the name is a NUL-terminated string in the reference's
-        // block, which the pointer's provenance covers, unchanged during
-        // `'a` (the view's invariant).
+        // block (`alloc_ref` sizes the block for it), which the pointer's
+        // provenance covers (it is the allocation's), and nothing writes or
+        // frees it during `'a` (the view's invariant).
         unsafe { CStr::from_ptr(name_ptr(self.ptr.as_ptr())) }
     }
 
@@ -220,8 +231,11 @@ impl<'a> RefView<'a> {
 
     /// `&ref->target.oid`, whatever the kind (as C reads it).
     pub fn oid_field(self) -> &'a Oid {
-        // SAFETY: a live reference; every byte pattern is a valid `Oid`
-        // (align 1), and the union is at least an `Oid` wide.
+        // SAFETY: the union lies in the live block (the view's invariant),
+        // is at least an `Oid` wide, and `Oid` has align 1; its bytes are
+        // initialized (the block is zeroed, then an oid or a pointer is
+        // written) and any bytes are a valid `Oid`; nothing writes the
+        // block during `'a`, which bounds the result.
         unsafe { &*target_ptr(self.ptr.as_ptr()).cast::<Oid>() }
     }
 
@@ -230,14 +244,16 @@ impl<'a> RefView<'a> {
         if self.raw_kind() != GIT_REFERENCE_SYMBOLIC {
             return None;
         }
-        // SAFETY: a live symbolic reference: the union holds its target, a
-        // pointer at an 8-aligned offset.
+        // SAFETY: a live symbolic reference (the view's invariant and the
+        // check above): the union holds its target pointer, written there by
+        // `new_symbolic_cstr`, at an 8-aligned offset of an aligned block.
         let p = unsafe { target_ptr(self.ptr.as_ptr()).cast::<*mut c_char>().read() };
         if p.is_null() {
             return None;
         }
-        // SAFETY: a NUL-terminated string the reference owns (the view's
-        // invariant).
+        // SAFETY: a symbolic reference's target is a NUL-terminated
+        // `git__strdup` it owns, freed only with the block, which lives
+        // unwritten for `'a` (the view's invariant).
         Some(unsafe { CStr::from_ptr(p) })
     }
 
@@ -248,13 +264,14 @@ impl<'a> RefView<'a> {
 
     /// `&ref->peel`.
     pub fn peel(self) -> &'a Oid {
-        // SAFETY: a live reference.
+        // SAFETY: a live, aligned block (the view's invariant); `peel` is
+        // initialized (zeroed or set at creation), unwritten for `'a`.
         unsafe { &(*self.ptr.as_ptr()).peel }
     }
 
     /// `ref->db`.
     pub fn db(self) -> *mut GitRefdb {
-        // SAFETY: a live reference.
+        // SAFETY: as in `peel`, for `db`.
         unsafe { (*self.ptr.as_ptr()).db }
     }
 }
@@ -265,10 +282,20 @@ pub struct RefBox {
     ptr: NonNull<GitReference>,
 }
 
-// SAFETY: a reference owns its block and target string; its count on the
-// refdb is atomic (`git_refdb`'s `rc`), and the refdb is thread-safe.
+// SAFETY: the one field owns the reference's block, which holds:
+// - `kind`, `target.oid`, `peel` and `name`: plain data;
+// - `target.symbolic`: a `git__strdup` the block owns (`git__allocator`
+//   frees from any thread);
+// - `db`: NULL or a refdb on which the block holds a count; the count is
+//   atomic (`GitRefcount`), so dropping it on another thread is a
+//   `GIT_REFCOUNT_DEC` there, as C allows. The refdb's other fields are an
+//   atomic backend pointer and a `repo` pointer fixed at creation, which a
+//   `RefBox` itself never follows (only code holding a `RepoPtr` does, under
+//   that handle's contract).
+// Nothing ties the block to the thread that made it.
 unsafe impl Send for RefBox {}
-// SAFETY: shared access only reads the block.
+// SAFETY: `&RefBox` gives only `view()`, which reads the block; nothing
+// writes it while shared (writes need `&mut RefBox` or ownership).
 unsafe impl Sync for RefBox {}
 
 impl core::fmt::Debug for RefBox {
@@ -285,9 +312,13 @@ fn alloc_ref(name: &[u8]) -> Option<NonNull<GitReference>> {
     let len = core::mem::size_of::<GitReference>()
         .checked_add(name.len())?
         .checked_add(1)?;
+    // `git__allocator` returns `malloc`-aligned memory (16 bytes on the
+    // supported targets), enough for the struct.
+    const _: () = assert!(core::mem::align_of::<GitReference>() <= 16);
     let p = NonNull::new(alloc::calloc(1, len).cast::<GitReference>())?;
-    // SAFETY: a fresh block of `len` bytes: the name and its NUL (already
-    // zero) fit after the struct.
+    // SAFETY: a fresh zeroed block of `len` bytes: the name's bytes fit
+    // after the struct with room left for the NUL (already zero); the
+    // source is a distinct live slice.
     unsafe {
         core::ptr::copy_nonoverlapping(name.as_ptr(), name_ptr(p.as_ptr()).cast::<u8>(), name.len())
     };
@@ -334,9 +365,11 @@ impl RefBox {
             Some(peel) => *peel,
             None => crate::refdb_fs::oid_clear(c_int::from(oid.raw_kind())),
         };
-        // SAFETY: our fresh, zeroed block (each field written once).
+        // SAFETY: our fresh, zeroed, aligned block (`alloc_ref`), which
+        // nothing else references yet.
         unsafe { (*r).kind = GIT_REFERENCE_DIRECT };
-        // SAFETY: as above; the union's other bytes stay zero.
+        // SAFETY: as above; the union is at least an `Oid` wide and `Oid`
+        // has align 1; its other bytes stay zero.
         unsafe { target_ptr(r).cast::<Oid>().write(*oid) };
         // SAFETY: as above.
         unsafe { (*r).peel = peel };
@@ -355,13 +388,16 @@ impl RefBox {
         let ptr = alloc_ref(name).ok_or(ErrorCode::GENERIC)?;
         let t = alloc::substrdup(target);
         if t.is_null() {
-            // SAFETY: our block, from `git__calloc`.
+            // SAFETY: our block, from `git__calloc`, not handed out; freed
+            // once.
             unsafe { alloc::free(ptr.as_ptr().cast()) };
             return Err(ErrorCode::GENERIC);
         }
-        // SAFETY: our fresh, zeroed block.
+        // SAFETY: our fresh, zeroed, aligned block (`alloc_ref`), which
+        // nothing else references yet.
         unsafe { (*ptr.as_ptr()).kind = GIT_REFERENCE_SYMBOLIC };
-        // SAFETY: as above: the union's pointer, 8-aligned.
+        // SAFETY: as above: the union's pointer field, at an 8-aligned
+        // offset (the union is `repr(C)` after a pointer and an int).
         unsafe { target_ptr(ptr.as_ptr()).cast::<*mut c_char>().write(t) };
         Ok(RefBox { ptr })
     }
@@ -418,7 +454,9 @@ impl RefBox {
             return Err(errors::oom());
         };
         let old = self.ptr.as_ptr();
-        // SAFETY: our block, from `git__allocator`.
+        // SAFETY: our block (we own `self`), from `git__allocator`; no
+        // reference into it is live (`name` cannot borrow `self`, which is
+        // moved in). On success the old block is gone and only `p` is used.
         let p = unsafe { alloc::realloc(old.cast(), len) }.cast::<GitReference>();
         let Some(ptr) = NonNull::new(p) else {
             // `self` still owns the old block: dropped as C's caller frees it.
@@ -426,9 +464,10 @@ impl RefBox {
         };
         core::mem::forget(self);
         let dst = name_ptr(ptr.as_ptr()).cast::<u8>();
-        // SAFETY: the reallocated block has room for the name and its NUL.
+        // SAFETY: the reallocated block is `len` bytes: the name's bytes
+        // fit after the struct; `name` is a live slice outside it.
         unsafe { core::ptr::copy_nonoverlapping(name.as_ptr(), dst, name.len()) };
-        // SAFETY: as above.
+        // SAFETY: as above: the last byte of the block.
         unsafe { dst.wrapping_add(name.len()).write(0) };
         Ok(RefBox { ptr })
     }
@@ -465,7 +504,8 @@ impl RefBox {
 impl Drop for RefBox {
     /// `git_reference_free`.
     fn drop(&mut self) {
-        // SAFETY: we own the reference.
+        // SAFETY: we own the live reference (the constructors' contract),
+        // given up here: nothing uses it after the drop.
         unsafe { free_raw(self.ptr.as_ptr()) };
     }
 }
@@ -479,20 +519,26 @@ pub unsafe fn free_raw(r: *mut GitReference) {
     let Some(nn) = NonNull::new(r) else {
         return;
     };
-    // SAFETY: per the contract: a live reference, ours from now on.
+    // SAFETY: a live reference that the caller gives up (the contract), so
+    // nothing else writes or frees it; `v` is used only before the frees
+    // below.
     let v = unsafe { RefView::from_ptr(nn) };
+    let db = v.db();
     if v.raw_kind() == GIT_REFERENCE_SYMBOLIC {
-        // SAFETY: a symbolic reference's target is its own `git__strdup`.
+        // SAFETY: as in `RefView::symbolic_target_cstr`: the union holds
+        // the target pointer of a symbolic reference.
         let t = unsafe { target_ptr(r).cast::<*mut c_char>().read() };
-        // SAFETY: as above, freed once.
+        // SAFETY: NULL or the reference's own `git__strdup`, freed once (the
+        // block, and so the pointer, is freed just after).
         unsafe { alloc::free(t.cast()) };
     }
-    let db = v.db();
     if !db.is_null() {
-        // SAFETY: the reference holds a count on its live database.
+        // SAFETY: the reference holds a count on its live database, given
+        // up here.
         unsafe { refdb::decref(db) };
     }
-    // SAFETY: the block, from `git__allocator`, freed once.
+    // SAFETY: the block, from `git__allocator`, freed once; nothing refers
+    // to it any more.
     unsafe { alloc::free(r.cast()) };
 }
 
@@ -1119,7 +1165,8 @@ pub fn symbolic_create_matching(
 /// The repository of a reference (`ref->db->repo`).
 pub fn owner(r: RefView<'_>) -> Result<RepoPtr> {
     let db = NonNull::new(r.db()).ok_or(ErrorCode::GENERIC)?;
-    // SAFETY: a reference's database is live while it is.
+    // SAFETY: the reference holds a count on its database, which keeps it
+    // live while `r` is (only `db->repo`, fixed at creation, is read).
     let db = unsafe { RefdbPtr::new(db) };
     db.repo().ok_or(ErrorCode::GENERIC)
 }
@@ -1159,38 +1206,29 @@ struct UpdateHead<'a> {
     new_name: &'a [u8],
 }
 
-/// `refs_update_head`: point a worktree's HEAD at the renamed reference.
-unsafe extern "C" fn refs_update_head(
-    worktree: *mut git_repository,
-    payload: *mut c_void,
-) -> c_int {
-    crate::util::export::barrier(|| {
-        // SAFETY: `git_repository_foreach_worktree` passes a live
-        // repository and our payload, for the call.
-        let repo = unsafe { RepoPtr::from_raw(worktree) };
-        // SAFETY: as above.
-        let p = unsafe { &*payload.cast::<UpdateHead<'_>>() };
-        let head = match lookup(repo, GIT_HEAD_REF) {
-            Ok(h) => h,
-            Err(e) => return e.raw(),
-        };
-        let v = head.view();
-        if v.raw_kind() != GIT_REFERENCE_SYMBOLIC
-            || strcmp(v.symbolic_target().unwrap_or_default(), p.old_name) != 0
-        {
-            return 0;
+/// `refs_update_head`: point the HEAD of `worktree` at the renamed
+/// reference.
+fn update_head(worktree: RepoPtr, p: &UpdateHead<'_>) -> c_int {
+    let head = match lookup(worktree, GIT_HEAD_REF) {
+        Ok(h) => h,
+        Err(e) => return e.raw(),
+    };
+    let v = head.view();
+    if v.raw_kind() != GIT_REFERENCE_SYMBOLIC
+        || strcmp(v.symbolic_target().unwrap_or_default(), p.old_name) != 0
+    {
+        return 0;
+    }
+    match symbolic_set_target(v, p.new_name, None) {
+        Ok(_) => 0,
+        Err(e) => {
+            let _ = git_error_set!(
+                ErrorClass::REFERENCE,
+                "failed to update HEAD after renaming reference"
+            );
+            e.raw()
         }
-        match symbolic_set_target(v, p.new_name, None) {
-            Ok(_) => 0,
-            Err(e) => {
-                let _ = git_error_set!(
-                    ErrorClass::REFERENCE,
-                    "failed to update HEAD after renaming reference"
-                );
-                e.raw()
-            }
-        }
-    })
+    }
 }
 
 /// `git_reference_rename`: the renamed reference (written to `out` before
@@ -1205,8 +1243,12 @@ pub fn rename(
     let repo = owner(r)?;
     let signature = log_signature(repo)?;
     let normalized = normalize_for_repo(repo, new_name, true)?;
-    // SAFETY: the reference's database is live while it is.
-    let db = unsafe { RefdbPtr::new(NonNull::new(r.db()).ok_or(ErrorCode::GENERIC)?) };
+    let db = NonNull::new(r.db()).ok_or(ErrorCode::GENERIC)?;
+    // SAFETY: the reference holds a count on its database, which keeps it
+    // live while `r` is (all of this call), and `owner` above found its
+    // repository, whose refdb this is (its backend is live by the
+    // contract of the `RepoPtr` that made `r`).
+    let db = unsafe { RefdbPtr::new(db) };
     *out = db.rename(
         r.name_cstr(),
         &normalized,
@@ -1215,22 +1257,18 @@ pub fn rename(
         log_message,
         true,
     )?;
-    let mut payload = UpdateHead {
+    let payload = UpdateHead {
         old_name: r.name(),
         new_name: normalized.to_bytes(),
     };
-    // SAFETY: `repo.as_ptr()` is NULL or a live repository (as the call below
-    // requires), only read through `&` (its state is interior-mutable).
-    let repo_ref = unsafe { repo.as_ptr().as_ref() };
-    // SAFETY: a live repository; the callback gets our payload, alive for
-    // the call.
-    let e = unsafe {
-        crate::repository::ffi::git_repository_foreach_worktree(
-            repo_ref,
-            Some(refs_update_head),
-            (&raw mut payload).cast(),
-        )
-    };
+    // `git_repository_foreach_worktree(repo, refs_update_head, &payload)`.
+    let e = crate::repository::head::foreach_worktree(repo.get(), &mut |w| {
+        // SAFETY: `foreach_worktree` lends `w`, open for this call of the
+        // closure; the handle and the references `update_head` gets
+        // through it are dropped before it returns.
+        let wt = unsafe { RepoPtr::new(NonNull::from(w)) };
+        update_head(wt, &payload)
+    });
     ErrorCode::check(e).map(drop)
 }
 
@@ -1407,8 +1445,16 @@ pub fn is_unborn_head(r: RefView<'_>, repo: RepoPtr) -> Result<bool> {
 /// freed on drop.
 pub struct RefIter(NonNull<crate::refdb::git_reference_iterator>);
 
-// SAFETY: an iterator is used by its one owner at a time; the backends'
-// iterators are not tied to a thread.
+// SAFETY: the one field owns a backend iterator, used only through
+// `&mut self` (one thread at a time). What it reaches:
+// - `db`: a refdb on which it holds a count (atomic `GitRefcount`), dropped
+//   by `Drop` on whichever thread drops the value;
+// - the iterator's own state: for the crate's backends an `FsIter` or
+//   `VecIter` (both `Send`: they own their pools and vectors, and the
+//   `Arc` of the shared backend state); for a C backend (reftable, a
+//   user's) C state that libgit2 lets any one thread use at a time (the
+//   backend API has no thread affinity), as C callers move iterators too.
+// Not `Sync`: `&RefIter` gives nothing, so no claim is needed.
 unsafe impl Send for RefIter {}
 
 impl RefIter {
@@ -1420,14 +1466,16 @@ impl RefIter {
 
     /// `git_reference_next`.
     pub fn next_ref(&mut self) -> Result<RefBox> {
-        // SAFETY: our live iterator, used by us alone.
+        // SAFETY: our live iterator from `git_refdb_iterator`
+        // (`RefdbPtr::iterator`), used by nobody else during the call
+        // (`&mut self`).
         unsafe { refdb::iterator_next(self.0.as_ptr()) }
     }
 
     /// `git_reference_next_name`: the name, valid until the next call.
     pub fn next_name(&mut self) -> Result<&CStr> {
         let mut out = core::ptr::null();
-        // SAFETY: as above; `out` writable.
+        // SAFETY: as in `next_ref`; `out` is our writable local.
         ErrorCode::check(unsafe { refdb::iterator_next_name(&raw mut out, self.0.as_ptr()) })?;
         if out.is_null() {
             return Err(ErrorCode::GENERIC);
@@ -1447,7 +1495,8 @@ impl RefIter {
 
 impl Drop for RefIter {
     fn drop(&mut self) {
-        // SAFETY: our iterator, freed once.
+        // SAFETY: our live iterator from `git_refdb_iterator`, given up
+        // here (freed once).
         unsafe { refdb::iterator_free(self.0.as_ptr()) };
     }
 }
@@ -1484,69 +1533,96 @@ pub(crate) mod deps;
 
 /// The exports of `refs.c`.
 ///
-/// Every `git_reference *` is NULL (where C checks it) or a live reference
-/// (with a live `db` where the function reaches the repository); every
-/// `git_repository *` a live repository; strings are NUL-terminated.
-/// libgit2's threading rules hold: a reference is used by one thread at a
-/// time.
+/// Each export's `# Safety` lists its pointers. Throughout:
+///
+/// - a "live repository" is a `git_repository` (from this crate) that stays
+///   open for the call; its refdb (and the refdb's backend) are not
+///   replaced or freed during the call (`git_repository_set_refdb`,
+///   `git_refdb_set_backend` race with every use, as in C);
+/// - a "live reference" is a `git_reference` block from
+///   `git_reference__alloc*` / a backend, not freed during the call; where
+///   the export reaches the repository through it, its `db` is a live
+///   database with a live backend;
+/// - strings are NUL-terminated and stay readable for the call;
+/// - libgit2's threading rules hold: one thread uses a reference or an
+///   iterator at a time; a repository may be shared.
+///
+/// Exports whose raw signature other modules call keep raw pointer
+/// parameters and convert them once; the others take [`Option<RepoPtr>`],
+/// [`Option<RefView<'_>>`](RefView), [`CStrArg`] and [`Out`], which have the
+/// ABI of the C pointers.
 pub mod ffi {
     use super::*;
     use crate::git_arg;
     use crate::refdb::git_reference_iterator;
     use crate::refs::deps::git_object;
     use crate::strarray::GitStrArray;
-    use crate::util::cabi::CStrArg;
-    use crate::util::export::{barrier, cstr, cstr_bytes, status};
+    use crate::util::cabi::{CStrArg, Out};
+    use crate::util::export::{barrier, status};
     use crate::util::vector::GitVector;
 
     /// The first bytes of the name `p` (at most 32, which is more than any
     /// prefix or root name the predicates compare with), without measuring
     /// the whole string: C's `git__prefixcmp` reads only to the mismatch.
-    ///
-    /// # Safety
-    ///
-    /// `p` is a NUL-terminated string.
-    unsafe fn head<'a>(p: *const c_char) -> &'a [u8] {
+    /// NULL (which C dereferences) reads as the empty name.
+    fn head<'a>(p: CStrArg<'a>) -> &'a [u8] {
         const HEAD_MAX: usize = 32;
-        // SAFETY: a string: `strnlen` reads to its NUL or 32 bytes.
+        if p.is_null() {
+            return &[];
+        }
+        let p = p.as_ptr();
+        // SAFETY: a non-null `CStrArg` is a NUL-terminated string readable
+        // for its lifetime (the type's invariant): `strnlen` reads to its
+        // NUL or 32 bytes, whichever comes first.
         let n = unsafe { libc::strnlen(p, HEAD_MAX) };
-        // SAFETY: those `n` bytes are the string's, unchanged during the
-        // call (the caller's string).
+        // SAFETY: those `n` (<= 32) bytes precede the NUL in the same
+        // string, readable and unwritten for the `CStrArg`'s lifetime,
+        // which bounds the result's.
         unsafe { crate::util::export::bytes(p, n) }
     }
 
     /// The repository, checked as `GIT_ASSERT_ARG(repo)`.
-    unsafe fn repo_arg(repo: *mut git_repository) -> Result<RepoPtr> {
-        crate::git_assert_arg!(!repo.is_null(), "repo");
-        // SAFETY: a live repository (the module's contract).
-        Ok(unsafe { RepoPtr::from_raw(repo) })
+    fn repo_arg(repo: Option<RepoPtr>) -> Result<RepoPtr> {
+        repo.ok_or_else(|| errors::assert_arg_failed("repo"))
     }
 
-    /// A repository C dereferences unchecked.
+    /// A repository argument C dereferences unchecked (the barrier turns
+    /// the panic of a NULL into an error), for the exports whose raw
+    /// signature other modules call.
+    ///
+    /// # Safety
+    ///
+    /// `repo` is NULL or a live repository that stays live for the export's
+    /// call (the export's contract), during which the result is used.
     unsafe fn repo_unchecked(repo: *mut git_repository) -> RepoPtr {
-        // SAFETY: the module's contract (C crashes on NULL; the barrier
-        // turns the panic of `expect` into an error).
+        // SAFETY: the caller's guarantee above is `from_raw`'s, for the
+        // call (NULL panics in `from_raw`).
         unsafe { RepoPtr::from_raw(repo) }
     }
 
-    /// A reference C reads.
+    /// A reference argument C reads, for the exports whose raw signature
+    /// other modules call.
+    ///
+    /// # Safety
+    ///
+    /// `r` is NULL or a live reference that nothing writes or frees during
+    /// `'a` (the export's call).
     unsafe fn view<'a>(r: *const GitReference) -> Option<RefView<'a>> {
-        // SAFETY: NULL or a live reference (the module's contract).
+        // SAFETY: the caller's guarantee is `from_ptr`'s for `'a`, and
+        // `NonNull::new` excludes NULL.
         NonNull::new(r.cast_mut()).map(|p| unsafe { RefView::from_ptr(p) })
     }
 
     /// Write a reference result to `out` (NULL on failure: C sets it on
     /// most failure paths, and leaves it as it was on a few).
-    unsafe fn put(out: *mut *mut GitReference, r: Result<RefBox>) -> c_int {
+    fn put(mut out: Out<'_, *mut GitReference>, r: Result<RefBox>) -> c_int {
         match r {
             Ok(r) => {
-                // SAFETY: `out` writable (callers check NULL where C does).
-                unsafe { *out = r.into_raw() };
+                out.write(r.into_raw());
                 0
             }
             Err(e) => {
-                // SAFETY: as above.
-                unsafe { *out = core::ptr::null_mut() };
+                out.write(core::ptr::null_mut());
                 e.raw()
             }
         }
@@ -1556,19 +1632,17 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// The strings are NULL or NUL-terminated.
+    /// `name` and `target` are NULL or NUL-terminated strings, readable
+    /// and unwritten during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference__alloc_symbolic(
-        name: *const c_char,
-        target: *const c_char,
+        name: CStrArg<'_>,
+        target: CStrArg<'_>,
     ) -> *mut GitReference {
         barrier(|| {
             crate::git_assert_arg!(!name.is_null(), "name", core::ptr::null_mut());
             crate::git_assert_arg!(!target.is_null(), "target", core::ptr::null_mut());
-            // SAFETY: strings.
-            let n = unsafe { cstr_bytes(name) };
-            // SAFETY: strings.
-            let t = unsafe { cstr_bytes(target) };
+            let (n, t) = (name.to_bytes(), target.to_bytes());
             RefBox::new_symbolic_cstr(NulFree(n), NulFree(t))
                 .map_or(core::ptr::null_mut(), RefBox::into_raw)
         })
@@ -1578,23 +1652,18 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `name` NULL or a string; `oid` NULL or valid; `peel` NULL or valid.
+    /// `name` is NULL or a NUL-terminated string; `oid` and `peel` are NULL
+    /// or valid `git_oid`s; none is written during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference__alloc(
-        name: *const c_char,
-        oid: *const Oid,
-        peel: *const Oid,
+        name: CStrArg<'_>,
+        oid: Option<&Oid>,
+        peel: Option<&Oid>,
     ) -> *mut GitReference {
         barrier(|| {
             crate::git_assert_arg!(!name.is_null(), "name", core::ptr::null_mut());
-            crate::git_assert_arg!(!oid.is_null(), "oid", core::ptr::null_mut());
-            // SAFETY: a string (the contract).
-            let n = unsafe { cstr_bytes(name) };
-            // SAFETY: a valid oid.
-            let o = unsafe { &*oid };
-            // SAFETY: NULL or a valid oid.
-            let pl = unsafe { peel.as_ref() };
-            RefBox::new_direct_cstr(NulFree(n), o, pl)
+            let o = git_arg!(oid, "oid", core::ptr::null_mut());
+            RefBox::new_direct_cstr(NulFree(name.to_bytes()), o, peel)
                 .map_or(core::ptr::null_mut(), RefBox::into_raw)
         })
     }
@@ -1603,28 +1672,34 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `ptr_to_ref` NULL or a writable pointer to a live reference the
-    /// caller owns; `name` NULL or a string.
+    /// `ptr_to_ref` is NULL, or aligned, readable and writable, holding
+    /// NULL or a live reference (from `git_reference__alloc*`) that the
+    /// caller owns and nothing else uses during the call; `name` is NULL or
+    /// a NUL-terminated string (it may be inside that reference).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference__realloc(
         ptr_to_ref: *mut *mut GitReference,
-        name: *const c_char,
+        name: CStrArg<'_>,
     ) -> *mut GitReference {
         barrier(|| {
             crate::git_assert_arg!(!ptr_to_ref.is_null(), "ptr_to_ref", core::ptr::null_mut());
             crate::git_assert_arg!(!name.is_null(), "name", core::ptr::null_mut());
-            // SAFETY: per the contract.
+            // SAFETY: `ptr_to_ref` is non-null (checked), aligned and
+            // readable (this export's contract).
             let old = unsafe { *ptr_to_ref };
-            // SAFETY: as above.
+            // SAFETY: as above, writable; no reference to `*ptr_to_ref`
+            // exists.
             unsafe { *ptr_to_ref = core::ptr::null_mut() };
-            // SAFETY: a live reference the caller owns.
+            // The name may be the reference's own name (or its target),
+            // which the reallocation frees: copied first, while the block
+            // is still live (see DEFECTS.md).
+            let n = name.to_bytes().to_vec();
+            // SAFETY: `old` is NULL or a live reference the caller owns and
+            // gives up here (this export's contract); `*ptr_to_ref` no
+            // longer points to it.
             let Some(b) = (unsafe { RefBox::from_raw(old) }) else {
                 return core::ptr::null_mut();
             };
-            // SAFETY: a string. It may be the reference's own name (or
-            // its target), which the reallocation frees: copied first
-            // (see DEFECTS.md).
-            let n = unsafe { cstr_bytes(name) }.to_vec();
             // On failure C leaves the old block with the caller, NULL in
             // `*ptr_to_ref`: it leaks (see DEFECTS.md); here `rename`
             // frees it.
@@ -1636,29 +1711,16 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `dest` writable; `source` a live reference.
+    /// `dest` is NULL or writable (NULL is skipped, where C crashes);
+    /// `source` is NULL or a live reference, unwritten during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_dup(
-        dest: *mut *mut GitReference,
-        source: *mut GitReference,
+        dest: Out<'_, *mut GitReference>,
+        source: Option<RefView<'_>>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract (C dereferences NULL).
-            let Some(src) = (unsafe { view(source) }) else {
-                return errors::assert_arg_failed("source").raw();
-            };
-            match RefBox::dup(src) {
-                Ok(d) => {
-                    // SAFETY: writable.
-                    unsafe { *dest = d.into_raw() };
-                    0
-                }
-                Err(e) => {
-                    // SAFETY: writable.
-                    unsafe { *dest = core::ptr::null_mut() };
-                    e.raw()
-                }
-            }
+            let src = git_arg!(source, "source", -1);
+            put(dest, RefBox::dup(src))
         })
     }
 
@@ -1666,10 +1728,13 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `reference` NULL or a live reference, given up.
+    /// `reference` is NULL or a live reference (from this module or a
+    /// backend) that the caller owns and gives up: nothing uses it after
+    /// the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_free(reference: *mut GitReference) {
-        // SAFETY: per the contract.
+        // SAFETY: `reference` is NULL or a live reference the caller gives
+        // up (this export's contract), as `free_raw` requires.
         barrier(|| unsafe { free_raw(reference) })
     }
 
@@ -1677,50 +1742,53 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module.
+    /// `r` is NULL or a live reference, unwritten and not freed during the
+    /// call, whose `db` (if set) is a live database with a live backend.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_delete(r: *mut GitReference) -> c_int {
-        barrier(|| {
-            // SAFETY: per the contract.
-            let Some(v) = (unsafe { view(r) }) else {
-                return errors::assert_arg_failed("ref").raw();
-            };
-            if v.name() == b"HEAD" {
-                let _ = git_error_set!(ErrorClass::REFERENCE, "cannot delete HEAD");
-                return -1;
-            }
-            let (old_id, old_target) = if v.raw_kind() == GIT_REFERENCE_DIRECT {
-                (Some(v.oid_field()), None)
-            } else {
-                (None, v.symbolic_target_cstr())
-            };
-            let Some(db) = NonNull::new(v.db()) else {
-                return errors::assert_arg_failed("db").raw();
-            };
-            // SAFETY: the reference's live database.
-            status(unsafe { RefdbPtr::new(db) }.delete(v.name_cstr(), old_id, old_target))
-        })
+        // SAFETY: this export's contract is `view`'s, for the call.
+        barrier(|| delete_c(unsafe { view(r) }))
+    }
+
+    /// The body of [`git_reference_delete`].
+    fn delete_c(r: Option<RefView<'_>>) -> c_int {
+        let v = git_arg!(r, "ref", -1);
+        if v.name() == b"HEAD" {
+            let _ = git_error_set!(ErrorClass::REFERENCE, "cannot delete HEAD");
+            return -1;
+        }
+        let (old_id, old_target) = if v.raw_kind() == GIT_REFERENCE_DIRECT {
+            (Some(v.oid_field()), None)
+        } else {
+            (None, v.symbolic_target_cstr())
+        };
+        let Some(db) = NonNull::new(v.db()) else {
+            return errors::assert_arg_failed("db").raw();
+        };
+        // SAFETY: the reference holds a count on its database, which keeps
+        // it live for the call (during which `v` is live); its backend is
+        // live (the export's contract).
+        status(unsafe { RefdbPtr::new(db) }.delete(v.name_cstr(), old_id, old_target))
     }
 
     /// `git_reference_remove`.
     ///
     /// # Safety
     ///
-    /// See the module.
+    /// `repo` is NULL or a live repository (see the module); `name` NULL
+    /// or a NUL-terminated string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_remove(
-        repo: *mut git_repository,
+        repo: Option<RepoPtr>,
         name: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            let repo = unsafe { repo_unchecked(repo) };
+            let repo = git_arg!(repo, "repo", -1);
             let db = match RefdbPtr::of_repo(repo) {
                 Ok(d) => d,
                 Err(e) => return e.raw(),
             };
-            let n = name.get().unwrap_or(c"");
-            status(db.delete(n, None, None))
+            status(db.delete(name.or_empty(), None, None))
         })
     }
 
@@ -1728,14 +1796,14 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module; `ref_out` writable.
+    /// As [`git_reference_lookup_resolved`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_lookup(
         ref_out: *mut *mut GitReference,
         repo: *mut git_repository,
         name: *const c_char,
     ) -> c_int {
-        // SAFETY: per the contract.
+        // SAFETY: this export's contract is `git_reference_lookup_resolved`'s.
         unsafe { git_reference_lookup_resolved(ref_out, repo, name, 0) }
     }
 
@@ -1743,7 +1811,9 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module; `ref_out` writable.
+    /// `ref_out` is NULL or writable; `repo` NULL or a live repository
+    /// (see the module); `name` NULL or a NUL-terminated string, unwritten
+    /// during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_lookup_resolved(
         ref_out: *mut *mut GitReference,
@@ -1751,29 +1821,23 @@ pub mod ffi {
         name: *const c_char,
         max_nesting: c_int,
     ) -> c_int {
+        // SAFETY: `ref_out` NULL or writable, with no reference to `*ref_out`
+        // (this export's contract).
+        let ref_out = unsafe { Out::from_ptr(ref_out) };
+        // SAFETY: `name` NULL or a string unwritten during the call (as
+        // above).
+        let name = unsafe { CStrArg::from_ptr(name) };
         barrier(|| {
             crate::git_assert_arg!(!ref_out.is_null(), "ref_out", -1);
             crate::git_assert_arg!(!repo.is_null(), "repo", -1);
             crate::git_assert_arg!(!name.is_null(), "name", -1);
-            // SAFETY: per the contract.
+            // SAFETY: a live repository (non-null, checked; this export's
+            // contract) for the call.
             let repo = unsafe { repo_unchecked(repo) };
-            // SAFETY: per the contract.
-            let n = unsafe { cstr_bytes(name) };
-            match lookup_resolved(repo, n, max_nesting) {
-                Ok(r) => {
-                    // SAFETY: writable.
-                    unsafe { *ref_out = r.into_raw() };
-                    0
-                }
-                Err(e) => {
-                    // C sets `*ref_out` to NULL in the lookups (all but a
-                    // name or repository error, after which it is left as
-                    // it was): NULL here on any error.
-                    // SAFETY: writable.
-                    unsafe { *ref_out = core::ptr::null_mut() };
-                    e.raw()
-                }
-            }
+            // C sets `*ref_out` to NULL in the lookups (all but a name or
+            // repository error, after which it is left as it was): NULL
+            // here on any error.
+            put(ref_out, lookup_resolved(repo, name.to_bytes(), max_nesting))
         })
     }
 
@@ -1781,24 +1845,28 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module; `out` writable.
+    /// `out` is NULL or writable for an `Oid`; `repo` NULL or a live
+    /// repository (see the module); `name` NULL or a NUL-terminated string,
+    /// unwritten during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_name_to_id(
         out: *mut Oid,
         repo: *mut git_repository,
         name: *const c_char,
     ) -> c_int {
+        // SAFETY: `out` NULL or writable, with no reference to `*out`
+        // (this export's contract).
+        let mut out = unsafe { Out::from_ptr(out) };
+        // SAFETY: `name` NULL or a string unwritten during the call.
+        let name = unsafe { CStrArg::from_ptr(name) };
         barrier(|| {
             crate::git_assert_arg!(!repo.is_null(), "repo", -1);
             crate::git_assert_arg!(!name.is_null(), "name", -1);
-            // SAFETY: per the contract.
+            // SAFETY: a live repository (non-null, checked) for the call.
             let repo = unsafe { repo_unchecked(repo) };
-            // SAFETY: per the contract.
-            let n = unsafe { cstr_bytes(name) };
-            match name_to_id(repo, n) {
+            match name_to_id(repo, name.to_bytes()) {
                 Ok(id) => {
-                    // SAFETY: writable.
-                    unsafe { *out = id };
+                    out.write(id);
                     0
                 }
                 Err(e) => e.raw(),
@@ -1810,19 +1878,17 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module; `out` writable.
+    /// `out` is NULL or writable; `repo` NULL or a live repository (see
+    /// the module); `refname` NULL or a NUL-terminated string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_dwim(
-        out: *mut *mut GitReference,
-        repo: *mut git_repository,
+        out: Out<'_, *mut GitReference>,
+        repo: Option<RepoPtr>,
         refname: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            let repo = unsafe { repo_unchecked(repo) };
-            let n = refname.to_bytes();
-            // SAFETY: writable.
-            unsafe { put(out, dwim(repo, n)) }
+            let repo = git_arg!(repo, "repo", -1);
+            put(out, dwim(repo, refname.to_bytes()))
         })
     }
 
@@ -1830,11 +1896,11 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module.
+    /// `r` is NULL or a live reference, unwritten during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_type(r: *const GitReference) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
+            // SAFETY: this export's contract is `view`'s, for the call.
             match unsafe { view(r) } {
                 Some(v) => v.raw_kind(),
                 None => errors::assert_arg_failed("ref").raw(),
@@ -1846,13 +1912,12 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module.
+    /// `r` is NULL or a live reference; the result lives as long as it.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_name(r: *const GitReference) -> *const c_char {
         barrier(|| {
             crate::git_assert_arg!(!r.is_null(), "ref", core::ptr::null());
-            // SAFETY: a live reference: a place projection to its name.
-            unsafe { (&raw const (*r).name).cast::<c_char>() }
+            name_ptr(r.cast_mut()).cast_const()
         })
     }
 
@@ -1860,16 +1925,19 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module; the reference has a database.
+    /// `r` is NULL or a live reference, unwritten during the call, whose
+    /// `db` is a live database (C dereferences a NULL one).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference_owner(r: *const GitReference) -> *mut git_repository {
+    pub unsafe extern "C" fn git_reference_owner(r: Option<RefView<'_>>) -> *mut git_repository {
         barrier(|| {
-            crate::git_assert_arg!(!r.is_null(), "ref", core::ptr::null_mut());
-            // SAFETY: a live reference.
-            let db = unsafe { view(r) }.map_or(core::ptr::null_mut(), RefView::db);
-            // SAFETY: the reference's live database (C dereferences a
-            // NULL one).
-            unsafe { (*db).repo }
+            let v = git_arg!(r, "ref", core::ptr::null_mut());
+            // C dereferences a NULL `db`: the panic becomes an error.
+            let db = NonNull::new(v.db()).expect("reference without a database");
+            // SAFETY: the reference holds a count on its database, live
+            // for the call (this export's contract); only `repo`, fixed
+            // once made, is read.
+            let db = unsafe { RefdbPtr::new(db) };
+            db.repo().map_or(core::ptr::null_mut(), RepoPtr::as_ptr)
         })
     }
 
@@ -1877,12 +1945,13 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module.
+    /// `r` is NULL or a live reference, unwritten during the call; the
+    /// result lives as long as it.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_target(r: *const GitReference) -> *const Oid {
         barrier(|| {
             crate::git_assert_arg!(!r.is_null(), "ref", core::ptr::null());
-            // SAFETY: a live reference.
+            // SAFETY: this export's contract is `view`'s, for the call.
             let v = unsafe { view(r) };
             v.and_then(RefView::target)
                 .map_or(core::ptr::null(), |o| o as *const Oid)
@@ -1893,15 +1962,12 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module.
+    /// `r` is NULL or a live reference, unwritten during the call; the
+    /// result lives as long as it.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference_target_peel(r: *const GitReference) -> *const Oid {
+    pub unsafe extern "C" fn git_reference_target_peel(r: Option<RefView<'_>>) -> *const Oid {
         barrier(|| {
-            crate::git_assert_arg!(!r.is_null(), "ref", core::ptr::null());
-            // SAFETY: a live reference.
-            let Some(v) = (unsafe { view(r) }) else {
-                return core::ptr::null();
-            };
+            let v = git_arg!(r, "ref", core::ptr::null());
             if v.raw_kind() != GIT_REFERENCE_DIRECT || v.peel().is_zero() {
                 return core::ptr::null();
             }
@@ -1913,14 +1979,15 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module.
+    /// `r` is NULL or a live reference, unwritten during the call; the
+    /// result lives as long as it.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_symbolic_target(
         r: *const GitReference,
     ) -> *const c_char {
         barrier(|| {
             crate::git_assert_arg!(!r.is_null(), "ref", core::ptr::null());
-            // SAFETY: a live reference.
+            // SAFETY: this export's contract is `view`'s, for the call.
             let v = unsafe { view(r) };
             v.and_then(RefView::symbolic_target_cstr)
                 .map_or(core::ptr::null(), CStr::as_ptr)
@@ -1931,41 +1998,32 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module; `ref_out` NULL or writable; `id` valid; `old_id`
-    /// NULL or valid.
+    /// `ref_out` is NULL or writable; `repo` NULL or a live repository
+    /// (see the module); `name` and `log_message` NULL or NUL-terminated
+    /// strings; `id` and `old_id` NULL or valid `git_oid`s; none of the
+    /// inputs is written during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_create_matching(
-        ref_out: *mut *mut GitReference,
-        repo: *mut git_repository,
-        name: *const c_char,
-        id: *const Oid,
+        mut ref_out: Out<'_, *mut GitReference>,
+        repo: Option<RepoPtr>,
+        name: CStrArg<'_>,
+        id: Option<&Oid>,
         force: c_int,
-        old_id: *const Oid,
+        old_id: Option<&Oid>,
         log_message: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            crate::git_assert_arg!(!id.is_null(), "id", -1);
-            if !ref_out.is_null() {
-                // SAFETY: writable.
-                unsafe { *ref_out = core::ptr::null_mut() };
-            }
+            let id = git_arg!(id, "id", -1);
+            ref_out.write(core::ptr::null_mut());
             let r = (|| {
-                // SAFETY: NULL or a live repository.
-                let repo = unsafe { repo_arg(repo) }?;
+                let repo = repo_arg(repo)?;
                 crate::git_assert_arg!(!name.is_null(), "name");
-                // SAFETY: a string.
-                let n = unsafe { cstr_bytes(name) };
-                // SAFETY: a valid oid (checked non-NULL).
-                let id = unsafe { &*id };
-                // SAFETY: NULL or a valid oid.
-                let old = unsafe { old_id.as_ref() };
                 let msg = log_message.get();
-                create_matching(repo, n, id, force != 0, old, msg)
+                create_matching(repo, name.to_bytes(), id, force != 0, old_id, msg)
             })();
             match r {
                 Ok(r) if !ref_out.is_null() => {
-                    // SAFETY: writable.
-                    unsafe { *ref_out = r.into_raw() };
+                    ref_out.write(r.into_raw());
                     0
                 }
                 Ok(_) => 0,
@@ -1978,7 +2036,8 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// As [`git_reference_create_matching`].
+    /// As [`git_reference_create_matching`] (`repo`, `name` and `id` raw
+    /// pointers with that contract).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_create(
         ref_out: *mut *mut GitReference,
@@ -1988,54 +2047,50 @@ pub mod ffi {
         force: c_int,
         log_message: CStrArg<'_>,
     ) -> c_int {
-        // SAFETY: per the contract.
-        unsafe {
-            git_reference_create_matching(
-                ref_out,
-                repo,
-                name,
-                id,
-                force,
-                core::ptr::null(),
-                log_message,
-            )
-        }
+        // SAFETY: `ref_out` NULL or writable with no reference to its
+        // pointee (this export's contract).
+        let ref_out = unsafe { Out::from_ptr(ref_out) };
+        // SAFETY: `repo` NULL or a live repository for the call (as above).
+        let repo = NonNull::new(repo).map(|r| unsafe { RepoPtr::new(r) });
+        // SAFETY: `name` NULL or a string unwritten during the call.
+        let name = unsafe { CStrArg::from_ptr(name) };
+        // SAFETY: `id` NULL or a valid oid unwritten during the call.
+        let id = unsafe { id.as_ref() };
+        // SAFETY: the arguments as `git_reference_create_matching` takes
+        // them, with this export's (identical) contract.
+        unsafe { git_reference_create_matching(ref_out, repo, name, id, force, None, log_message) }
     }
 
     /// `git_reference_symbolic_create_matching`.
     ///
     /// # Safety
     ///
-    /// See the module; `ref_out` NULL or writable.
+    /// `ref_out` is NULL or writable; `repo` NULL or a live repository
+    /// (see the module); the strings NULL or NUL-terminated, unwritten
+    /// during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_symbolic_create_matching(
-        ref_out: *mut *mut GitReference,
-        repo: *mut git_repository,
-        name: *const c_char,
-        target: *const c_char,
+        mut ref_out: Out<'_, *mut GitReference>,
+        repo: Option<RepoPtr>,
+        name: CStrArg<'_>,
+        target: CStrArg<'_>,
         force: c_int,
         old_target: CStrArg<'_>,
         log_message: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!target.is_null(), "target", -1);
-            if !ref_out.is_null() {
-                // SAFETY: writable.
-                unsafe { *ref_out = core::ptr::null_mut() };
-            }
+            ref_out.write(core::ptr::null_mut());
             let r = (|| {
-                // SAFETY: NULL or a live repository.
-                let repo = unsafe { repo_arg(repo) }?;
+                let repo = repo_arg(repo)?;
                 crate::git_assert_arg!(!name.is_null(), "name");
-                // SAFETY: strings, or NULL for the last two.
-                let (n, t) = (unsafe { cstr_bytes(name) }, unsafe { cstr_bytes(target) });
+                let (n, t) = (name.to_bytes(), target.to_bytes());
                 let (old, msg) = (old_target.get(), log_message.get());
                 symbolic_create_matching(repo, n, t, force != 0, old, msg)
             })();
             match r {
                 Ok(r) if !ref_out.is_null() => {
-                    // SAFETY: writable.
-                    unsafe { *ref_out = r.into_raw() };
+                    ref_out.write(r.into_raw());
                     0
                 }
                 Ok(_) => 0,
@@ -2051,14 +2106,15 @@ pub mod ffi {
     /// As [`git_reference_symbolic_create_matching`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_symbolic_create(
-        ref_out: *mut *mut GitReference,
-        repo: *mut git_repository,
-        name: *const c_char,
-        target: *const c_char,
+        ref_out: Out<'_, *mut GitReference>,
+        repo: Option<RepoPtr>,
+        name: CStrArg<'_>,
+        target: CStrArg<'_>,
         force: c_int,
         log_message: CStrArg<'_>,
     ) -> c_int {
-        // SAFETY: per the contract.
+        // SAFETY: the arguments as `git_reference_symbolic_create_matching`
+        // takes them, with this export's (identical) contract.
         unsafe {
             git_reference_symbolic_create_matching(
                 ref_out,
@@ -2076,25 +2132,21 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module; `out` writable; `id` valid.
+    /// `out` is NULL or writable; `r` NULL or a live reference, unwritten
+    /// during the call, whose `db` is live (see the module); `id` NULL or
+    /// a valid `git_oid`; `log_message` NULL or a NUL-terminated string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_set_target(
-        out: *mut *mut GitReference,
-        r: *mut GitReference,
-        id: *const Oid,
+        out: Out<'_, *mut GitReference>,
+        r: Option<RefView<'_>>,
+        id: Option<&Oid>,
         log_message: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!out.is_null(), "out", -1);
-            crate::git_assert_arg!(!r.is_null(), "ref", -1);
-            crate::git_assert_arg!(!id.is_null(), "id", -1);
-            // SAFETY: a live reference (checked non-NULL).
-            let v = unsafe { view(r) }.expect("checked");
-            // SAFETY: a valid oid; NULL or a string.
-            let (id, msg) = (unsafe { &*id }, log_message.get());
-            let res = set_target(v, id, msg);
-            // SAFETY: writable.
-            unsafe { put(out, res) }
+            let v = git_arg!(r, "ref", -1);
+            let id = git_arg!(id, "id", -1);
+            put(out, set_target(v, id, log_message.get()))
         })
     }
 
@@ -2102,25 +2154,24 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module; `out` writable.
+    /// `out` is NULL or writable; `r` NULL or a live reference, unwritten
+    /// during the call, whose `db` is live (see the module); the strings
+    /// NULL or NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_symbolic_set_target(
-        out: *mut *mut GitReference,
-        r: *mut GitReference,
-        target: *const c_char,
+        out: Out<'_, *mut GitReference>,
+        r: Option<RefView<'_>>,
+        target: CStrArg<'_>,
         log_message: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!out.is_null(), "out", -1);
-            crate::git_assert_arg!(!r.is_null(), "ref", -1);
+            let v = git_arg!(r, "ref", -1);
             crate::git_assert_arg!(!target.is_null(), "target", -1);
-            // SAFETY: a live reference (checked non-NULL).
-            let v = unsafe { view(r) }.expect("checked");
-            // SAFETY: a string; NULL or a string.
-            let (t, msg) = (unsafe { cstr_bytes(target) }, log_message.get());
-            let res = symbolic_set_target(v, t, msg);
-            // SAFETY: writable.
-            unsafe { put(out, res) }
+            put(
+                out,
+                symbolic_set_target(v, target.to_bytes(), log_message.get()),
+            )
         })
     }
 
@@ -2128,27 +2179,25 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module; `out` writable.
+    /// `out` is NULL or writable; `r` NULL or a live reference, unwritten
+    /// and not freed during the call, whose `db` is live (see the module);
+    /// the strings NULL or NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_rename(
-        out: *mut *mut GitReference,
-        r: *mut GitReference,
+        mut out: Out<'_, *mut GitReference>,
+        r: Option<RefView<'_>>,
         new_name: CStrArg<'_>,
         force: c_int,
-        log_message: *const c_char,
+        log_message: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!out.is_null(), "out", -1);
-            crate::git_assert_arg!(!r.is_null(), "ref", -1);
+            let v = git_arg!(r, "ref", -1);
             let mut made = None;
-            // SAFETY: a live reference (checked non-NULL).
-            let v = unsafe { view(r) }.expect("checked");
-            // SAFETY: a string; NULL or a string.
-            let (n, msg) = (new_name.to_bytes(), unsafe { cstr(log_message) });
+            let (n, msg) = (new_name.to_bytes(), log_message.get());
             let res = rename(v, n, force != 0, msg, &mut made);
             if let Some(m) = made {
-                // SAFETY: writable.
-                unsafe { *out = m.into_raw() };
+                out.write(m.into_raw());
             }
             status(res)
         })
@@ -2158,19 +2207,16 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module; `ref_out` writable.
+    /// `ref_out` is NULL or writable; `r` NULL or a live reference,
+    /// unwritten during the call, whose `db` is live (see the module).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_resolve(
-        ref_out: *mut *mut GitReference,
-        r: *const GitReference,
+        ref_out: Out<'_, *mut GitReference>,
+        r: Option<RefView<'_>>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            let Some(v) = (unsafe { view(r) }) else {
-                return errors::assert_arg_failed("ref").raw();
-            };
-            // SAFETY: writable.
-            unsafe { put(ref_out, resolve(v)) }
+            let v = git_arg!(r, "ref", -1);
+            put(ref_out, resolve(v))
         })
     }
 
@@ -2183,17 +2229,17 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module; `callback` is called with references it owns and
-    /// `payload`.
+    /// `repo` is NULL or a live repository (see the module); `callback` a
+    /// function that may be called with a reference it then owns (and
+    /// frees) and `payload`, which is passed through unread.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_foreach(
-        repo: *mut git_repository,
+        repo: Option<RepoPtr>,
         callback: ForeachCb,
         payload: *mut c_void,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            let repo = unsafe { repo_unchecked(repo) };
+            let repo = git_arg!(repo, "repo", -1);
             let mut it = match RefIter::new(repo, None) {
                 Ok(it) => it,
                 Err(e) => return e.raw(),
@@ -2201,7 +2247,9 @@ pub mod ffi {
             loop {
                 match it.next_ref() {
                     Ok(r) => {
-                        // SAFETY: the C callback owns the reference.
+                        // SAFETY: C's callback with the arguments its
+                        // contract names: a live reference it now owns and
+                        // the caller's payload.
                         let e = unsafe { callback(r.into_raw(), payload) };
                         if e != 0 {
                             return errors::set_after_callback(e, "git_reference_foreach");
@@ -2214,7 +2262,14 @@ pub mod ffi {
         })
     }
 
-    fn foreach_name_c(
+    /// The body of the `foreach_name` exports: `callback(name, payload)`
+    /// for each name of `glob` (all for `None`).
+    ///
+    /// # Safety
+    ///
+    /// `callback` may be called with a NUL-terminated name valid during
+    /// the call, and `payload` (passed through unread).
+    unsafe fn foreach_name_c(
         repo: RepoPtr,
         glob: Option<&CStr>,
         action: &str,
@@ -2228,8 +2283,10 @@ pub mod ffi {
         loop {
             match it.next_name() {
                 Ok(n) => {
-                    // SAFETY: the C callback with the name (valid during
-                    // the call) and its payload.
+                    // SAFETY: the callback with the arguments this
+                    // function's contract allows: a name valid during the
+                    // call (the iterator's, which `it` keeps until the
+                    // next step) and the payload.
                     let e = unsafe { callback(n.as_ptr(), payload) };
                     if e != 0 {
                         return errors::set_after_callback(e, action);
@@ -2245,8 +2302,9 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module; `callback` is called with names valid during the
-    /// call.
+    /// `repo` is NULL or a live repository (see the module); `callback` a
+    /// function that may be called with a name valid during the call and
+    /// `payload`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_foreach_name(
         repo: *mut git_repository,
@@ -2254,9 +2312,13 @@ pub mod ffi {
         payload: *mut c_void,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
+            // SAFETY: `repo` NULL (a panic, as C crashes) or a live
+            // repository for the call (this export's contract).
             let repo = unsafe { repo_unchecked(repo) };
-            foreach_name_c(repo, None, "git_reference_foreach_name", callback, payload)
+            let action = "git_reference_foreach_name";
+            // SAFETY: `callback` and `payload` as this export's contract
+            // allows them.
+            unsafe { foreach_name_c(repo, None, action, callback, payload) }
         })
     }
 
@@ -2264,35 +2326,21 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// As [`git_reference_foreach_name`]; `glob` a string.
+    /// As [`git_reference_foreach_name`]; `glob` NULL or a NUL-terminated
+    /// string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_foreach_glob(
-        repo: *mut git_repository,
+        repo: Option<RepoPtr>,
         glob: CStrArg<'_>,
         callback: ForeachNameCb,
         payload: *mut c_void,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            let repo = unsafe { repo_unchecked(repo) };
-            let g = glob.get();
-            let mut it = match RefIter::new(repo, g) {
-                Ok(it) => it,
-                Err(e) => return e.raw(),
-            };
-            loop {
-                match it.next_name() {
-                    Ok(n) => {
-                        // SAFETY: as in `foreach_name_c`.
-                        let e = unsafe { callback(n.as_ptr(), payload) };
-                        if e != 0 {
-                            return errors::set_after_callback(e, "git_reference_foreach_glob");
-                        }
-                    }
-                    Err(ErrorCode::ITER_OVER) => return 0,
-                    Err(e) => return e.raw(),
-                }
-            }
+            let repo = git_arg!(repo, "repo", -1);
+            let action = "git_reference_foreach_glob";
+            // SAFETY: `callback` and `payload` as this export's contract
+            // allows them.
+            unsafe { foreach_name_c(repo, glob.get(), action, callback, payload) }
         })
     }
 
@@ -2300,57 +2348,70 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module; `out` writable.
+    /// `out` is NULL or writable; `repo` NULL or a live repository (see
+    /// the module).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_iterator_new(
-        out: *mut *mut git_reference_iterator,
-        repo: *mut git_repository,
+        out: Out<'_, *mut git_reference_iterator>,
+        repo: Option<RepoPtr>,
     ) -> c_int {
-        // SAFETY: per the contract.
-        unsafe { git_reference_iterator_glob_new(out, repo, CStrArg::NULL) }
+        barrier(|| iterator_glob_new_c(out, git_arg!(repo, "repo", -1), CStrArg::NULL))
     }
 
     /// `git_reference_iterator_glob_new`.
     ///
     /// # Safety
     ///
-    /// See the module; `out` writable; `glob` NULL or a string.
+    /// `out` is NULL or writable; `repo` NULL or a live repository (see
+    /// the module); `glob` NULL or a NUL-terminated string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_iterator_glob_new(
         out: *mut *mut git_reference_iterator,
         repo: *mut git_repository,
         glob: CStrArg<'_>,
     ) -> c_int {
+        // SAFETY: `out` NULL or writable with no reference to its pointee
+        // (this export's contract).
+        let out = unsafe { Out::from_ptr(out) };
         barrier(|| {
-            // SAFETY: per the contract.
+            // SAFETY: `repo` NULL (a panic, as C crashes) or a live
+            // repository for the call (this export's contract).
             let repo = unsafe { repo_unchecked(repo) };
-            let g = glob.get();
-            let db = match RefdbPtr::of_repo(repo) {
-                Ok(d) => d,
-                Err(_) => return -1,
-            };
-            match db.iterator(g) {
-                Ok(it) => {
-                    // SAFETY: writable.
-                    unsafe { *out = it.as_ptr() };
-                    0
-                }
-                Err(e) => e.raw(),
-            }
+            iterator_glob_new_c(out, repo, glob)
         })
+    }
+
+    /// The body of the iterator constructors.
+    fn iterator_glob_new_c(
+        mut out: Out<'_, *mut git_reference_iterator>,
+        repo: RepoPtr,
+        glob: CStrArg<'_>,
+    ) -> c_int {
+        let g = glob.get();
+        let db = match RefdbPtr::of_repo(repo) {
+            Ok(d) => d,
+            Err(_) => return -1,
+        };
+        match db.iterator(g) {
+            Ok(it) => {
+                out.write(it.as_ptr());
+                0
+            }
+            Err(e) => e.raw(),
+        }
     }
 
     /// `git_reference_next`.
     ///
     /// # Safety
     ///
-    /// `out` writable; `iter` a live iterator.
+    /// As [`git_refdb_iterator_next`](crate::refdb::ffi::git_refdb_iterator_next).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_next(
         out: *mut *mut GitReference,
         iter: *mut git_reference_iterator,
     ) -> c_int {
-        // SAFETY: per the contract.
+        // SAFETY: this export's contract is `git_refdb_iterator_next`'s.
         unsafe { crate::refdb::ffi::git_refdb_iterator_next(out, iter) }
     }
 
@@ -2358,13 +2419,13 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// As [`git_reference_next`].
+    /// As [`git_refdb_iterator_next_name`](crate::refdb::ffi::git_refdb_iterator_next_name).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_next_name(
         out: *mut *const c_char,
         iter: *mut git_reference_iterator,
     ) -> c_int {
-        // SAFETY: per the contract.
+        // SAFETY: this export's contract is `git_refdb_iterator_next_name`'s.
         unsafe { crate::refdb::ffi::git_refdb_iterator_next_name(out, iter) }
     }
 
@@ -2372,13 +2433,15 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `iter` NULL or a live iterator, given up.
+    /// `iter` is NULL or a live iterator from `git_refdb_iterator` that the
+    /// caller gives up: nothing uses it after the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_iterator_free(iter: *mut git_reference_iterator) {
         if iter.is_null() {
             return;
         }
-        // SAFETY: per the contract.
+        // SAFETY: a non-null `iter` is a live iterator given up (this
+        // export's contract), as `git_refdb_iterator_free` takes it.
         unsafe { crate::refdb::ffi::git_refdb_iterator_free(iter) }
     }
 
@@ -2386,27 +2449,23 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `array` writable; see the module.
+    /// `array` is NULL or writable for a `git_strarray` (its old contents
+    /// are not read); `repo` NULL or a live repository (see the module).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_list(
-        array: *mut GitStrArray,
-        repo: *mut git_repository,
+        mut array: Out<'_, GitStrArray>,
+        repo: Option<RepoPtr>,
     ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!array.is_null(), "array", -1);
-            crate::git_assert_arg!(!repo.is_null(), "repo", -1);
-            // SAFETY: writable.
-            unsafe {
-                array.write(GitStrArray {
-                    strings: core::ptr::null_mut(),
-                    count: 0,
-                })
-            };
+            let repo = git_arg!(repo, "repo", -1);
+            array.write(GitStrArray {
+                strings: core::ptr::null_mut(),
+                count: 0,
+            });
             let Ok(mut list) = GitVector::with_capacity(8, None) else {
                 return -1;
             };
-            // SAFETY: per the contract.
-            let repo = unsafe { repo_unchecked(repo) };
             let mut cb = |n: &CStr| -> c_int {
                 let s = alloc::strdup(n);
                 if s.is_null() {
@@ -2415,7 +2474,8 @@ pub mod ffi {
                 match list.insert(s.cast()) {
                     Ok(()) => 0,
                     Err(e) => {
-                        // SAFETY: our string, not inserted.
+                        // SAFETY: our `git__strdup` string, not inserted,
+                        // freed once.
                         unsafe { alloc::free(s.cast()) };
                         e.raw()
                     }
@@ -2424,20 +2484,19 @@ pub mod ffi {
             if foreach_name(repo, None, "git_reference_foreach_name", &mut cb).is_err() {
                 // C leaks the names here (DEFECTS.md); they are freed.
                 for s in list.iter() {
-                    // SAFETY: our strings.
+                    // SAFETY: each element is one of our `git__strdup`
+                    // strings, freed once (the vector is dropped after).
                     unsafe { alloc::free(s) };
                 }
                 return -1;
             }
             let (ptr, len, _) = list.detach();
-            // SAFETY: writable; the strings and the array are from
-            // `git__allocator`, as `git_strarray_dispose` frees them.
-            unsafe {
-                array.write(GitStrArray {
-                    strings: ptr.cast(),
-                    count: len,
-                })
-            };
+            // The strings and the array are from `git__allocator`, as
+            // `git_strarray_dispose` frees them.
+            array.write(GitStrArray {
+                strings: ptr.cast(),
+                count: len,
+            });
             0
         })
     }
@@ -2446,26 +2505,30 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `buf` NULL or a valid `git_str`; `name` NULL or a string.
+    /// `buf` is NULL or a valid `git_str` that nothing else uses during the
+    /// call; `name` NULL or a NUL-terminated string, which may lie in
+    /// `buf`'s buffer.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference__normalize_name(
         buf: *mut GitStr,
-        name: *const c_char,
+        name: CStrArg<'_>,
         flags: c_uint,
     ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!name.is_null(), "name", -1);
-            // SAFETY: NULL or a valid `git_str` used by nobody else now.
+            // SAFETY: `buf` is NULL or a valid, aligned `git_str` that
+            // nothing else uses during the call (this export's contract):
+            // the `&mut` covers its header; `name` may point into its heap
+            // buffer, which the header only points to.
             let b = unsafe { buf.as_mut() };
             // The name may point into `buf`, which normalizing clears and
             // writes: then it is copied first.
+            let np = name.as_ptr() as usize;
             let aliased = b.as_deref().is_some_and(|s| {
                 let start = s.as_ptr() as usize;
-                (start..=start + s.capacity()).contains(&(name as usize))
+                (start..=start + s.capacity()).contains(&np)
             });
-            // SAFETY: a string, not in `buf`'s allocation (or copied out of
-            // it before `buf` is written).
-            let n = unsafe { cstr_bytes(name) };
+            let n = name.to_bytes();
             let copy;
             let n = if aliased {
                 copy = n.to_vec();
@@ -2481,19 +2544,19 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `buffer_out` writable for `buffer_size` bytes; `name` a string.
+    /// `buffer_out` is NULL or writable for `buffer_size` bytes (which may
+    /// be uninitialized), not overlapping `name`; `name` NULL or a
+    /// NUL-terminated string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_normalize_name(
         buffer_out: *mut c_char,
         buffer_size: usize,
-        name: *const c_char,
+        name: CStrArg<'_>,
         flags: c_uint,
     ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!name.is_null(), "name", -1);
-            // SAFETY: a string.
-            let n = unsafe { cstr_bytes(name) };
-            let buf = match normalize_to_buffer(n, flags, buffer_size) {
+            let buf = match normalize_to_buffer(name.to_bytes(), flags, buffer_size) {
                 Ok(b) => b,
                 Err(e) => return e.raw(),
             };
@@ -2503,17 +2566,19 @@ pub mod ffi {
             crate::git_assert_arg!(!buffer_out.is_null(), "data", -1);
             crate::git_assert_arg!(buffer_size != 0, "datasize", -1);
             let out = buffer_out.cast::<u8>();
-            // SAFETY: writable for `buffer_size` (> 0) bytes (the contract).
+            // SAFETY: `out` is non-null (checked) and writable for
+            // `buffer_size` (> 0, checked) bytes (this export's contract);
+            // a `u8` needs no alignment.
             unsafe { out.write(0) };
             if buf.is_empty() || buf.capacity() == 0 {
                 return 0;
             }
             let src = buf.as_bytes();
             let n = src.len().min(buffer_size - 1);
-            // SAFETY: `n < buffer_size` bytes of the caller's buffer, which
-            // cannot overlap our fresh `buf`.
+            // SAFETY: `n < buffer_size` bytes of the caller's writable
+            // buffer, which cannot overlap our fresh `buf`.
             unsafe { core::ptr::copy_nonoverlapping(src.as_ptr(), out, n) };
-            // SAFETY: `n < buffer_size`.
+            // SAFETY: `n < buffer_size`, so in the writable range.
             unsafe { out.wrapping_add(n).write(0) };
             0
         })
@@ -2523,18 +2588,16 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module.
+    /// `ref1` and `ref2` are NULL or live references, unwritten during the
+    /// call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_cmp(
-        ref1: *const GitReference,
-        ref2: *const GitReference,
+        ref1: Option<RefView<'_>>,
+        ref2: Option<RefView<'_>>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            let (Some(a), Some(b)) = (unsafe { view(ref1) }, unsafe { view(ref2) }) else {
-                let what = if ref1.is_null() { "ref1" } else { "ref2" };
-                return errors::assert_arg_failed(what).raw();
-            };
+            let a = git_arg!(ref1, "ref1", -1);
+            let b = git_arg!(ref2, "ref2", -1);
             cmp(a, b)
         })
     }
@@ -2543,36 +2606,42 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// As [`git_reference_cmp`].
+    /// `a` and `b` are NULL or point to live references, unwritten during
+    /// the call (a `git_vector` of references passes its elements).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference__cmp_cb(a: *const c_void, b: *const c_void) -> c_int {
-        // SAFETY: per the contract.
-        unsafe { git_reference_cmp(a.cast(), b.cast()) }
+        // SAFETY: each pointer is NULL or a live reference unwritten during
+        // the call (this export's contract), as `view` requires.
+        let ra = unsafe { view(a.cast()) };
+        // SAFETY: as above.
+        let rb = unsafe { view(b.cast()) };
+        // SAFETY: `git_reference_cmp`'s contract, as just established.
+        unsafe { git_reference_cmp(ra, rb) }
     }
 
     /// `git_reference__update_terminal`.
     ///
     /// # Safety
     ///
-    /// See the module; `oid` valid; `sig` NULL or valid.
+    /// `repo` is NULL or a live repository (see the module); `oid` NULL or
+    /// a valid `git_oid`; `sig` NULL or a valid signature (its strings
+    /// NUL-terminated); the strings NULL or NUL-terminated; none is written
+    /// or freed during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference__update_terminal(
-        repo: *mut git_repository,
+        repo: Option<RepoPtr>,
         ref_name: CStrArg<'_>,
         oid: Option<&Oid>,
         sig: *const git_signature,
-        log_message: *const c_char,
+        log_message: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             let oid = git_arg!(oid, "oid", -1);
-            // SAFETY: a live repository.
-            let repo = unsafe { repo_unchecked(repo) };
-            // SAFETY: a string; a valid oid; NULL or a string.
-            let (n, id, msg) = (ref_name.to_bytes(), oid, unsafe { cstr(log_message) });
+            let repo = git_arg!(repo, "repo", -1);
             // SAFETY: `sig` is NULL or a valid signature that nothing
             // writes or frees during the call (this export's contract).
             let sig = unsafe { SigRef::from_raw(sig) };
-            let r = update_terminal(repo, n, id, sig, msg);
+            let r = update_terminal(repo, ref_name.to_bytes(), oid, sig, log_message.get());
             status(r)
         })
     }
@@ -2581,7 +2650,9 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module; `ref` NULL or live; `id` valid.
+    /// `repo` is NULL or a live repository (see the module); `r` NULL or a
+    /// live reference, unwritten during the call; `id` NULL or a valid
+    /// `git_oid`; the strings NULL or NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference__update_for_commit(
         repo: *mut git_repository,
@@ -2591,13 +2662,24 @@ pub mod ffi {
         operation: *const c_char,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: a live repository; NULL or a live reference.
-            let (repo, v) = (unsafe { repo_unchecked(repo) }, unsafe { view(r) });
-            // SAFETY: a string; a valid oid; NULL or a string.
-            let (n, id, op) = (ref_name.to_bytes(), unsafe { &*id }, unsafe {
-                cstr(operation)
-            });
-            let res = update_for_commit(repo, v, n, id, op.map(CStr::to_bytes));
+            // SAFETY: `repo` NULL (a panic, as C crashes) or a live
+            // repository for the call (this export's contract).
+            let repo = unsafe { repo_unchecked(repo) };
+            // SAFETY: this export's contract on `r` is `view`'s.
+            let v = unsafe { view(r) };
+            // SAFETY: `id` NULL or a valid oid unwritten during the call;
+            // C dereferences NULL: the panic becomes an error.
+            let id = unsafe { id.as_ref() }.expect("NULL id");
+            // SAFETY: `operation` NULL or a string unwritten during the
+            // call.
+            let op = unsafe { CStrArg::from_ptr(operation) };
+            let res = update_for_commit(
+                repo,
+                v,
+                ref_name.to_bytes(),
+                id,
+                op.get().map(CStr::to_bytes),
+            );
             status(res)
         })
     }
@@ -2606,20 +2688,18 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module.
+    /// `repo` is NULL or a live repository (see the module); `refname`
+    /// NULL or a NUL-terminated string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_has_log(
-        repo: *mut git_repository,
-        refname: *const c_char,
+        repo: Option<RepoPtr>,
+        refname: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            crate::git_assert_arg!(!repo.is_null(), "repo", -1);
-            crate::git_assert_arg!(!refname.is_null(), "refname", -1);
-            // SAFETY: per the contract.
-            let repo = unsafe { repo_unchecked(repo) };
+            let repo = git_arg!(repo, "repo", -1);
+            let name = git_arg!(refname.get(), "refname", -1);
             match RefdbPtr::of_repo(repo) {
-                // SAFETY: a string.
-                Ok(db) => match db.has_log_raw(unsafe { CStr::from_ptr(refname) }) {
+                Ok(db) => match db.has_log_raw(name) {
                     Ok(v) => v,
                     Err(e) => e.raw(),
                 },
@@ -2632,20 +2712,17 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module.
+    /// As [`git_reference_has_log`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_ensure_log(
-        repo: *mut git_repository,
-        refname: *const c_char,
+        repo: Option<RepoPtr>,
+        refname: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            crate::git_assert_arg!(!repo.is_null(), "repo", -1);
-            crate::git_assert_arg!(!refname.is_null(), "refname", -1);
-            // SAFETY: per the contract.
-            let repo = unsafe { repo_unchecked(repo) };
+            let repo = git_arg!(repo, "repo", -1);
+            let name = git_arg!(refname.get(), "refname", -1);
             match RefdbPtr::of_repo(repo) {
-                // SAFETY: a string.
-                Ok(db) => match db.ensure_log(unsafe { CStr::from_ptr(refname) }) {
+                Ok(db) => match db.ensure_log(name) {
                     Ok(v) => v,
                     Err(e) => e.raw(),
                 },
@@ -2660,26 +2737,22 @@ pub mod ffi {
             ///
             /// # Safety
             ///
-            /// `ref_name` is a string.
+            /// `ref_name` is NULL or a NUL-terminated string.
             #[unsafe(no_mangle)]
-            pub unsafe extern "C" fn $raw(ref_name: *const c_char) -> c_int {
-                // SAFETY: per the contract.
-                barrier(|| c_int::from($f(unsafe { head(ref_name) })))
+            pub unsafe extern "C" fn $raw(ref_name: CStrArg<'_>) -> c_int {
+                barrier(|| c_int::from($f(head(ref_name))))
             }
 
             #[doc = concat!("`", stringify!($pub), "`.")]
             ///
             /// # Safety
             ///
-            /// See the module.
+            /// `r` is NULL or a live reference, unwritten during the call.
             #[unsafe(no_mangle)]
-            pub unsafe extern "C" fn $pub(r: *const GitReference) -> c_int {
-                barrier(|| {
-                    // SAFETY: per the contract.
-                    match unsafe { view(r) } {
-                        Some(v) => c_int::from($f(v.name())),
-                        None => errors::assert_arg_failed("ref").raw(),
-                    }
+            pub unsafe extern "C" fn $pub(r: Option<RefView<'_>>) -> c_int {
+                barrier(|| match r {
+                    Some(v) => c_int::from($f(v.name())),
+                    None => errors::assert_arg_failed("ref").raw(),
                 })
             }
         )*};
@@ -2696,44 +2769,45 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `ref_name` is a string.
+    /// `ref_name` is NULL or a NUL-terminated string.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference__is_pseudoref(ref_name: *const c_char) -> c_int {
-        // SAFETY: per the contract.
-        barrier(|| c_int::from(is_pseudoref(unsafe { head(ref_name) })))
+    pub unsafe extern "C" fn git_reference__is_pseudoref(ref_name: CStrArg<'_>) -> c_int {
+        barrier(|| c_int::from(is_pseudoref(head(ref_name))))
     }
 
     /// `git_reference__is_per_worktree_ref`.
     ///
     /// # Safety
     ///
-    /// `ref_name` is a string.
+    /// `ref_name` is NULL or a NUL-terminated string.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference__is_per_worktree_ref(ref_name: *const c_char) -> c_int {
-        // SAFETY: per the contract.
-        barrier(|| c_int::from(is_per_worktree_ref(unsafe { head(ref_name) })))
+    pub unsafe extern "C" fn git_reference__is_per_worktree_ref(ref_name: CStrArg<'_>) -> c_int {
+        barrier(|| c_int::from(is_per_worktree_ref(head(ref_name))))
     }
 
     /// `git_reference_peel`.
     ///
     /// # Safety
     ///
-    /// See the module; `peeled` writable.
+    /// `peeled` is NULL or writable; `r` NULL or a live reference,
+    /// unwritten during the call, whose `db` is live (see the module).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_peel(
         peeled: *mut *mut git_object,
         r: *const GitReference,
         target_type: c_int,
     ) -> c_int {
+        // SAFETY: `peeled` NULL or writable, with no reference to its
+        // pointee (this export's contract).
+        let mut peeled = unsafe { Out::from_ptr(peeled) };
         barrier(|| {
-            // SAFETY: per the contract.
+            // SAFETY: this export's contract on `r` is `view`'s.
             let Some(v) = (unsafe { view(r) }) else {
                 return errors::assert_arg_failed("ref").raw();
             };
             match peel(v, target_type) {
                 Ok(o) => {
-                    // SAFETY: writable.
-                    unsafe { *peeled = o.into_raw() };
+                    peeled.write(o.into_raw());
                     0
                 }
                 Err(e) => e.raw(),
@@ -2745,24 +2819,22 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `valid` writable; `refname` a string.
+    /// `valid` is NULL or writable; `refname` NULL or a NUL-terminated
+    /// string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference__name_is_valid(
-        valid: *mut c_int,
-        refname: *const c_char,
+        mut valid: Out<'_, c_int>,
+        refname: CStrArg<'_>,
         flags: c_uint,
     ) -> c_int {
         barrier(|| {
             if valid.is_null() || refname.is_null() {
                 return errors::assert_failed("valid && refname").raw();
             }
-            // SAFETY: writable.
-            unsafe { *valid = 0 };
-            // SAFETY: a string.
-            match name_is_valid(unsafe { cstr_bytes(refname) }, flags) {
+            valid.write(0);
+            match name_is_valid(refname.to_bytes(), flags) {
                 Ok(v) => {
-                    // SAFETY: writable.
-                    unsafe { *valid = c_int::from(v) };
+                    valid.write(c_int::from(v));
                     0
                 }
                 Err(e) => e.raw(),
@@ -2780,7 +2852,12 @@ pub mod ffi {
         valid: *mut c_int,
         refname: *const c_char,
     ) -> c_int {
-        // SAFETY: per the contract.
+        // SAFETY: `valid` NULL or writable with no reference to it (this
+        // export's contract).
+        let valid = unsafe { Out::from_ptr(valid) };
+        // SAFETY: `refname` NULL or a string unwritten during the call.
+        let refname = unsafe { CStrArg::from_ptr(refname) };
+        // SAFETY: the arguments as `git_reference__name_is_valid` takes them.
         unsafe { git_reference__name_is_valid(valid, refname, GIT_REFERENCE_FORMAT_ALLOW_ONELEVEL) }
     }
 
@@ -2788,13 +2865,13 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `name` is a string.
+    /// `name` is NULL or a NUL-terminated string; the result points into
+    /// it.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference__shorthand(name: *const c_char) -> *const c_char {
+    pub unsafe extern "C" fn git_reference__shorthand(name: CStrArg<'_>) -> *const c_char {
         barrier(|| {
-            // SAFETY: a string.
-            let n = unsafe { head(name) };
-            name.wrapping_add(shorthand_offset(n))
+            let n = head(name);
+            name.as_ptr().wrapping_add(shorthand_offset(n))
         })
     }
 
@@ -2802,12 +2879,13 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the module.
+    /// `r` is NULL or a live reference, unwritten during the call; the
+    /// result points into its name.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_reference_shorthand(r: *const GitReference) -> *const c_char {
+    pub unsafe extern "C" fn git_reference_shorthand(r: Option<RefView<'_>>) -> *const c_char {
         barrier(|| {
-            // SAFETY: per the contract (C dereferences NULL).
-            let Some(v) = (unsafe { view(r) }) else {
+            // C dereferences NULL.
+            let Some(v) = r else {
                 return core::ptr::null();
             };
             let name = v.name_cstr().as_ptr();
@@ -2819,25 +2897,22 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `unborn` writable; see the module.
+    /// `unborn` is NULL or writable; `r` NULL or a live reference,
+    /// unwritten during the call; `repo` NULL or a live repository (see
+    /// the module).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference__is_unborn_head(
-        unborn: *mut bool,
-        r: *const GitReference,
-        repo: *mut git_repository,
+        mut unborn: Out<'_, bool>,
+        r: Option<RefView<'_>>,
+        repo: Option<RepoPtr>,
     ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!unborn.is_null(), "unborn", -1);
-            crate::git_assert_arg!(!r.is_null(), "ref", -1);
-            crate::git_assert_arg!(!repo.is_null(), "repo", -1);
-            // SAFETY: per the contract.
-            let v = unsafe { view(r).expect("checked") };
-            // SAFETY: per the contract.
-            let repo = unsafe { repo_unchecked(repo) };
+            let v = git_arg!(r, "ref", -1);
+            let repo = git_arg!(repo, "repo", -1);
             match is_unborn_head(v, repo) {
                 Ok(u) => {
-                    // SAFETY: writable.
-                    unsafe { *unborn = u };
+                    unborn.write(u);
                     0
                 }
                 Err(e) => e.raw(),
@@ -2849,18 +2924,18 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` writable; see the module.
+    /// `out` is NULL or writable; `repo` NULL or a live repository (see
+    /// the module).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference__log_signature(
-        out: *mut *mut git_signature,
-        repo: *mut git_repository,
+        mut out: Out<'_, *mut git_signature>,
+        repo: Option<RepoPtr>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            match log_signature(unsafe { repo_unchecked(repo) }) {
+            let repo = git_arg!(repo, "repo", -1);
+            match log_signature(repo) {
                 Ok(s) => {
-                    // SAFETY: writable.
-                    unsafe { *out = s.into_raw() };
+                    out.write(s.into_raw());
                     0
                 }
                 Err(e) => e.raw(),
@@ -3088,7 +3163,18 @@ mod ffi_tests {
     //! The exports that stay in Rust, called as C would (Miri-tested).
     use super::ffi::*;
     use super::*;
+    use crate::util::cabi::{CStrArg, Out};
     use crate::util::test_support;
+
+    /// A reference as the exports that take `Option<RefView>` see it.
+    ///
+    /// # Safety
+    ///
+    /// `p` is NULL or a live reference, unwritten for `'a`.
+    unsafe fn v<'a>(p: *mut GitReference) -> Option<RefView<'a>> {
+        // SAFETY: the caller's contract.
+        NonNull::new(p).map(|p| unsafe { RefView::from_ptr(p) })
+    }
 
     fn cs<'a>(p: *const c_char) -> &'a [u8] {
         assert!(!p.is_null());
@@ -3103,20 +3189,19 @@ mod ffi_tests {
             Oid::parse_hex(b"a65fedf39aefe402d3bb6e24df4d4f5fe4547750", OidType::Sha1).unwrap();
         // SAFETY: valid strings and oids; each reference freed once.
         unsafe {
-            let d =
-                git_reference__alloc(c"refs/tags/v1".as_ptr(), &raw const id, core::ptr::null());
+            let d = git_reference__alloc(c"refs/tags/v1".into(), Some(&id), None);
             assert_eq!(cs(git_reference_name(d)), b"refs/tags/v1");
-            assert_eq!(cs(git_reference_shorthand(d)), b"v1");
-            assert_eq!(git_reference_is_tag(d), 1);
-            assert!(git_reference_target_peel(d).is_null());
+            assert_eq!(cs(git_reference_shorthand(v(d))), b"v1");
+            assert_eq!(git_reference_is_tag(v(d)), 1);
+            assert!(git_reference_target_peel(v(d)).is_null());
             // The new name may be the reference's own.
             let mut p = d;
-            let d = git_reference__realloc(&raw mut p, git_reference_name(d));
+            let d = git_reference__realloc(&raw mut p, CStrArg::from_ptr(git_reference_name(d)));
             assert_eq!(cs(git_reference_name(d)), b"refs/tags/v1");
             let mut p = d;
             let r = git_reference__realloc(
                 &raw mut p,
-                c"refs/tags/a-longer-name-for-the-same-tag".as_ptr(),
+                c"refs/tags/a-longer-name-for-the-same-tag".into(),
             );
             assert!(p.is_null());
             assert_eq!(
@@ -3124,58 +3209,58 @@ mod ffi_tests {
                 b"refs/tags/a-longer-name-for-the-same-tag"
             );
             assert_eq!(*git_reference_target(r), id);
-            let s = git_reference__alloc_symbolic(c"HEAD".as_ptr(), c"refs/tags/v1".as_ptr());
+            let s = git_reference__alloc_symbolic(c"HEAD".into(), c"refs/tags/v1".into());
             let mut dup = core::ptr::null_mut();
-            assert_eq!(git_reference_dup(&raw mut dup, s), 0);
-            assert_eq!(git_reference_cmp(dup, s), 0);
-            assert!(git_reference_cmp(s, r) < 0);
+            assert_eq!(git_reference_dup(Out::from(&mut dup), v(s)), 0);
+            assert_eq!(git_reference_cmp(v(dup), v(s)), 0);
+            assert!(git_reference_cmp(v(s), v(r)) < 0);
             git_reference_free(dup);
             git_reference_free(s);
             git_reference_free(r);
 
             let mut buf = [0 as c_char; 8];
             assert_eq!(
-                git_reference_normalize_name(buf.as_mut_ptr(), 8, c"a/..b".as_ptr(), 0),
+                git_reference_normalize_name(buf.as_mut_ptr(), 8, c"a/..b".into(), 0),
                 -12
             );
             assert_eq!(
-                git_reference_normalize_name(buf.as_mut_ptr(), 8, c"x/y//z".as_ptr(), 0),
+                git_reference_normalize_name(buf.as_mut_ptr(), 8, c"x/y//z".into(), 0),
                 0
             );
             assert_eq!(cs(buf.as_ptr()), b"x/y/z");
             let mut valid = 7;
             assert_eq!(
-                git_reference__name_is_valid(&raw mut valid, c"refs/x".as_ptr(), 0),
+                git_reference__name_is_valid(Out::from(&mut valid), c"refs/x".into(), 0),
                 0
             );
             assert_eq!(valid, 1);
             let mut s = GitStr::new();
             s.puts(b"q//w").unwrap();
             let own = s.as_ptr();
-            assert_eq!(git_reference__normalize_name(&raw mut s, own, 0), 0);
+            assert_eq!(
+                git_reference__normalize_name(&raw mut s, CStrArg::from_ptr(own), 0),
+                0
+            );
             assert_eq!(s.as_bytes(), b"q/w");
-            assert_eq!(git_reference__is_branch(c"refs/heads/".as_ptr()), 1);
+            assert_eq!(git_reference__is_branch(c"refs/heads/".into()), 1);
             // The predicates read a bounded head of the name.
             let long = c"refs/heads/a-branch-name-much-longer-than-thirty-two-bytes";
             assert_eq!(
-                cs(git_reference__shorthand(long.as_ptr())),
+                cs(git_reference__shorthand(long.into())),
                 &long.to_bytes()[11..]
             );
-            assert_eq!(git_reference__is_pseudoref(c"FETCH_HEAD".as_ptr()), 1);
+            assert_eq!(git_reference__is_pseudoref(c"FETCH_HEAD".into()), 1);
             assert_eq!(
-                git_reference__is_pseudoref(c"FETCH_HEAD_and_a_lot_more_after_it_x".as_ptr()),
+                git_reference__is_pseudoref(c"FETCH_HEAD_and_a_lot_more_after_it_x".into()),
                 0
             );
-            assert_eq!(git_reference__is_pseudoref(c"FETCH_HEADS".as_ptr()), 0);
+            assert_eq!(git_reference__is_pseudoref(c"FETCH_HEADS".into()), 0);
             assert_eq!(
-                git_reference__is_per_worktree_ref(c"refs/bisect/".as_ptr()),
+                git_reference__is_per_worktree_ref(c"refs/bisect/".into()),
                 1
             );
-            assert_eq!(
-                git_reference__is_per_worktree_ref(c"refs/bisec".as_ptr()),
-                0
-            );
-            assert_eq!(git_reference__is_per_worktree_ref(c"ref".as_ptr()), 1);
+            assert_eq!(git_reference__is_per_worktree_ref(c"refs/bisec".into()), 0);
+            assert_eq!(git_reference__is_per_worktree_ref(c"ref".into()), 1);
         }
     }
 }

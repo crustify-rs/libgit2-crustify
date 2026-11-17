@@ -306,15 +306,13 @@ pub unsafe fn decref(db: *mut GitRefdb) {
 
 /// A live `git_refdb`, not counted by this value. Every method keeps C's
 /// contract with the backend.
+///
+/// `#[repr(transparent)]` over the pointer, so an export may take an
+/// `Option<RefdbPtr>` where C passes a `git_refdb *` (NULL is `None`);
+/// such a parameter's contract is [`new`](Self::new)'s, for the call.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct RefdbPtr(NonNull<GitRefdb>);
-
-// SAFETY: the database's counts and backend pointer are atomics, and its
-// backends are used from several threads (`tests/libgit2/threads`); the
-// contract of `RefdbPtr::new` covers each use.
-unsafe impl Send for RefdbPtr {}
-// SAFETY: as above.
-unsafe impl Sync for RefdbPtr {}
 
 fn c(name: &CStr) -> *const c_char {
     name.as_ptr()

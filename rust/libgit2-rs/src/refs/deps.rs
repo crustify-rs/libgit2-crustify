@@ -141,7 +141,7 @@ impl RepoPtr {
     /// The repository, borrowed for as long as this copy of the handle
     /// is (no unbounded lifetime: a caller cannot keep the reference past
     /// its use of the handle).
-    fn get(&self) -> &git_repository {
+    pub fn get(&self) -> &git_repository {
         // SAFETY: the pointer is non-null and aligned (a `NonNull` to a
         // repository), and the repository is live while this value is used
         // (the constructors' contract), which covers this borrow of `self`;
@@ -263,11 +263,6 @@ impl<'a> SigRef<'a> {
 /// An owned `git_signature`, freed with `git_signature_free`.
 #[derive(Debug)]
 pub struct SigBox(NonNull<git_signature>);
-
-// SAFETY: a signature owns its strings; nothing ties it to a thread.
-unsafe impl Send for SigBox {}
-// SAFETY: shared access only reads.
-unsafe impl Sync for SigBox {}
 
 impl SigBox {
     /// Adopt `out` from a C constructor's result.
