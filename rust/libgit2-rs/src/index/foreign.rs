@@ -22,8 +22,8 @@ use crate::repository::GitRepository;
 use crate::strarray::GitStrArray;
 use crate::sys::diff as d;
 use crate::sys::{ignore, path, pathspec, submodule};
-use crate::tree::GitTreeEntry;
 use crate::tree::ffi as t;
+use crate::tree::{GitTree, GitTreeEntry};
 use crate::tree_cache::TreeSource;
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use crate::util::str::GitStr;
@@ -245,16 +245,34 @@ pub fn submodule_add_to_index(sm: &Submodule) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// A `git_tree`: borrowed, or looked up (and freed on drop).
+///
+/// Invariant (established by [`CTrees::borrow`], whose contract it is, and
+/// by [`CTrees::lookup`], whose reference it holds): `ptr` is a live,
+/// parsed `git_tree` while the value lives.
 pub struct CTree {
-    ptr: NonNull<c_void>,
+    ptr: NonNull<GitTree>,
     owned: bool,
+}
+
+impl CTree {
+    /// The tree.
+    fn tree(&self) -> &GitTree {
+        // SAFETY: the type's invariant: a live tree, which nothing writes
+        // once parsed (its reference count is atomic).
+        unsafe { self.ptr.as_ref() }
+    }
+
+    /// Entry `i`, in the tree's own array.
+    fn entry(&self, i: usize) -> &GitTreeEntry {
+        &self.tree().entries.as_slice()[i]
+    }
 }
 
 impl Drop for CTree {
     fn drop(&mut self) {
         if self.owned {
             // SAFETY: a tree we looked up, freed once.
-            unsafe { p::git_tree_free(self.ptr.as_ptr()) };
+            unsafe { p::git_tree_free(self.ptr.as_ptr().cast()) };
         }
     }
 }
@@ -271,48 +289,43 @@ impl CTrees {
     ///
     /// `tree` is a live `git_tree` for as long as both results are used.
     pub unsafe fn borrow(tree: *const c_void) -> (CTrees, CTree) {
-        // SAFETY: the caller's contract.
+        // SAFETY: a live tree (this fn's contract).
         let repo = unsafe { p::git_tree_owner(tree) };
         (
             CTrees { repo },
             CTree {
-                ptr: NonNull::new(tree.cast_mut()).unwrap_or(NonNull::dangling()),
+                ptr: NonNull::new(tree.cast_mut().cast()).unwrap_or(NonNull::dangling()),
                 owned: false,
             },
         )
     }
 }
 
-// SAFETY: a `git_tree` is immutable while it lives: its entry count and
-// entries do not change.
+// SAFETY: a parsed `git_tree` is immutable while it lives (`CTree`'s
+// invariant): its entry count and entries do not change, so `len` and
+// `entry` answer the same for a tree as long as it lives.
 unsafe impl TreeSource for CTrees {
     type Tree = CTree;
 
     fn id(&self, tree: &CTree) -> Oid {
-        // SAFETY: a live tree (`CTree`); its id lives as long as it.
-        let id = unsafe { p::git_tree_id(tree.ptr.as_ptr()) };
-        // SAFETY: as above.
-        unsafe { *id }
+        // `git_tree_id`
+        tree.tree().object.cached.oid
     }
 
     fn len(&self, tree: &CTree) -> usize {
-        // SAFETY: as above.
-        unsafe { t::git_tree_entrycount(tree.ptr.as_ptr().cast()) }
+        tree.tree().entries.len()
     }
 
     fn entry<'t>(&self, tree: &'t CTree, i: usize) -> (bool, &'t [u8], Oid) {
-        // SAFETY: as above; `i < len` (the caller), so the entry is the
-        // tree's, which lives (unwritten) as long as the tree.
-        let e = unsafe { t::git_tree_entry_byindex(tree.ptr.as_ptr().cast(), i) };
-        // SAFETY: as above.
-        unsafe { entry_view(e) }
+        // SAFETY: an entry of a live tree (`CTree`'s invariant), whose name
+        // lives unwritten in the tree's data while the tree, borrowed for
+        // `'t`, does.
+        unsafe { entry_view(tree.entry(i)) }
     }
 
     fn is_tree(&self, tree: &CTree, i: usize) -> bool {
-        // SAFETY: as in `entry`.
-        let e = unsafe { t::git_tree_entry_byindex(tree.ptr.as_ptr().cast(), i) };
-        // SAFETY: as above.
-        unsafe { t::git_tree_entry_filemode(e) == super::GIT_FILEMODE_TREE }
+        // `git_tree_entry_filemode`
+        crate::tree::normalize_filemode(u32::from(tree.entry(i).attr)) == super::GIT_FILEMODE_TREE
     }
 
     fn lookup(&self, id: &Oid) -> Result<CTree> {
@@ -320,28 +333,24 @@ unsafe impl TreeSource for CTrees {
         // SAFETY: `out` writable; `repo` is the tree's live repository.
         ErrorCode::check(unsafe { p::git_tree_lookup(&raw mut out, self.repo, Some(id)) })?;
         Ok(CTree {
-            ptr: NonNull::new(out).ok_or(ErrorCode::GENERIC)?,
+            ptr: NonNull::new(out.cast()).ok_or(ErrorCode::GENERIC)?,
             owned: true,
         })
     }
 }
 
-/// A tree entry's kind (`GIT_FILEMODE_TREE`), name and id.
+/// A tree entry's kind (`git_tree_entry_filemode` is `GIT_FILEMODE_TREE`),
+/// name and id.
 ///
 /// # Safety
 ///
-/// `e` is a live tree entry, unwritten for `'a`.
-unsafe fn entry_view<'a>(e: *const GitTreeEntry) -> (bool, &'a [u8], Oid) {
-    // SAFETY: the caller's contract.
-    let is_tree = unsafe { t::git_tree_entry_filemode(e) } == super::GIT_FILEMODE_TREE;
-    // SAFETY: as above.
-    let name = unsafe { t::git_tree_entry_name(e) };
-    // SAFETY: as above: the name is a string of the entry.
-    let name = unsafe { crate::util::export::cstr_bytes(name) };
-    // SAFETY: as above.
-    let id = unsafe { t::git_tree_entry_id(e) };
-    // SAFETY: as above.
-    (is_tree, name, unsafe { *id })
+/// `e` is an entry of a live tree (or builder), whose name is readable and
+/// unwritten for `'a`.
+unsafe fn entry_view(e: &GitTreeEntry) -> (bool, &[u8], Oid) {
+    let is_tree = crate::tree::normalize_filemode(u32::from(e.attr)) == super::GIT_FILEMODE_TREE;
+    // SAFETY: the name's `filename_len` bytes are readable and unwritten
+    // for `'a` (this fn's contract).
+    (is_tree, unsafe { e.name() }, e.oid)
 }
 
 /// A tree object the caller passed (`git_index_read_tree`).
@@ -362,9 +371,16 @@ impl<'a> TreeRef<'a> {
     pub fn as_ptr(self) -> *const c_void {
         self.0.as_ptr()
     }
+
+    /// The tree.
+    pub fn get(self) -> &'a GitTree {
+        // SAFETY: a live tree for `'a` (`new`'s contract), which nothing
+        // writes once parsed (its reference count is atomic).
+        unsafe { self.0.cast::<GitTree>().as_ref() }
+    }
 }
 
-/// A tree entry handed to a [`tree_walk`] callback.
+/// A tree entry handed to a [`tree_walk_post`] callback.
 pub struct TreeEntryView<'a> {
     /// `filename`.
     pub name: &'a [u8],
@@ -391,22 +407,24 @@ pub fn tree_walk_post(
         payload: *mut c_void,
     ) -> c_int {
         crate::util::export::barrier(|| {
-            // SAFETY: `payload` is the `Payload` below, live for the walk;
-            // `root` a string and `entry` a live tree entry, for the call.
+            // SAFETY: `payload` is the `Payload` below, live for the walk,
+            // which only this callback uses meanwhile.
             let pl = unsafe { &mut *payload.cast::<Payload<'_, '_>>() };
-            // SAFETY: as above.
+            // SAFETY: `git_tree_walk` passes `root`, a NUL-terminated string
+            // live for the call.
             let root = unsafe { crate::util::export::cstr_bytes(root) };
-            // SAFETY: as above.
+            // SAFETY: and `entry`, an entry of a live tree for the call.
+            let entry = unsafe { &*entry };
+            // SAFETY: as above: its name lives with the tree.
             let (_, name, id) = unsafe { entry_view(entry) };
-            // SAFETY: as above.
-            let attr = unsafe { t::git_tree_entry_filemode_raw(entry) };
+            let attr = u32::from(entry.attr);
             (pl.0)(root, &TreeEntryView { name, attr, id })
         })
     }
     let mut pl = Payload(f, PhantomData);
     // SAFETY: `tree` is live (`TreeRef`); `cb` only uses `pl` during the
     // walk.
-    let r = unsafe { t::git_tree_walk(tree.as_ptr().cast(), 1, Some(cb), (&raw mut pl).cast()) };
+    let r = unsafe { t::git_tree_walk(Some(tree.get()), 1, Some(cb), (&raw mut pl).cast()) };
     ErrorCode::check(r).map(|_| ())
 }
 
@@ -810,7 +828,7 @@ mod p {
         unsafe { crate::object::ffi::git_object__is_valid(repo.cast(), id, expected_type) }
     }
 
-    pub use crate::object_api::ffi::{git_tree_free, git_tree_id};
+    pub use crate::object_api::ffi::git_tree_free;
 
     /// `git_tree_owner`.
     ///
