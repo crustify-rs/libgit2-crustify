@@ -9,7 +9,7 @@ use core::ptr::{self, NonNull};
 use super::foreign::{self, Diff, Paths, Pathspec, Repo};
 use super::ondisk;
 use super::{
-    EntryPtr, GIT_FILEMODE_BLOB, GIT_FILEMODE_BLOB_EXECUTABLE, GIT_FILEMODE_COMMIT,
+    EntryPtr, EntryRef, GIT_FILEMODE_BLOB, GIT_FILEMODE_BLOB_EXECUTABLE, GIT_FILEMODE_COMMIT,
     GIT_FILEMODE_LINK, GIT_INDEX_ADD_CHECK_PATHSPEC, GIT_INDEX_ADD_DISABLE_PATHSPEC_MATCH,
     GIT_INDEX_ADD_FORCE, GIT_INDEX_CAPABILITY_FROM_OWNER, GIT_INDEX_CAPABILITY_IGNORE_CASE,
     GIT_INDEX_CAPABILITY_NO_FILEMODE, GIT_INDEX_CAPABILITY_NO_SYMLINKS, GIT_INDEX_ENTRY_UPTODATE,
@@ -187,8 +187,7 @@ pub(crate) fn conflict_to_reuc(index: &mut GitIndex, path: &[u8]) -> Result<()> 
     let mut oids = [None; 3];
     for i in 0..3 {
         if let Some(e) = conflict[i] {
-            // SAFETY: a live entry of the index.
-            let ent = unsafe { &(*e.as_ptr()).entry };
+            let ent = e.entry();
             modes[i] = ent.mode as c_int;
             oids[i] = Some(ent.id);
         }
@@ -699,11 +698,11 @@ fn truncate_racily_clean(ix: IndexPtr) -> Result<()> {
         | d::GIT_DIFF_DISABLE_PATHSPEC_MATCH;
     let mut paths: Vec<*mut c_char> = Vec::new();
     {
-        // SAFETY: no foreign call in this block.
-        let index = unsafe { ix.get() };
-        for e in index.entries.iter() {
-            // SAFETY: a live entry of the index.
-            let ent = unsafe { &(*as_entry(e).as_ptr()).entry };
+        // SAFETY: no reference into the index is live (`IndexPtr`'s use),
+        // and this block calls no foreign code.
+        let index = unsafe { ix.get_ref() };
+        for ent in (0..index.entries.len()).filter_map(|i| index.entry_ref(i)) {
+            let ent = ent.entry();
             let racy = !s_isgitlink(ent.mode) && newer_than_index(ent, index);
             if ent.flags_extended & GIT_INDEX_ENTRY_UPTODATE == 0
                 && racy
@@ -734,9 +733,10 @@ fn truncate_racily_clean(ix: IndexPtr) -> Result<()> {
         let index = unsafe { ix.get() };
         // Ensure that we have a stage 0 for this file (ie, it's not a
         // conflict), otherwise smudging it is quite pointless.
-        match index.get_bypath(&path, 0) {
+        match index.get_bypath(&path, 0).map(EntryRef::as_ptr) {
             Some(e) => {
-                // SAFETY: a live entry of the index.
+                // SAFETY: a live entry of the index (its invariant), which
+                // `index` borrows exclusively: no reference covers it.
                 unsafe { (*e.as_ptr()).entry.file_size = 0 };
                 index.set_dirty(true);
             }
@@ -966,11 +966,10 @@ pub(crate) fn read_tree(ix: IndexPtr, tree: foreign::TreeRef<'_>) -> Result<()> 
             // unwritten while it is borrowed.
             let found = unsafe { find_in_entries(&index.entries, path.as_bytes(), 0, icase) };
             if let Ok(pos) = found
-                && let Some(old) = index.entry_at(pos)
+                && let Some(old) = index.entry_ref(pos)
             {
-                // SAFETY: a live entry of the index (its invariant),
-                // unwritten during the copy; distinct from ours.
-                let old = unsafe { old.as_ref() }.entry;
+                // (distinct from ours)
+                let old = *old.entry();
                 if te.attr == old.mode && te.id == old.id {
                     entry.copy_from(&old);
                     entry.update(|e| e.flags_extended = 0);
@@ -1401,17 +1400,19 @@ fn apply_to_all(
             break;
         }
         let (entry, casefold) = {
-            // SAFETY: no foreign call in this block.
-            let index = unsafe { ix.get() };
-            match index.entry_at(i) {
+            // SAFETY: no reference into the index is live (`IndexPtr`'s
+            // use); the borrow (and the entry's) is used up to the path's
+            // copy below, across no call that can reach the index (the
+            // pathspec match is C that sees only the path).
+            let index = unsafe { ix.get_ref() };
+            match index.entry_ref(i) {
                 Some(e) => (e, index.ignore_case()),
                 None => break,
             }
         };
-        // SAFETY: a live entry of the index, its path a string.
-        let raw_path = unsafe { entry.as_ref() }.entry.path;
-        // SAFETY: as above.
-        let path_c = unsafe { CStr::from_ptr(raw_path) };
+        // SAFETY: an entry's `path` is its own NUL-terminated copy, live
+        // and unwritten with the entry (as above).
+        let path_c = unsafe { CStr::from_ptr(entry.entry().path) };
         // check if path actually matches
         let Some(matched) = ps.matches(path_c, casefold) else {
             i = i.wrapping_add(1);

@@ -646,7 +646,7 @@ pub unsafe extern "C" fn git_index_get_bypath(
         let path = path.to_bytes();
         // SAFETY: no foreign call; shared access (a read path that C may run on several threads).
         match unsafe { ix.get_ref() }.get_bypath(path, stage) {
-            Some(e) => e.as_ptr().cast::<GitIndexEntry>().cast_const(),
+            Some(e) => e.as_ptr().as_ptr().cast::<GitIndexEntry>().cast_const(),
             None => {
                 let _ = git_error_set!(
                     ErrorClass::INDEX,
@@ -1008,10 +1008,10 @@ pub unsafe extern "C" fn git_index_conflict_add(
 type ConflictOut<'a> = [Out<'a, *const GitIndexEntry>; 3];
 
 /// Write the three sides of a conflict, in order.
-fn write_conflict(out: &mut ConflictOut<'_>, sides: [Option<super::EntryPtr>; 3]) {
+fn write_conflict(out: &mut ConflictOut<'_>, sides: [Option<super::EntryRef<'_>>; 3]) {
     for (o, side) in out.iter_mut().zip(sides) {
         o.write(side.map_or(ptr::null(), |e| {
-            e.as_ptr().cast::<GitIndexEntry>().cast_const()
+            e.as_ptr().as_ptr().cast::<GitIndexEntry>().cast_const()
         }));
     }
 }

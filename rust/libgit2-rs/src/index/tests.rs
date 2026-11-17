@@ -345,9 +345,7 @@ fn parses_versions_2_3_4() {
             ],
             "version {v}"
         );
-        let e = ix.get_bypath(b"a/b/d", 0).unwrap();
-        // SAFETY: live.
-        let ent = unsafe { (*e.as_ptr()).entry };
+        let ent = *ix.get_bypath(b"a/b/d", 0).unwrap().entry();
         assert_eq!(ent.flags_extended, GIT_INDEX_ENTRY_INTENT_TO_ADD);
         assert_eq!(
             (ent.ctime.seconds, ent.mtime.nanoseconds, ent.file_size),

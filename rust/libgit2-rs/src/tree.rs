@@ -849,13 +849,12 @@ fn left_dir(path: &[u8], dirname: &[u8]) -> bool {
 /// [`IndexPtr::get_ref`]) is live during the call, and nothing but the
 /// caller changes or frees the index's entries during `'a`.
 unsafe fn index_entry<'a>(ix: IndexPtr, i: usize) -> Option<(&'a [u8], Oid, u32)> {
-    // SAFETY: no reference into the index is live (this fn's contract);
-    // the shared borrow ends with the statement, before any foreign call.
-    let e = unsafe { ix.sorted() }.entry_at(i)?;
-    // SAFETY: `e` is a live entry of the index (its invariant), which
-    // nothing changes or frees during `'a` (this fn's contract); the
-    // shared borrow covers only the entry's fixed fields.
-    let e = unsafe { &e.as_ref().entry };
+    // SAFETY: no reference into the index is live (this fn's contract),
+    // and nothing but the caller uses the index during `'a`, so the shared
+    // borrow (and the entry's, the index's own) holds for `'a`: the first
+    // call sorts the entries, and as nothing unsorts them, later calls
+    // (the caller's next ones) take no exclusive borrow.
+    let e = unsafe { ix.sorted::<'a>() }.entry_ref(i)?.entry();
     // SAFETY: as above: an entry's `path` points to its own NUL-terminated
     // copy of the path, which lives unwritten with the entry for `'a`.
     let path = unsafe { CStr::from_ptr(e.path) };

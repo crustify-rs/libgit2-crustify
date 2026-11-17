@@ -18,7 +18,7 @@ use std::borrow::Cow;
 
 use super::map::EntryMap;
 use super::{
-    EntryPtr, Extension, GIT_INDEX_ENTRY_EXTENDED, GIT_INDEX_ENTRY_EXTENDED_FLAGS,
+    EntryPtr, EntryRef, Extension, GIT_INDEX_ENTRY_EXTENDED, GIT_INDEX_ENTRY_EXTENDED_FLAGS,
     GIT_INDEX_ENTRY_NAMEMASK, GitIndex, GitIndexEntry, GitIndexNameEntry,
     INDEX_VERSION_NUMBER_COMP, INDEX_VERSION_NUMBER_EXT, INDEX_VERSION_NUMBER_LB,
     INDEX_VERSION_NUMBER_UB, NewEntry, as_entry, entry_alloc, epath, name_free, reuc_alloc,
@@ -588,13 +588,10 @@ fn is_index_extended(ix: &mut GitIndex) -> bool {
 fn write_disk_entry(
     file: &mut GitFilebuf,
     t: OidType,
-    entry: EntryPtr,
+    entry: EntryRef<'_>,
     last: Option<&[u8]>,
 ) -> Result<()> {
-    // SAFETY: a live entry of the index, not written during the call.
-    let e = unsafe { &(*entry.as_ptr()).entry };
-    // SAFETY: as above.
-    let path = unsafe { epath(entry) };
+    let (e, path) = (entry.entry(), entry.path());
     let mut path_len = path.len();
     let mut same_len = 0;
     let mut varint_len = 0usize;
@@ -671,17 +668,12 @@ fn write_entries(ix: &mut GitIndex, file: &mut GitFilebuf) -> Result<()> {
         &ix.entries
     };
     let compressed = ix.version >= INDEX_VERSION_NUMBER_COMP;
-    let mut last: Option<EntryPtr> = None;
+    let mut last: Option<EntryRef<'_>> = None;
     for e in entries.iter() {
-        let e = as_entry(e);
-        let last_path = if compressed {
-            Some(last.map_or(&b""[..], |l| {
-                // SAFETY: `last` is a live entry of the index.
-                unsafe { epath(l) }
-            }))
-        } else {
-            None
-        };
+        // SAFETY: the index's entries (or a copy of its vector): live (the
+        // invariant), and unwritten while `ix` is borrowed.
+        let e = unsafe { EntryRef::new(as_entry(e)) };
+        let last_path = compressed.then(|| last.map_or(&b""[..], EntryRef::path));
         write_disk_entry(file, t, e, last_path)?;
         if compressed {
             last = Some(e);

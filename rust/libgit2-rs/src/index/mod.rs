@@ -59,6 +59,7 @@ pub(crate) mod ops;
 mod tests;
 
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
+use core::marker::PhantomData;
 use core::ptr::{self, NonNull};
 use core::sync::atomic::Ordering;
 
@@ -393,6 +394,67 @@ pub(crate) unsafe fn eps<'a>(e: EntryPtr) -> (&'a [u8], c_int) {
 pub(crate) unsafe fn estage(e: EntryPtr) -> c_int {
     // SAFETY: the caller's contract.
     unsafe { entry_stage_raw(e.as_ptr()) as c_int }
+}
+
+/// An index entry borrowed for `'a`: its fields and path, read with safe
+/// code.
+///
+/// Invariant (established by [`new`](Self::new), and by [`GitIndex`]'s
+/// accessors from the index's invariant): the pointer is a live
+/// [`entry_alloc`] entry that nothing writes or frees during `'a`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct EntryRef<'a> {
+    e: EntryPtr,
+    _life: PhantomData<&'a EntryHead>,
+}
+
+impl<'a> EntryRef<'a> {
+    /// A borrow of `e` for `'a`.
+    ///
+    /// # Safety
+    ///
+    /// `e` is a live [`entry_alloc`] entry that nothing writes or frees
+    /// during `'a`.
+    #[inline(always)]
+    pub(crate) unsafe fn new(e: EntryPtr) -> EntryRef<'a> {
+        EntryRef {
+            e,
+            _life: PhantomData,
+        }
+    }
+
+    /// The pointer (what C is handed).
+    #[inline(always)]
+    pub(crate) fn as_ptr(self) -> EntryPtr {
+        self.e
+    }
+
+    /// The public entry.
+    #[inline(always)]
+    pub(crate) fn entry(self) -> &'a GitIndexEntry {
+        // SAFETY: the type's invariant: live and unwritten for `'a`.
+        unsafe { &(*self.e.as_ptr()).entry }
+    }
+
+    /// The path (its own storage, `pathlen` bytes).
+    #[inline(always)]
+    pub(crate) fn path(self) -> &'a [u8] {
+        // SAFETY: the type's invariant: a live `entry_alloc` entry, whose
+        // path is its own `pathlen` bytes, unwritten for `'a`.
+        unsafe { epath(self.e) }
+    }
+
+    /// The stage.
+    #[inline(always)]
+    pub(crate) fn stage(self) -> c_int {
+        self.entry().stage()
+    }
+
+    /// The path and the stage.
+    #[inline(always)]
+    pub(crate) fn path_stage(self) -> (&'a [u8], c_int) {
+        (self.path(), self.stage())
+    }
 }
 
 /// The allocation of `index_entry_create` (without the path check): a
@@ -1122,6 +1184,16 @@ impl GitIndex {
         self.entries.get(pos).map(as_entry)
     }
 
+    /// The entry at `pos`, borrowed with the index.
+    #[inline]
+    pub(crate) fn entry_ref(&self, pos: usize) -> Option<EntryRef<'_>> {
+        // SAFETY: the index's entries are live (its invariant), and nothing
+        // writes or frees them while `&self` is borrowed (that takes
+        // `&mut self`, or `IndexPtr::get`, whose contract excludes this
+        // borrow).
+        self.entry_at(pos).map(|e| unsafe { EntryRef::new(e) })
+    }
+
     /// `index_find`: sort, then search for (`path`, `stage`).
     pub(crate) fn find(&mut self, path: &[u8], stage: c_int) -> core::result::Result<usize, usize> {
         self.sort();
@@ -1155,13 +1227,14 @@ impl GitIndex {
     /// `index_remove_entry`.
     pub(crate) fn remove_entry(&mut self, pos: usize) -> Result<()> {
         let entry = self.entry_at(pos);
-        if let Some(e) = entry {
-            // SAFETY: `e` is a live entry of the index.
-            let p = unsafe { epath(e) };
-            // SAFETY: the tree invariant.
-            unsafe { tree_cache::invalidate_path(self.tree, p) };
-            // SAFETY: `e` is live.
-            unsafe { self.entries_map.remove(e) };
+        if let Some(e) = self.entry_ref(pos) {
+            // SAFETY: `tree` is NULL or a tree cache in the index's pool
+            // (the invariant), which nothing else accesses while `self` is
+            // borrowed exclusively; `e`'s path is not part of it.
+            unsafe { tree_cache::invalidate_path(self.tree, e.path()) };
+            // SAFETY: `e` is live (the invariant) and stays so during the
+            // call; the map holds only the index's entries.
+            unsafe { self.entries_map.remove(e.as_ptr()) };
         }
         self.entries.remove(pos)?;
         let Some(e) = entry else {
@@ -1249,7 +1322,7 @@ impl GitIndex {
     }
 
     /// `git_index_get_bypath`'s lookup (no error set).
-    pub(crate) fn get_bypath(&self, path: &[u8], stage: c_int) -> Option<EntryPtr> {
+    pub(crate) fn get_bypath(&self, path: &[u8], stage: c_int) -> Option<EntryRef<'_>> {
         let mut key = EntryHead {
             entry: GitIndexEntry::zeroed(),
             pathlen: path.len(),
@@ -1257,7 +1330,10 @@ impl GitIndex {
         key.entry.path = path.as_ptr().cast();
         key.entry.set_stage(stage);
         // SAFETY: `key` is a head whose path is `path`, live for the call.
-        unsafe { self.entries_map.get(NonNull::from(&mut key)) }
+        let e = unsafe { self.entries_map.get(NonNull::from(&mut key)) }?;
+        // SAFETY: the map holds only entries of `entries` (the invariant):
+        // live, and unwritten while `&self` is borrowed.
+        Some(unsafe { EntryRef::new(e) })
     }
 
     /// `git_index_find`: the first entry (of any stage) at `path`.
@@ -1280,9 +1356,8 @@ impl GitIndex {
         };
         let mut pos = found.ok()?;
         while pos > 0 {
-            let prev = self.entry_at(pos - 1)?;
-            // SAFETY: a live entry of the index.
-            if path_cmp(unsafe { epath(prev) }, path, icase) != 0 {
+            let prev = self.entry_ref(pos - 1)?;
+            if path_cmp(prev.path(), path, icase) != 0 {
                 break;
             }
             pos -= 1;
@@ -1306,10 +1381,8 @@ impl GitIndex {
                 if stage == 0 {
                     let icase = self.ignore_case();
                     let mut p = pos;
-                    while let Some(e) = self.entry_at(p) {
-                        // SAFETY: a live entry of the index (its
-                        // invariant), unwritten while `&self` is borrowed.
-                        let (ep, es) = unsafe { eps(e) };
+                    while let Some(e) = self.entry_ref(p) {
+                        let (ep, es) = e.path_stage();
                         // `git__strcasecmp` / `git__strcmp`.
                         if path_cmp(path, ep, icase) != 0 {
                             break;
@@ -1329,11 +1402,9 @@ impl GitIndex {
     /// `index_merge_mode`, `existing` the position of the entry to take a
     /// mode from.
     pub(crate) fn merge_mode(&self, existing: Option<usize>, mode: u32) -> u32 {
-        let emode = existing.and_then(|p| self.entry_at(p)).map(|e| {
-            // SAFETY: a live entry of the index (its invariant), unwritten
-            // while `&self` is borrowed.
-            unsafe { e.as_ref() }.entry.mode
-        });
+        let emode = existing
+            .and_then(|p| self.entry_ref(p))
+            .map(|e| e.entry().mode);
         if self.no_symlinks() && s_isreg(mode) && emode.is_some_and(s_islnk) {
             return emode.unwrap_or(0);
         }
@@ -1358,10 +1429,9 @@ impl GitIndex {
         if !self.ignore_case() {
             return;
         }
-        if let Some(ex) = existing.and_then(|p| self.entry_at(p)) {
-            // SAFETY: a live entry of the index (its invariant), unwritten
-            // while `&self` is borrowed; `entry` is not the index's.
-            let ep = unsafe { epath(ex) };
+        if let Some(ex) = existing.and_then(|p| self.entry_ref(p)) {
+            // (`entry` is not the index's)
+            let ep = ex.path();
             // C copies `strlen(existing->path)` bytes, the same length (the
             // paths are equal but for case)
             let path = entry.path_mut();
@@ -1373,7 +1443,7 @@ impl GitIndex {
             return;
         }
         let search: Vec<u8> = entry.path().to_vec();
-        let mut best: Option<(EntryPtr, usize)> = None;
+        let mut best: Option<(EntryRef<'_>, usize)> = None;
         let mut end = search.len();
         while best.is_none() {
             let Some(sep) = memchr::memrchr(b'/', &search[..end]) else {
@@ -1390,9 +1460,8 @@ impl GitIndex {
                 Ok(p) | Err(p) => p,
             };
             let mut p = pos;
-            while let Some(m) = self.entry_at(p) {
-                // SAFETY: as above.
-                let (mp, ms) = unsafe { eps(m) };
+            while let Some(m) = self.entry_ref(p) {
+                let (mp, ms) = m.path_stage();
                 if ms != 0 {
                     // conflicts do not contribute to canonical paths
                 } else if mp.starts_with(prefix) {
@@ -1412,8 +1481,7 @@ impl GitIndex {
             end = sep;
         }
         if let Some((b, blen)) = best {
-            // SAFETY: as above.
-            let bp = unsafe { epath(b) };
+            let bp = b.path();
             // `blen` is within `bp` (a prefix of it matched)
             let path = entry.path_mut();
             let n = blen.min(path.len());
@@ -1431,11 +1499,10 @@ impl GitIndex {
     ) -> core::result::Result<(), ()> {
         let (name, stage) = (entry.path(), entry.stage());
         let len = name.len();
-        while let Some(p) = self.entry_at(pos) {
+        while let Some(p) = self.entry_ref(pos) {
             pos += 1;
-            // SAFETY: a live entry of the index (its invariant); the path
-            // is used before `remove_entry` may free it.
-            let (pp, ps) = unsafe { eps(p) };
+            // (the path is used before `remove_entry` may free it)
+            let (pp, ps) = p.path_stage();
             if len >= pp.len() {
                 break;
             }
@@ -1491,10 +1558,8 @@ impl GitIndex {
                     continue;
                 }
                 Err(mut pos) => {
-                    while let Some(p) = self.entry_at(pos) {
-                        // SAFETY: a live entry of the index (its
-                        // invariant), unwritten in this loop.
-                        let (pp, ps) = unsafe { eps(p) };
+                    while let Some(p) = self.entry_ref(pos) {
+                        let (pp, ps) = p.path_stage();
                         if pp.len() <= len || pp[len] != b'/' || pp[..len] != name[..len] {
                             break;
                         }
@@ -1619,14 +1684,13 @@ impl GitIndex {
 
     /// `index_conflict__get_byindex`: the conflict at `n` (its ancestor,
     /// ours and theirs entries) and how many entries it spans.
-    pub(crate) fn conflict_at(&self, mut n: usize) -> ([Option<EntryPtr>; 3], usize) {
+    pub(crate) fn conflict_at(&self, mut n: usize) -> ([Option<EntryRef<'_>>; 3], usize) {
         let icase = self.ignore_case();
         let mut out = [None; 3];
         let mut len = 0;
         let mut path: Option<&[u8]> = None;
-        while let Some(e) = self.entry_at(n) {
-            // SAFETY: a live entry of the index.
-            let (ep, es) = unsafe { eps(e) };
+        while let Some(e) = self.entry_ref(n) {
+            let (ep, es) = e.path_stage();
             if let Some(p) = path
                 && path_cmp(ep, p, icase) != 0
             {
@@ -1643,7 +1707,7 @@ impl GitIndex {
     }
 
     /// `git_index_conflict_get`.
-    pub(crate) fn conflict_get(&mut self, path: &[u8]) -> Result<[Option<EntryPtr>; 3]> {
+    pub(crate) fn conflict_get(&mut self, path: &[u8]) -> Result<[Option<EntryRef<'_>>; 3]> {
         let Some(pos) = self.find_path(path) else {
             let _ = git_error_set!(ErrorClass::INDEX, "index does not contain {}", Bytes(path));
             return Err(ErrorCode::NOT_FOUND);
@@ -1670,9 +1734,8 @@ impl GitIndex {
             }
         }
         let icase = self.ignore_case();
-        while let Some(e) = self.entry_at(pos) {
-            // SAFETY: a live entry of the index.
-            let (ep, es) = unsafe { eps(e) };
+        while let Some(e) = self.entry_ref(pos) {
+            let (ep, es) = e.path_stage();
             if let Some(p) = path
                 && path_cmp(ep, p, icase) != 0
             {
@@ -1689,7 +1752,8 @@ impl GitIndex {
 
     /// `git_index_has_conflicts`.
     pub(crate) fn has_conflicts(&self) -> bool {
-        // SAFETY: live entries of the index.
+        // SAFETY: the index's entries are live (its invariant), and
+        // unwritten while `&self` is borrowed.
         self.entries
             .iter()
             .any(|e| unsafe { estage(as_entry(e)) } > 0)
@@ -1727,9 +1791,8 @@ impl GitIndex {
         let mut pos = match self.find(pfx, GIT_INDEX_STAGE_ANY) {
             Ok(p) | Err(p) => p,
         };
-        while let Some(e) = self.entry_at(pos) {
-            // SAFETY: a live entry of the index.
-            let (ep, es) = unsafe { eps(e) };
+        while let Some(e) = self.entry_ref(pos) {
+            let (ep, es) = e.path_stage();
             if !ep.starts_with(pfx) {
                 break;
             }
@@ -1753,9 +1816,7 @@ impl GitIndex {
         let pos = match self.find_sorted(prefix, GIT_INDEX_STAGE_ANY) {
             Ok(p) | Err(p) => p,
         };
-        let e = self.entry_at(pos)?;
-        // SAFETY: a live entry of the index.
-        if unsafe { epath(e) }.starts_with(prefix) {
+        if self.entry_ref(pos)?.path().starts_with(prefix) {
             Some(pos)
         } else {
             None

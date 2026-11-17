@@ -26,10 +26,10 @@ use std::path::{Path, PathBuf};
 
 use super::foreign::{GitStrArrayBuf, Paths};
 use super::{
-    EntryPtr, GIT_INDEX_ADD_CHECK_PATHSPEC, GIT_INDEX_ADD_DISABLE_PATHSPEC_MATCH,
+    EntryRef, GIT_INDEX_ADD_CHECK_PATHSPEC, GIT_INDEX_ADD_DISABLE_PATHSPEC_MATCH,
     GIT_INDEX_ADD_FORCE, GIT_INDEX_CAPABILITY_FROM_OWNER, GIT_INDEX_CAPABILITY_IGNORE_CASE,
     GIT_INDEX_CAPABILITY_NO_FILEMODE, GIT_INDEX_CAPABILITY_NO_SYMLINKS, GIT_INDEX_STAGE_ANY,
-    GitIndex, GitIndexEntry, GitIndexTime, IndexPtr, epath, ops,
+    GitIndex, GitIndexEntry, GitIndexTime, IndexPtr, ops,
 };
 use crate::oid::{Oid, OidType};
 use crate::util::errors::{Error, ErrorCode};
@@ -206,12 +206,8 @@ impl IndexEntry {
     }
 
     /// A copy of an index entry.
-    fn from_ptr(e: EntryPtr) -> IndexEntry {
-        // SAFETY: the callers pass a live entry of an index, which nothing
-        // writes during the copy (no foreign call).
-        let r = unsafe { (*e.as_ptr()).entry };
-        // SAFETY: as above.
-        let path = unsafe { epath(e) };
+    fn from_ref(e: EntryRef<'_>) -> IndexEntry {
+        let (r, path) = (*e.entry(), e.path());
         IndexEntry {
             ctime: r.ctime.into(),
             mtime: r.mtime.into(),
@@ -286,11 +282,11 @@ pub struct ConflictEntries {
 }
 
 impl ConflictEntries {
-    fn from_ptrs(s: [Option<EntryPtr>; 3]) -> ConflictEntries {
+    fn from_refs(s: [Option<EntryRef<'_>>; 3]) -> ConflictEntries {
         ConflictEntries {
-            ancestor: s[0].map(IndexEntry::from_ptr),
-            our: s[1].map(IndexEntry::from_ptr),
-            their: s[2].map(IndexEntry::from_ptr),
+            ancestor: s[0].map(IndexEntry::from_ref),
+            our: s[1].map(IndexEntry::from_ref),
+            their: s[2].map(IndexEntry::from_ref),
         }
     }
 }
@@ -318,15 +314,14 @@ pub struct NameEntry {
 }
 
 /// The next conflict from position `*cur` (`git_index_conflict_next`).
-pub(crate) fn conflict_next(
-    index: &mut GitIndex,
+pub(crate) fn conflict_next<'a>(
+    index: &'a mut GitIndex,
     cur: &mut usize,
-) -> Option<[Option<EntryPtr>; 3]> {
+) -> Option<[Option<EntryRef<'a>>; 3]> {
     while *cur < index.entries.len() {
         index.sort();
-        let e = index.entry_at(*cur)?;
-        // SAFETY: a live entry of the index.
-        if unsafe { super::estage(e) } > 0 {
+        if index.entry_ref(*cur)?.stage() > 0 {
+            let index: &'a GitIndex = index;
             let (sides, len) = index.conflict_at(*cur);
             *cur += len;
             return Some(sides);
@@ -647,14 +642,14 @@ impl<'r> Index<'r> {
     pub fn get(&self, n: usize) -> Option<IndexEntry> {
         self.with(|i| {
             i.sort();
-            i.entry_at(n).map(IndexEntry::from_ptr)
+            i.entry_ref(n).map(IndexEntry::from_ref)
         })
     }
 
     /// The entry for `path` at `stage` (`git_index_get_bypath`).
     pub fn get_path(&self, path: impl AsRef<[u8]>, stage: Stage) -> Option<IndexEntry> {
         let path = path.as_ref();
-        self.with(|i| i.get_bypath(path, stage.raw()).map(IndexEntry::from_ptr))
+        self.with(|i| i.get_bypath(path, stage.raw()).map(IndexEntry::from_ref))
     }
 
     /// The position of `path` (`git_index_find`).
@@ -906,7 +901,7 @@ impl<'r> Index<'r> {
     /// The sides of `path`'s conflict (`git_index_conflict_get`).
     pub fn conflict_get(&self, path: impl AsRef<[u8]>) -> Result<ConflictEntries> {
         let path = path.as_ref();
-        self.with(|i| i.conflict_get(path).map(ConflictEntries::from_ptrs))
+        self.with(|i| i.conflict_get(path).map(ConflictEntries::from_refs))
             .map_err(err)
     }
 
@@ -1151,8 +1146,12 @@ impl Iterator for IndexEntries<'_> {
         let _g = self.index.api();
         let e = self.snap.as_ref()?.get(self.cur)?;
         self.cur += 1;
-        // a snapshot's entries stay live: the index defers their removal
-        Some(IndexEntry::from_ptr(super::as_entry(e)))
+        // SAFETY: a snapshot's entries stay live: the index defers their
+        // removal while it has readers (this snapshot is one); the lock is
+        // held, so no safe-API call writes them meanwhile, and the C ABI
+        // keeps C's rule (one thread at a time).
+        let e = unsafe { super::EntryRef::new(super::as_entry(e)) };
+        Some(IndexEntry::from_ref(e))
     }
 }
 
@@ -1186,6 +1185,6 @@ impl Iterator for IndexConflicts<'_> {
     fn next(&mut self) -> Option<ConflictEntries> {
         let cur = &mut self.cur;
         self.index
-            .with(|i| conflict_next(i, cur).map(ConflictEntries::from_ptrs))
+            .with(|i| conflict_next(i, cur).map(ConflictEntries::from_refs))
     }
 }
