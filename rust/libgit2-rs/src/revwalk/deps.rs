@@ -22,13 +22,15 @@ pub use crate::object::ffi::{git_object_free, git_object_id, git_object_lookup, 
 ///
 /// # Safety
 ///
-/// As the export's.
+/// `out` is NULL or writable; `repo` NULL or a live repository; as
+/// `object_api::ffi::git_commit_lookup` requires.
 pub unsafe fn git_commit_lookup(
     out: *mut *mut git_commit,
     repo: *mut git_repository,
     id: Option<&Oid>,
 ) -> c_int {
-    // SAFETY: the caller's contract.
+    // SAFETY: the arguments satisfy the export's contract (this
+    // function's).
     unsafe { crate::object_api::ffi::git_commit_lookup(out.cast(), repo, id) }
 }
 
@@ -36,9 +38,11 @@ pub unsafe fn git_commit_lookup(
 ///
 /// # Safety
 ///
-/// As the export's.
+/// `commit` is NULL or a commit reference the caller owns and gives up,
+/// not used after.
 pub unsafe fn git_commit_free(commit: *mut git_commit) {
-    // SAFETY: the caller's contract.
+    // SAFETY: the arguments satisfy the export's contract (this
+    // function's).
     unsafe { crate::object_api::ffi::git_commit_free(commit.cast()) }
 }
 
@@ -46,8 +50,10 @@ pub unsafe fn git_commit_free(commit: *mut git_commit) {
 ///
 /// # Safety
 ///
-/// As the export's.
+/// `tree` is NULL or a tree reference the caller owns and gives up, not
+/// used after.
 pub unsafe fn git_tree_free(tree: *mut git_tree) {
-    // SAFETY: the caller's contract.
+    // SAFETY: the arguments satisfy the export's contract (this
+    // function's).
     unsafe { crate::object_api::ffi::git_tree_free(tree.cast()) }
 }

@@ -18,7 +18,7 @@
 //! `git_commit_signature_cb` with `git_commitbuilder_add_header`. A panic
 //! in one stops the operation and is resumed after it returns.
 
-use crate::util::cabi::CStrArg;
+use crate::util::cabi::{CStrArg, Out};
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::ptr::{self, NonNull};
 use std::any::Any;
@@ -27,13 +27,13 @@ use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::sync::OnceLock;
 
 use super::{
-    CreateArgs, GitCommit, GitCommitCreateOptions, GitCommitHeader, GitCommitbuilder, GitSignature,
-    SigOut,
+    CommitRef, CreateArgs, GitCommit, GitCommitCreateOptions, GitCommitHeader, GitCommitbuilder,
+    GitSignature, SigOut,
 };
 use crate::object::{GIT_OBJECT_COMMIT, GIT_OBJECT_TREE, Object, ObjectType};
 use crate::oid::{Oid, OidType};
 use crate::repository::Repository;
-use crate::signature::{SignatureRef, Time};
+use crate::signature::SignatureRef;
 use crate::tree::api::Tree;
 use crate::util::errors::{Error, ErrorClass, ErrorCode};
 use crate::util::str::GitStr;
@@ -62,6 +62,17 @@ fn opt_ptr(s: &Option<CString>) -> *const c_char {
     s.as_ref().map_or(ptr::null(), |s| s.as_ptr())
 }
 
+fn opt_arg(s: &Option<CString>) -> CStrArg<'_> {
+    CStrArg::from(s.as_deref())
+}
+
+/// The `git_tree` a [`Tree`] holds.
+fn tree_ref<'t>(t: &'t Tree<'_>) -> &'t crate::tree::GitTree {
+    // SAFETY: the live tree `t` holds a reference to (not freed while it is
+    // borrowed); a published tree is only read (its refcount is atomic).
+    unsafe { t.as_raw_tree().as_ref() }
+}
+
 /// A C status as the safe API's result.
 fn check(e: c_int) -> Result<(), Error> {
     if e < 0 {
@@ -69,16 +80,6 @@ fn check(e: c_int) -> Result<(), Error> {
     } else {
         Ok(())
     }
-}
-
-/// The bytes of a C string the commit owns.
-///
-/// # Safety
-///
-/// `p` is NULL or a NUL-terminated string that lives (unwritten) for `'a`.
-unsafe fn cbytes<'a>(p: *const c_char) -> &'a [u8] {
-    // SAFETY: the caller's contract.
-    unsafe { super::opt_cbytes(p) }.unwrap_or(b"")
 }
 
 /// A signature as C reads it (`git_signature`), its strings owned here.
@@ -112,6 +113,11 @@ impl CSig {
     /// The pointer C takes (NULL for `None`), live while `s` is.
     fn ptr(s: &Option<CSig>) -> *const GitSignature {
         s.as_ref().map_or(ptr::null(), |s| &raw const s.raw)
+    }
+
+    /// The signature C reads (`None` for `None`).
+    fn get(s: &Option<CSig>) -> Option<&GitSignature> {
+        s.as_ref().map(|s| &s.raw)
     }
 }
 
@@ -159,7 +165,8 @@ impl<'r> Commit<'r> {
     /// `raw` is a live commit of `self`'s repository whose reference passes
     /// to the result.
     unsafe fn sibling(&self, raw: NonNull<GitCommit>) -> Commit<'r> {
-        // SAFETY: the caller's contract.
+        // SAFETY: a live object of `self`'s repository whose reference passes
+        // to the result (the contract): `Object::sibling`'s.
         Commit::wrap(unsafe { self.obj.sibling(raw.cast()) })
     }
 
@@ -192,8 +199,13 @@ impl<'r> Commit<'r> {
         self.obj
     }
 
-    fn c(&self) -> *const GitCommit {
-        self.obj.as_ptr().as_ptr().cast::<GitCommit>()
+    fn c(&self) -> CommitRef<'_> {
+        // SAFETY: the live commit this value holds a reference to (a
+        // checked commit, of the object table or parsed by `parse`), so not
+        // freed while `self` is borrowed; its fields are written only by
+        // its parse, before it was published, except `summary`/`body`,
+        // which C writes through raw pointers (`git_commit_summary`).
+        unsafe { CommitRef::from_ptr(self.obj.as_ptr().cast()) }
     }
 
     /// `git_commit_id`.
@@ -203,16 +215,12 @@ impl<'r> Commit<'r> {
 
     /// `git_commit_tree_id`: the id of its tree.
     pub fn tree_id(&self) -> &Oid {
-        // SAFETY: `self.c()` is the live commit this value holds (a checked
-        // commit); only that field is borrowed, which the parse set and
-        // nothing writes after.
-        unsafe { &(*self.c()).tree_id }
+        self.c().tree_id()
     }
 
     /// The ids of its parents (`git_commit_parent_id` for each).
     pub fn parent_ids(&self) -> &[Oid] {
-        // SAFETY: a live commit, its parents unchanged while `self` lives.
-        unsafe { super::parent_ids_of(self.c()) }
+        self.c().parent_ids()
     }
 
     /// `git_commit_parentcount`.
@@ -220,31 +228,14 @@ impl<'r> Commit<'r> {
         self.parent_ids().len()
     }
 
-    fn sig(&self, p: *const GitSignature) -> SignatureRef<'_> {
-        if p.is_null() {
-            return SignatureRef::new(b"", b"", Time::from_raw(Default::default()));
-        }
-        // SAFETY: a signature the commit owns, unchanged while it lives.
-        let s = unsafe { &*p };
-        // SAFETY: its strings are NUL-terminated, owned by the commit and
-        // unwritten while it lives (the result borrows `self`).
-        unsafe { SignatureRef::from_raw(s) }
-    }
-
     /// `git_commit_author`.
     pub fn author(&self) -> SignatureRef<'_> {
-        // SAFETY: `self.c()` is the live commit this value holds.
-        let p = unsafe { &raw const (*self.c()).author };
-        // SAFETY: a field set by the parse, never written after.
-        self.sig(unsafe { p.read() })
+        CommitRef::signature_ref(self.c().author_ref())
     }
 
     /// `git_commit_committer`.
     pub fn committer(&self) -> SignatureRef<'_> {
-        // SAFETY: `self.c()` is the live commit this value holds.
-        let p = unsafe { &raw const (*self.c()).committer };
-        // SAFETY: a field set by the parse, never written after.
-        self.sig(unsafe { p.read() })
+        CommitRef::signature_ref(self.c().committer_ref())
     }
 
     /// `git_commit_time`: the committer's time, in seconds.
@@ -259,13 +250,7 @@ impl<'r> Commit<'r> {
 
     /// `git_commit_message_raw`: the message as stored.
     pub fn message_raw(&self) -> &[u8] {
-        // SAFETY: `self.c()` is the live commit this value holds.
-        let p = unsafe { &raw const (*self.c()).raw_message };
-        // SAFETY: a field set by the parse, never written after.
-        let s = unsafe { p.read() };
-        // SAFETY: NULL or a NUL-terminated string the commit owns, unwritten
-        // while it lives (the result borrows `self`).
-        unsafe { cbytes(s) }
+        self.c().raw_message_arg().to_bytes()
     }
 
     /// `git_commit_message`: the message without its leading newlines.
@@ -275,24 +260,12 @@ impl<'r> Commit<'r> {
 
     /// `git_commit_message_encoding`.
     pub fn message_encoding(&self) -> Option<&[u8]> {
-        // SAFETY: `self.c()` is the live commit this value holds.
-        let p = unsafe { &raw const (*self.c()).message_encoding };
-        // SAFETY: a field set by the parse, never written after.
-        let s = unsafe { p.read() };
-        // SAFETY: NULL or a NUL-terminated string the commit owns, unwritten
-        // while it lives (the result borrows `self`).
-        unsafe { super::opt_cbytes(s) }
+        self.c().message_encoding_arg().get().map(CStr::to_bytes)
     }
 
     /// `git_commit_raw_header`.
     pub fn raw_header(&self) -> &[u8] {
-        // SAFETY: `self.c()` is the live commit this value holds.
-        let p = unsafe { &raw const (*self.c()).raw_header };
-        // SAFETY: a field set by the parse, never written after.
-        let s = unsafe { p.read() };
-        // SAFETY: NULL or a NUL-terminated string the commit owns, unwritten
-        // while it lives (the result borrows `self`).
-        unsafe { cbytes(s) }
+        self.c().raw_header_arg().to_bytes()
     }
 
     /// `git_commit_summary`: the first paragraph, on one line.
@@ -333,7 +306,7 @@ impl<'r> Commit<'r> {
         let mut raw = ptr::null_mut();
         let n = u32::try_from(n).unwrap_or(u32::MAX);
         // SAFETY: `raw` writable; a live commit of a repository.
-        check(unsafe { super::ffi::git_commit_parent(&raw mut raw, self.c(), n) })?;
+        check(unsafe { super::ffi::git_commit_parent(Out::from(&mut raw), Some(self.c()), n) })?;
         let raw = NonNull::new(raw).ok_or_else(|| Error::from(ErrorCode::GENERIC))?;
         // SAFETY: a commit of the same repository, ours to release.
         Ok(unsafe { self.sibling(raw) })
@@ -347,7 +320,9 @@ impl<'r> Commit<'r> {
         }
         let mut raw = ptr::null_mut();
         // SAFETY: `raw` writable; a live commit.
-        check(unsafe { super::ffi::git_commit_nth_gen_ancestor(&raw mut raw, self.c(), n) })?;
+        check(unsafe {
+            super::ffi::git_commit_nth_gen_ancestor(Out::from(&mut raw), Some(self.c()), n)
+        })?;
         let raw = NonNull::new(raw).ok_or_else(|| Error::from(ErrorCode::GENERIC))?;
         // SAFETY: as in `parent`.
         Ok(unsafe { self.sibling(raw) })
@@ -364,22 +339,21 @@ impl<'r> Commit<'r> {
         let committer = CSig::opt(opts.committer.as_ref())?;
         let encoding = opt_cstring(opts.encoding, "message encoding")?;
         let message = opt_cstring(opts.message, "message")?;
-        let tree = opts
-            .tree
-            .map_or(ptr::null(), |t| t.as_raw_tree().as_ptr().cast_const());
+        let tree = opts.tree.map(tree_ref);
         let mut id = Oid::default();
         // SAFETY: `id` writable; a live commit of a repository; the strings
-        // and signatures live (above) during the call; `tree` NULL or a live
-        // tree (the C checks that it is the commit's repository's).
+        // and signatures (their strings NUL-terminated) live (above) during
+        // the call; `tree` NULL or a live tree (the C checks that it is the
+        // commit's repository's).
         check(unsafe {
             super::ffi::git_commit_amend(
-                &raw mut id,
-                self.c(),
-                opt_ptr(&update_ref),
-                CSig::ptr(&author),
-                CSig::ptr(&committer),
+                Out::from(&mut id),
+                Some(self.c()),
+                opt_arg(&update_ref),
+                CSig::get(&author),
+                CSig::get(&committer),
                 opt_ptr(&encoding),
-                opt_ptr(&message),
+                opt_arg(&message),
                 tree,
             )
         })?;
@@ -422,15 +396,14 @@ impl Commit<'_> {
         let field = opt_cstring(field, "signature field")?;
         let mut sig = GitStr::new();
         let mut signed = GitStr::new();
-        let mut id = *id;
         // SAFETY: two distinct, valid strings; a live repository; `id`
         // readable; `field` NULL or NUL-terminated.
         check(unsafe {
             super::ffi::git_commit__extract_signature(
                 &raw mut sig,
                 &raw mut signed,
-                repo.raw_ptr(),
-                &raw mut id,
+                Some(repo.raw()),
+                Some(id),
                 CStrArg::from(field.as_deref()),
             )
         })?;
@@ -455,8 +428,8 @@ impl Commit<'_> {
         // NUL-terminated (or NULL), live during the call.
         check(unsafe {
             super::ffi::git_commit_create_with_signature(
-                &raw mut id,
-                repo.raw_ptr(),
+                Out::from(&mut id),
+                Some(repo.raw()),
                 content.as_c_str().into(),
                 CStrArg::from(signature.as_deref()),
                 CStrArg::from(field.as_deref()),
@@ -484,7 +457,7 @@ impl Commit<'_> {
                 "git_tree_owner(tree) == repo",
             )));
         }
-        let t = tree.as_raw_tree().as_ptr().cast_const();
+        let t = tree_ref(tree);
         // The emptiness check diffs trees, whose drivers read attributes.
         crate::index::api::with_repository_index_locked(repo.raw(), || {
             opts.run(|o| {
@@ -493,11 +466,11 @@ impl Commit<'_> {
                 // message NUL-terminated; valid options (`run`).
                 let e = unsafe {
                     super::ffi::git_commit_create_from_tree(
-                        &raw mut id,
-                        repo.raw_ptr(),
-                        t,
-                        message.as_ptr(),
-                        o,
+                        Out::from(&mut id),
+                        Some(repo.raw()),
+                        Some(t),
+                        message.as_c_str().into(),
+                        Some(o),
                     )
                 };
                 (e, id)
@@ -522,10 +495,10 @@ impl Commit<'_> {
                 // repository's, locked (above).
                 let e = unsafe {
                     super::ffi::git_commit_create_from_stage(
-                        &raw mut id,
-                        repo.raw_ptr(),
-                        message.as_ptr(),
-                        o,
+                        Out::from(&mut id),
+                        Some(repo.raw()),
+                        message.as_c_str().into(),
+                        Some(o),
                     )
                 };
                 (e, id)
@@ -544,18 +517,18 @@ impl Commit<'_> {
         opts: CommitCreateOptions<'_>,
     ) -> Result<Oid, Error> {
         let message = opt_cstring(message, "message")?;
-        let t = tree.as_raw_tree().as_ptr().cast_const();
+        let t = tree_ref(tree);
         opts.run(|o| {
             let mut id = Oid::default();
             // SAFETY: `id` writable; a live repository and tree; the
             // message NULL or NUL-terminated; valid options (`run`).
             let e = unsafe {
                 super::ffi::git_commit_amend_from_tree(
-                    &raw mut id,
-                    repo.raw_ptr(),
-                    t,
-                    opt_ptr(&message),
-                    o,
+                    Out::from(&mut id),
+                    Some(repo.raw()),
+                    Some(t),
+                    opt_arg(&message),
+                    Some(o),
                 )
             };
             (e, id)
@@ -579,10 +552,10 @@ impl Commit<'_> {
                 // repository's, locked (above).
                 let e = unsafe {
                     super::ffi::git_commit_amend_from_stage(
-                        &raw mut id,
-                        repo.raw_ptr(),
-                        opt_ptr(&message),
-                        o,
+                        Out::from(&mut id),
+                        Some(repo.raw()),
+                        opt_arg(&message),
+                        Some(o),
                     )
                 };
                 (e, id)
@@ -809,7 +782,7 @@ impl<'a> CommitCreateOptions<'a> {
     /// id as the result. A panic of the signer is resumed after `op`.
     fn run(
         mut self,
-        op: impl FnOnce(*const GitCommitCreateOptions) -> (c_int, Oid),
+        op: impl FnOnce(&GitCommitCreateOptions) -> (c_int, Oid),
     ) -> Result<Oid, Error> {
         let author = CSig::opt(self.author.as_ref())?;
         let committer = CSig::opt(self.committer.as_ref())?;
@@ -851,7 +824,7 @@ impl<'a> CommitCreateOptions<'a> {
             o.sign = Some(sign_cb);
             o.payload = ptr::from_mut(s).cast();
         }
-        let (e, id) = op(&raw const o);
+        let (e, id) = op(&o);
         if let Some(s) = signing {
             s.finish();
         }
@@ -1052,8 +1025,7 @@ impl<'a> CommitBuilder<'a> {
             None => None,
         };
         let mut id = Oid::default();
-        // SAFETY: a live repository; the signer is Rust's.
-        unsafe { super::create_internal(&mut id, repo.raw_ptr(), &args, &mut next, sign) }
+        super::create_internal(&mut id, Some(repo.raw()), &args, &mut next, sign)
             .map_err(Error::from)?;
         Ok(id)
     }

@@ -216,6 +216,13 @@ impl<'a> SigRef<'a> {
         })
     }
 
+    /// The signature, for `'a`.
+    pub fn get(self) -> &'a git_signature {
+        // SAFETY: a valid, aligned signature that nothing writes or frees
+        // during `'a` (the type's invariant).
+        unsafe { self.ptr.as_ref() }
+    }
+
     /// The pointer, for a C call that reads it during `'a`.
     pub fn as_ptr(self) -> *const git_signature {
         self.ptr.as_ptr()
@@ -223,9 +230,7 @@ impl<'a> SigRef<'a> {
 
     /// The safe view of the signature, for `'a`.
     pub fn to_ref(self) -> crate::signature::SignatureRef<'a> {
-        // SAFETY: a valid, aligned signature, unwritten and not freed for
-        // `'a` (the type's invariant).
-        let s = unsafe { self.ptr.as_ref() };
+        let s = self.get();
         // SAFETY: its strings are NULL or NUL-terminated, live and
         // unwritten for `'a` (as above).
         unsafe { crate::signature::SignatureRef::from_raw(s) }
@@ -279,7 +284,7 @@ impl SigBox {
     pub fn now(name: &CStr, email: &CStr) -> Result<SigBox> {
         let mut out = core::ptr::null_mut();
         // SAFETY: NUL-terminated strings (`&CStr`) and our writable local.
-        let r = unsafe { git_signature_now(&raw mut out, name.into(), email.into()) };
+        let r = unsafe { git_signature_now(Out::from(&mut out), name.into(), email.into()) };
         // SAFETY: what `git_signature_now` left in `out`, ours.
         unsafe { Self::adopt(r, out) }
     }
@@ -288,7 +293,9 @@ impl SigBox {
     pub fn new(name: &CStr, email: &CStr, time: i64, offset: c_int) -> Result<SigBox> {
         let mut out = core::ptr::null_mut();
         // SAFETY: NUL-terminated strings (`&CStr`) and our writable local.
-        let r = unsafe { git_signature_new(&raw mut out, name.into(), email.into(), time, offset) };
+        let r = unsafe {
+            git_signature_new(Out::from(&mut out), name.into(), email.into(), time, offset)
+        };
         // SAFETY: what `git_signature_new` left in `out`, ours.
         unsafe { Self::adopt(r, out) }
     }
@@ -298,7 +305,7 @@ impl SigBox {
         let mut out = core::ptr::null_mut();
         // SAFETY: a live repository (`RepoPtr`'s invariant) and our
         // writable local.
-        let r = unsafe { git_signature_default(&raw mut out, repo.as_ptr()) };
+        let r = unsafe { git_signature_default(Out::from(&mut out), Some(repo.get())) };
         // SAFETY: what `git_signature_default` left in `out`, ours.
         unsafe { Self::adopt(r, out) }
     }
@@ -307,7 +314,7 @@ impl SigBox {
     pub fn dup(sig: SigRef<'_>) -> Result<SigBox> {
         let mut out = core::ptr::null_mut();
         // SAFETY: a valid signature for the call (`SigRef`) and our local.
-        let r = unsafe { git_signature_dup(Out::from(&mut out), sig.as_ptr()) };
+        let r = unsafe { git_signature_dup(Out::from(&mut out), Some(sig.get())) };
         // SAFETY: what `git_signature_dup` left in `out`, ours.
         unsafe { Self::adopt(r, out) }
     }
@@ -383,8 +390,11 @@ impl ObjBox {
         if self.kind() != crate::object::GIT_OBJECT_TAG {
             return None;
         }
-        // SAFETY: our live object, of kind tag (checked): a `git_tag`.
-        let p = unsafe { crate::tag::ffi::git_tag_target_id(self.0.as_ptr().cast()) };
+        // SAFETY: our live object, of kind tag (checked): a `git_tag`, only
+        // read once published.
+        let tag = unsafe { self.0.cast::<crate::tag::GitTag>().as_ref() };
+        // SAFETY: a live tag, as the export requires.
+        let p = unsafe { crate::tag::ffi::git_tag_target_id(Some(tag)) };
         // SAFETY: NULL or the tag's id, alive with it.
         unsafe { p.as_ref() }.copied()
     }
@@ -446,10 +456,17 @@ impl CommitBox {
         NonNull::new(out).map(CommitBox).ok_or(ErrorCode::GENERIC)
     }
 
+    /// The commit as the commit module's handle.
+    fn commit(&self) -> crate::commit::CommitRef<'_> {
+        // SAFETY: a live commit of the object table that this value holds a
+        // reference to, not freed while it is borrowed.
+        unsafe { crate::commit::CommitRef::from_ptr(self.0) }
+    }
+
     /// `git_commit_parentcount`.
     pub fn parentcount(&self) -> c_uint {
         // SAFETY: a live commit.
-        unsafe { crate::commit::ffi::git_commit_parentcount(self.0.as_ptr()) }
+        unsafe { crate::commit::ffi::git_commit_parentcount(Some(self.commit())) }
     }
 
     /// `git_commit_summary`'s value, computed here: C's caches it in the
@@ -471,7 +488,7 @@ impl CommitBox {
     /// commit.
     pub fn committer(&self) -> Option<SigRef<'_>> {
         // SAFETY: a live commit (we own it).
-        let p = unsafe { crate::commit::ffi::git_commit_committer(self.0.as_ptr()) };
+        let p = unsafe { crate::commit::ffi::git_commit_committer(Some(self.commit())) };
         // SAFETY: NULL, or a parsed commit's committer: a valid signature
         // the commit owns, never written after the parse and freed only
         // with the commit, which `&self` keeps alive for the result's

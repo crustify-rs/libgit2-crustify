@@ -40,13 +40,15 @@ pub use crate::signature::ffi::{git_signature_default, git_signature_free};
 ///
 /// # Safety
 ///
-/// As the export's.
+/// `out` is NULL or writable; `repo` NULL or a live repository; as
+/// `object_api::ffi::git_commit_lookup` requires.
 pub unsafe fn git_commit_lookup(
     out: *mut *mut GitCommit,
     repo: *mut git_repository,
     id: Option<&Oid>,
 ) -> c_int {
-    // SAFETY: the caller's contract.
+    // SAFETY: the arguments satisfy the export's contract (this
+    // function's).
     unsafe { crate::object_api::ffi::git_commit_lookup(out.cast(), repo, id) }
 }
 
@@ -54,9 +56,11 @@ pub unsafe fn git_commit_lookup(
 ///
 /// # Safety
 ///
-/// As the export's.
+/// `commit` is NULL or a commit reference the caller owns and gives up,
+/// not used after.
 pub unsafe fn git_commit_free(commit: *mut GitCommit) {
-    // SAFETY: the caller's contract.
+    // SAFETY: the arguments satisfy the export's contract (this
+    // function's).
     unsafe { crate::object_api::ffi::git_commit_free(commit.cast()) }
 }
 
@@ -64,9 +68,10 @@ pub unsafe fn git_commit_free(commit: *mut GitCommit) {
 ///
 /// # Safety
 ///
-/// As the export's.
+/// `out` is NULL or writable; `source` NULL or a live commit.
 pub unsafe fn git_commit_dup(out: *mut *mut GitCommit, source: *mut GitCommit) -> c_int {
-    // SAFETY: forwarded (the caller's contract).
+    // SAFETY: the arguments satisfy the export's contract (this
+    // function's).
     unsafe { crate::object_api::ffi::git_commit_dup(out.cast(), source.cast()) }
 }
 
@@ -74,13 +79,15 @@ pub unsafe fn git_commit_dup(out: *mut *mut GitCommit, source: *mut GitCommit) -
 ///
 /// # Safety
 ///
-/// As the export's.
+/// `out` is NULL or writable; `repo` NULL or a live repository; as
+/// `object_api::ffi::git_tree_lookup` requires.
 pub unsafe fn git_tree_lookup(
     out: *mut *mut GitTree,
     repo: *mut git_repository,
     id: Option<&Oid>,
 ) -> c_int {
-    // SAFETY: the caller's contract.
+    // SAFETY: the arguments satisfy the export's contract (this
+    // function's).
     unsafe { crate::object_api::ffi::git_tree_lookup(out.cast(), repo, id) }
 }
 
@@ -88,9 +95,11 @@ pub unsafe fn git_tree_lookup(
 ///
 /// # Safety
 ///
-/// As the export's.
+/// `tree` is NULL or a tree reference the caller owns and gives up, not
+/// used after.
 pub unsafe fn git_tree_free(tree: *mut GitTree) {
-    // SAFETY: the caller's contract.
+    // SAFETY: the arguments satisfy the export's contract (this
+    // function's).
     unsafe { crate::object_api::ffi::git_tree_free(tree.cast()) }
 }
 
@@ -98,9 +107,10 @@ pub unsafe fn git_tree_free(tree: *mut GitTree) {
 ///
 /// # Safety
 ///
-/// As the export's.
+/// `out` is NULL or writable; `source` NULL or a live tree.
 pub unsafe fn git_tree_dup(out: *mut *mut GitTree, source: *mut GitTree) -> c_int {
-    // SAFETY: forwarded (the caller's contract).
+    // SAFETY: the arguments satisfy the export's contract (this
+    // function's).
     unsafe { crate::object_api::ffi::git_tree_dup(out.cast(), source.cast()) }
 }
 

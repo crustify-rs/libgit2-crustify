@@ -37,7 +37,9 @@ use crate::oid::OidType;
 impl Graph {
     /// `times[i]` and `parents[i]` (indices) for each node.
     fn new(times: &[i64], parents: &[&[usize]]) -> Graph {
-        let w = Box::new(GitRevwalk::with_repo(ptr::null_mut()).unwrap());
+        // SAFETY: no repository: the tests' graphs are parsed and never
+        // reach C.
+        let w = Box::new(unsafe { GitRevwalk::with_repo(ptr::null_mut()) }.unwrap());
         let nodes: Vec<NodePtr> = (0..times.len())
             .map(|i| w.commit_lookup(&oid(i)).unwrap())
             .collect();
@@ -51,7 +53,9 @@ impl Graph {
             let arr = unsafe { &mut *g.w.prefix.commit_pool.get() }
                 .malloc(1)
                 .unwrap();
-            g.nodes[i].set_parsed(times[i], &ps, arr.as_ptr().cast());
+            // SAFETY: `arr` is a pool block of COMMIT_ALLOC bytes (room for
+            // the parents, asserted above), live with the walk.
+            unsafe { g.nodes[i].set_parsed(times[i], &ps, arr.as_ptr().cast()) };
         }
         g
     }
@@ -186,7 +190,9 @@ fn hide_callback() {
     let g = testrepo();
     let which = core::cell::Cell::new(3usize);
     let payload = ptr::from_ref(&which).cast_mut().cast::<c_void>();
-    g.w.set_hide_cb(g.st(), Some(hide_index), payload);
+    // SAFETY: `hide_index` with a live `Cell<usize>`, which outlives the
+    // walks.
+    unsafe { g.w.set_hide_cb(g.st(), Some(hide_index), payload) };
     // a hidden commit is left out, and what is reachable only through it
     assert_eq!(g.push(0).walk(), [0, 1, 2, 5, 4]);
     which.set(1);
@@ -200,9 +206,12 @@ fn hide_callback() {
     assert_eq!(g.push(0).walk(), [0, 3, 1, 2, 5, 4]);
     // Limited (set again), limit_list asks about every commit it keeps,
     // the pushed ones too: a hidden tip is left out, its parents walked.
-    g.w.set_hide_cb(g.st(), Some(hide_index), payload);
+    // SAFETY: `hide_index` with a live `Cell<usize>`, which outlives the
+    // walks.
+    unsafe { g.w.set_hide_cb(g.st(), Some(hide_index), payload) };
     assert_eq!(g.push(0).walk(), [3, 1, 2, 5, 4]);
-    g.w.set_hide_cb(g.st(), None, ptr::null_mut());
+    // SAFETY: no callback.
+    unsafe { g.w.set_hide_cb(g.st(), None, ptr::null_mut()) };
     assert_eq!(g.push(0).walk(), [0, 3, 1, 2, 5, 4]);
 }
 
@@ -455,7 +464,8 @@ fn user_input_is_a_c_list() {
 #[test]
 fn commit_lookup_is_stable() {
     let _g = test_support::init();
-    let w = GitRevwalk::with_repo(ptr::null_mut()).unwrap();
+    // SAFETY: as in `Graph::new`.
+    let w = unsafe { GitRevwalk::with_repo(ptr::null_mut()) }.unwrap();
     let a = w.commit_lookup(&oid(1)).unwrap();
     let b = w.commit_lookup(&oid(2)).unwrap();
     assert_ne!(a, b);
@@ -526,15 +536,19 @@ unsafe extern "C" fn reentrant_cb(_id: *const Oid, payload: *mut c_void) -> c_in
         unsafe {
             match st.what {
                 Reenter::FirstParent => {
-                    assert_eq!(ffi::git_revwalk_simplify_first_parent(st.walk), 0);
+                    assert_eq!(ffi::git_revwalk_simplify_first_parent(st.walk.as_ref()), 0);
                 }
                 Reenter::ReplaceCb => {
-                    let e = ffi::git_revwalk_add_hide_cb(st.walk, Some(second_cb), payload);
+                    let e =
+                        ffi::git_revwalk_add_hide_cb(st.walk.as_ref(), Some(second_cb), payload);
                     assert_eq!(e, 0);
                 }
-                Reenter::Reset => assert_eq!(ffi::git_revwalk_reset(st.walk), 0),
+                Reenter::Reset => assert_eq!(ffi::git_revwalk_reset(st.walk.as_ref()), 0),
                 Reenter::SortTopo => {
-                    assert_eq!(ffi::git_revwalk_sorting(st.walk, GIT_SORT_TOPOLOGICAL), 0);
+                    assert_eq!(
+                        ffi::git_revwalk_sorting(st.walk.as_ref(), GIT_SORT_TOPOLOGICAL),
+                        0
+                    );
                 }
                 Reenter::PushNode(i) => {
                     let w = &*st.walk;
@@ -557,7 +571,9 @@ fn reentrant_walk(what: Reenter, sort: c_uint) -> (Vec<usize>, usize, usize) {
         second: core::cell::Cell::new(0),
     };
     let payload = ptr::from_ref(&st).cast_mut().cast::<c_void>();
-    g.w.set_hide_cb(g.st(), Some(reentrant_cb), payload);
+    // SAFETY: `reentrant_cb` with a live `ReState`, which outlives the
+    // walk; it calls the walk's exports but does not free it.
+    unsafe { g.w.set_hide_cb(g.st(), Some(reentrant_cb), payload) };
     g.sort(sort);
     let out = g.push(0).walk();
     (out, st.calls.get(), st.second.get())

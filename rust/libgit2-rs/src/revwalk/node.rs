@@ -2,12 +2,12 @@
 //! `crate::commit_list`), for the walk.
 //!
 //! The nodes live in the walk's pool (`git_revwalk.commit_pool`) and C
-//! reads and writes them (`git_commit_list_parse`, `merge.c`, `graph.c`,
-//! `describe.c` set `parents`, `time`, `flags`, …), so the walk reaches
-//! them only through [`NodePtr`], a raw pointer whose accessors read or
-//! write one field at a time: no Rust reference to a node is ever formed.
+//! reads and writes them (`merge.c`, `graph.c`, `describe.c` set `flags`
+//! and read the rest; `commit_list.rs`'s parse fills them through
+//! [`NodePtr`] too), so the walk reaches them only through [`NodePtr`], a
+//! raw pointer whose accessors read or write one field at a time: no Rust
+//! reference to a node is ever formed.
 
-use core::ffi::c_void;
 use core::ptr::{self, NonNull};
 
 use crate::oid::Oid;
@@ -216,17 +216,109 @@ impl NodePtr {
     }
 
     /// The node as C's `void *`.
+    #[cfg(test)]
     #[inline(always)]
-    pub fn as_void(self) -> *mut c_void {
+    pub fn as_void(self) -> *mut core::ffi::c_void {
         self.0.as_ptr().cast()
+    }
+
+    /// `time = v`.
+    #[inline(always)]
+    pub fn set_time(self, v: i64) {
+        // SAFETY: as in `set_bits`.
+        unsafe { field!(self.0.as_ptr(), time: i64).write(v) }
+    }
+
+    /// `generation = v`.
+    #[inline(always)]
+    pub fn set_generation(self, v: u32) {
+        // SAFETY: as in `set_bits`.
+        unsafe { field!(self.0.as_ptr(), generation: u32).write(v) }
+    }
+
+    /// `parsed = 1`.
+    #[inline(always)]
+    pub fn set_parsed_flag(self) {
+        self.set_flag(PARSED, true);
+    }
+
+    /// The room for [`PARENTS_PER_COMMIT`] parent pointers after the node
+    /// (a node is an item of [`COMMIT_ALLOC`] bytes).
+    #[inline(always)]
+    pub fn tail_slots(self) -> *mut *mut CommitListNode {
+        self.0.as_ptr().wrapping_add(1).cast()
+    }
+
+    /// `parents = NULL; out_degree = n`: what a parse that ran out of
+    /// memory for the parents leaves (C's `out_degree` set, `parents` NULL).
+    #[inline]
+    pub fn set_no_parents(self, n: u16) {
+        let p = self.0.as_ptr();
+        // SAFETY: as in `set_bits`.
+        unsafe { field!(p, parents: *mut *mut CommitListNode).write(ptr::null_mut()) };
+        // SAFETY: as in `set_bits` (with no array, any count is valid).
+        unsafe { field!(p, out_degree: u16).write(n) };
+    }
+
+    /// `parents = arr; out_degree = n`, then `parents[i] = parent(i)` for
+    /// each `i < n`, as `git_commit_list_parse` fills a node. If `parent`
+    /// fails at `i`, the slots from `i` on are NULL (C leaves them
+    /// unwritten, and a pool block is uninitialized: `parent` reads NULL
+    /// as no parent) and the error is returned.
+    ///
+    /// # Safety
+    ///
+    /// `arr` is aligned and valid for writes and reads of `n` node pointers
+    /// for as long as the walk's pool lives (the node's
+    /// [`tail_slots`](Self::tail_slots) for `n <= 2`, or a block of the
+    /// pool), and nothing else uses it; `parent` returns nodes of the same
+    /// walk (or NULL), and does not touch this node or `arr`.
+    #[inline]
+    pub unsafe fn set_parents(
+        self,
+        arr: *mut *mut CommitListNode,
+        n: u16,
+        mut parent: impl FnMut(usize) -> Result<*mut CommitListNode>,
+    ) -> Result<()> {
+        let p = self.0.as_ptr();
+        // SAFETY: as in `set_bits`.
+        unsafe { field!(p, parents: *mut *mut CommitListNode).write(arr) };
+        // SAFETY: as in `set_bits`.
+        unsafe { field!(p, out_degree: u16).write(n) };
+        let n = usize::from(n);
+        for i in 0..n {
+            match parent(i) {
+                // SAFETY: `i < n`: a slot of `arr`, writable, used by
+                // nothing else (the contract).
+                Ok(q) => unsafe { arr.wrapping_add(i).write(q) },
+                Err(e) => {
+                    for j in i..n {
+                        // SAFETY: as above, for `j < n`.
+                        unsafe { arr.wrapping_add(j).write(ptr::null_mut()) };
+                    }
+                    return Err(e);
+                }
+            }
+        }
+        Ok(())
     }
 
     /// What `git_commit_list_parse` does to a node, for the tests' graphs:
     /// set `time`, `out_degree`, `parents` (`slots`: the node's tail for
     /// up to two parents, else an array that outlives the node) and
     /// `parsed`.
+    ///
+    /// # Safety
+    ///
+    /// For more than two parents, `slots` is writable for that many
+    /// pointers and outlives the node's use.
     #[cfg(test)]
-    pub fn set_parsed(self, time: i64, parents: &[NodePtr], slots: *mut *mut CommitListNode) {
+    pub unsafe fn set_parsed(
+        self,
+        time: i64,
+        parents: &[NodePtr],
+        slots: *mut *mut CommitListNode,
+    ) {
         let tail = self.0.as_ptr().wrapping_add(1);
         let arr = if parents.len() <= PARENTS_PER_COMMIT {
             tail.cast::<*mut CommitListNode>()
@@ -235,7 +327,7 @@ impl NodePtr {
         };
         for (i, p) in parents.iter().enumerate() {
             // SAFETY: `arr` has room for the parents (the node's tail of
-            // COMMIT_ALLOC, or the caller's array).
+            // COMMIT_ALLOC, or the caller's array: the contract).
             unsafe { arr.wrapping_add(i).write(p.as_ptr()) };
         }
         let n = self.0.as_ptr();

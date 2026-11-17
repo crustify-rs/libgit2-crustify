@@ -659,8 +659,10 @@ unsafe fn dereference(obj: NonNull<GitObject>) -> core::result::Result<NonNull<G
     match unsafe { obj.as_ref() }.raw_kind() {
         GIT_OBJECT_COMMIT => {
             let mut out = ptr::null_mut();
+            // SAFETY: a live commit of the object table (the contract).
+            let c = unsafe { crate::commit::CommitRef::from_ptr(obj.cast()) };
             // SAFETY: a live commit; a writable out-parameter.
-            let r = unsafe { p::git_commit_tree(&raw mut out, obj.as_ptr().cast()) };
+            let r = unsafe { p::git_commit_tree(Out::from(&mut out), Some(c)) };
             if r != 0 {
                 return Err(r);
             }
@@ -2559,7 +2561,8 @@ mod tests {
             )
         };
         assert_eq!(rc, 0);
-        let t = o.cast::<crate::tag::GitTag>();
+        // SAFETY: the live tag just made, only read.
+        let t = unsafe { o.cast::<crate::tag::GitTag>().as_ref() };
         // SAFETY: a live tag.
         let name = unsafe { crate::tag::ffi::git_tag_name(t) };
         // SAFETY: its NUL-terminated name.

@@ -388,7 +388,7 @@ pub(crate) fn serialize_entry(
     // SAFETY: `buf` is a valid `git_str` (a `&mut`); `committer` a valid
     // signature (`SigRef`), not in `buf`'s buffer (`buf` is exclusively
     // borrowed, the signature only shared).
-    unsafe { p::git_signature__writebuf(Some(buf), c" ".into(), committer.as_ptr()) };
+    unsafe { p::git_signature__writebuf(Some(buf), c" ".into(), Some(committer.get())) };
     buf.rtrim();
     if let Some(msg) = msg {
         let _ = buf.putc(b'\t');
@@ -582,7 +582,7 @@ fn parse_line(parser: &mut GitParseCtx<'_>, t: Option<OidType>) -> Result<Option
     let r = unsafe {
         p::git_signature__parse(
             sig_out,
-            &raw mut start,
+            Some(&mut start),
             line.as_ptr().wrapping_add(sig_len).cast(),
             CStrArg::NULL,
             0,

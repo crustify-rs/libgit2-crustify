@@ -16,7 +16,7 @@
 //! [`parse`] is `tag_parse` over a byte slice, in safe Rust (Miri-tested
 //! and difftested against the C: `rust/difftest/obj_diff.c`).
 
-use crate::util::cabi::CStrArg;
+use crate::util::cabi::{CStrArg, Out};
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::ptr::{self, NonNull};
 
@@ -101,17 +101,17 @@ pub(crate) fn alloc() -> Result<NonNull<GitTag>> {
 ///
 /// # Safety
 ///
-/// The fields are the tag's own (the type's invariant), not used again.
+/// `tag_name`, `tagger` and `message` are NULL or the tag's own
+/// `git__allocator` allocations (the type's invariant), and nothing (C
+/// holding what the accessors returned included) uses them after.
 unsafe fn free_fields(t: &mut GitTag) {
-    // SAFETY: the caller's contract.
-    unsafe {
-        signature::free_raw(t.tagger);
-    }
-    // SAFETY: as above.
-    unsafe {
-        alloc::free(t.message.cast());
-    }
-    // SAFETY: as above.
+    // SAFETY: NULL or a `git__allocator` signature block whose strings the
+    // tag owns, unused after (the contract); freed once (set to NULL below).
+    unsafe { signature::free_raw(t.tagger) };
+    // SAFETY: NULL or the tag's own `git__allocator` string, unused after
+    // (the contract), freed once.
+    unsafe { alloc::free(t.message.cast()) };
+    // SAFETY: as for `message`.
     unsafe { alloc::free(t.tag_name.cast()) };
     t.tagger = ptr::null_mut();
     t.message = ptr::null_mut();
@@ -124,11 +124,14 @@ unsafe fn free_fields(t: &mut GitTag) {
 ///
 /// `tag` is a tag of [`alloc`]'s, with no reference left.
 pub(crate) unsafe fn free(tag: NonNull<GitTag>) {
-    // SAFETY: the tag, no longer shared (the caller's contract).
+    // SAFETY: a live tag of `alloc`'s (initialized, aligned) that nothing
+    // else references any more (the contract): exclusive until freed.
     let t = unsafe { &mut *tag.as_ptr() };
-    // SAFETY: its own fields, freed once.
+    // SAFETY: its fields are its own (the type's invariant) and, the last
+    // reference being gone, nothing uses them after.
     unsafe { free_fields(t) };
-    // SAFETY: its block, freed once.
+    // SAFETY: `alloc`'s `git__allocator` block, freed once; `t` is not
+    // used after.
     unsafe { alloc::free(tag.as_ptr().cast()) };
 }
 
@@ -253,7 +256,8 @@ pub(crate) unsafe fn parse_into(
                 Ok(t) => t.unwrap_or(ptr::null_mut()),
                 Err(e) => return e.raw(),
             };
-            // SAFETY: a fresh, unshared tag.
+            // SAFETY: a live, initialized tag that only the caller holds
+            // (the contract), so exclusive for this block.
             let t = unsafe { &mut *tag.as_ptr() };
             t.target = target;
             t.kind = d.kind;
@@ -277,14 +281,16 @@ pub(crate) unsafe fn parse_odb(
     oid_type: crate::oid::git_oid_t,
 ) -> c_int {
     let c = odb_obj.cast::<object::GitCachedObj>();
-    // SAFETY: a live odb object (its `git_cached_obj` prefix); the size is
-    // read only.
+    // SAFETY: a live odb object (the contract), which starts with its
+    // `git_cached_obj`; `size` is set before it is returned and not written
+    // after. A place read, no reference.
     let size = unsafe { (*c).size };
-    // SAFETY: a live odb object.
+    // SAFETY: a live odb object (the contract).
     let d = unsafe { p::git_odb_object_data(odb_obj) };
-    // SAFETY: its buffer holds `size` bytes, unwritten, for its life.
+    // SAFETY: an odb object's buffer holds `size` bytes, unwritten while it
+    // lives, which is the whole call (the contract).
     let data = unsafe { crate::util::export::bytes(d.cast(), size) };
-    // SAFETY: a fresh tag.
+    // SAFETY: `tag` is fresh and only the caller's (the contract).
     unsafe { parse_into(tag, data, oid_type) }
 }
 
@@ -305,9 +311,10 @@ impl GitTag {
 
     /// The tagger.
     pub(crate) fn tagger(&self) -> Option<&Signature> {
-        // SAFETY: NULL or the tag's own signature block, whose strings it
-        // owns (a `Signature`'s invariant; `Signature` is transparent over
-        // `git_signature`).
+        // SAFETY: NULL or the tag's own signature block (the type's
+        // invariant), made by `Signature::into_raw`: a `git_signature` whose
+        // strings are owned and non-NULL, which `Signature` (of the same
+        // layout) is; borrowed from `self`, so live and unwritten.
         unsafe { self.tagger.cast::<Signature>().as_ref() }
     }
 
@@ -325,13 +332,15 @@ impl GitTag {
 ///
 /// # Safety
 ///
-/// `tag` is a live tag.
+/// `tag` is a live tag of the object table, not freed during the call.
 pub unsafe fn target(tag: NonNull<GitTag>) -> Result<NonNull<GitObject>> {
-    // SAFETY: a live tag, read only.
+    // SAFETY: a live tag (the contract); published tags are only read, so a
+    // shared reference for the call is valid.
     let t = unsafe { tag.as_ref() };
     // (C dereferences a NULL repository: a tag parsed from raw data.)
     git_assert!(!t.object.repo.is_null(), "t->object.repo");
-    // SAFETY: the tag's live repository.
+    // SAFETY: a non-NULL owner of a live object is a live repository (it
+    // outlives its objects).
     unsafe { object::lookup(t.object.repo, &t.target, t.kind) }
 }
 
@@ -362,31 +371,34 @@ fn as_c(s: &GitStr) -> *const c_char {
 
 /// `retrieve_tag_reference_oid`: `git_reference_name_to_id` of
 /// `refs/tags/<name>` into `oid`; the C status.
-///
-/// # Safety
-///
-/// `repo` is a live repository.
-unsafe fn retrieve_oid(
-    oid: *mut Oid,
+fn retrieve_oid(
+    oid: &mut Oid,
     refname: &mut GitStr,
-    repo: *mut git_repository,
+    repo: &git_repository,
     tag_name: &[u8],
 ) -> c_int {
     match ref_name(tag_name) {
         Ok(s) => *refname = s,
         Err(e) => return e.raw(),
     }
-    // SAFETY: a live repository, a NUL-terminated name, a writable id.
-    unsafe { p::git_reference_name_to_id(oid, repo, as_c(refname)) }
+    // SAFETY: `repo` is a live repository (a reference), which the refs
+    // module reads only through `&` (its state is interior-mutable);
+    // `as_c` is a NUL-terminated name that `refname` keeps for the call;
+    // `oid` is a writable id (a `&mut`, not otherwise used meanwhile).
+    unsafe { p::git_reference_name_to_id(oid, repo_raw(repo), as_c(refname)) }
+}
+
+/// `repo` as the `git_repository *` the refs module's exports take. They
+/// read it only through `&` (`repo_unchecked`), as the repository's state
+/// is interior-mutable, so a pointer derived from a shared reference is
+/// enough.
+fn repo_raw(repo: &git_repository) -> *mut git_repository {
+    ptr::from_ref(repo).cast_mut()
 }
 
 /// `write_tag_annotation`: write the tag object; its id.
-///
-/// # Safety
-///
-/// `repo` is a live repository; `target` a live object.
-pub unsafe fn write_annotation(
-    repo: *mut git_repository,
+pub fn write_annotation(
+    repo: &git_repository,
     tag_name: &[u8],
     target: &GitObject,
     tagger: &GitSignatureView<'_>,
@@ -412,10 +424,10 @@ pub unsafe fn write_annotation(
         );
         let _ = tag.putc(b'\n');
         tag.puts(message)?;
-        // SAFETY: a live repository.
-        let odb = unsafe { object::repo_odb_weak(repo)? };
-        // SAFETY: its live odb.
-        unsafe { crate::blob::odb_write(odb, tag.as_bytes(), GIT_OBJECT_TAG) }
+        let odb = repo.odb_weak()?;
+        // SAFETY: the repository's odb, which it keeps live while it is
+        // (and `repo` is, for the call).
+        unsafe { crate::blob::odb_write(odb.as_ptr(), tag.as_bytes(), GIT_OBJECT_TAG) }
     })();
     r.map_err(|_| git_error_set!(ErrorClass::OBJECT, "failed to create tag annotation"))
 }
@@ -451,15 +463,15 @@ impl<'a> GitSignatureView<'a> {
     ///
     /// # Safety
     ///
-    /// `sig` is a valid signature whose strings live for `'a`.
-    pub unsafe fn from_c(sig: *const GitSignature) -> GitSignatureView<'a> {
-        // SAFETY: valid, read by value.
-        let s = unsafe { sig.read() };
+    /// `s`'s `name` and `email` are NULL or NUL-terminated strings that
+    /// stay live and unwritten for `'a`.
+    pub unsafe fn from_c(s: &'a GitSignature) -> GitSignatureView<'a> {
         let b = |p: *mut c_char| -> &'a [u8] {
             if p.is_null() {
                 b"(null)"
             } else {
-                // SAFETY: NUL-terminated, live for `'a`.
+                // SAFETY: a non-NULL string of `s`: NUL-terminated, live
+                // and unwritten for `'a` (the contract).
                 unsafe { CStr::from_ptr(p) }.to_bytes()
             }
         };
@@ -477,21 +489,17 @@ pub fn name_is_valid_basic(tag_name: &[u8]) -> bool {
 }
 
 /// `git_tag_create__internal`: create `refs/tags/<name>` to `target` (or
-/// to a new annotation of it); the reference's target id.
-///
-/// # Safety
-///
-/// `repo` is a live repository; `target` a live object; `oid` writable (as
-/// C, it may be written on failure: an existing tag's target).
-pub unsafe fn create_internal(
-    oid: *mut Oid,
-    repo: *mut git_repository,
+/// to a new annotation of it); the reference's target id. As C, `oid` may
+/// be written on failure (an existing tag's target).
+pub fn create_internal(
+    oid: &mut Oid,
+    repo: &git_repository,
     tag_name: &[u8],
     target: &GitObject,
     annotation: Option<(&GitSignatureView<'_>, &[u8])>,
     allow_ref_overwrite: bool,
 ) -> Result<()> {
-    if target.repo != repo {
+    if target.repo != repo_raw(repo) {
         return Err(git_error_set!(
             ErrorClass::INVALID,
             "the given target does not belong to this repository"
@@ -505,8 +513,7 @@ pub unsafe fn create_internal(
         ));
     }
     let mut refname = GitStr::new();
-    // SAFETY: a live repository.
-    let error = unsafe { retrieve_oid(oid, &mut refname, repo, tag_name) };
+    let error = retrieve_oid(oid, &mut refname, repo, tag_name);
     if error < 0 && error != ErrorCode::NOT_FOUND.raw() {
         return Err(ErrorCode::from_raw(error).unwrap_or(ErrorCode::GENERIC));
     }
@@ -515,24 +522,31 @@ pub unsafe fn create_internal(
         let _ = git_error_set!(ErrorClass::TAG, "tag already exists");
         return Err(ErrorCode::EXISTS);
     }
-    match annotation {
-        Some((tagger, message)) => {
-            // SAFETY: the caller's contract.
-            let id = unsafe { write_annotation(repo, tag_name, target, tagger, message) }
-                .map_err(|_| ErrorCode::GENERIC)?;
-            // SAFETY: writable.
-            unsafe { oid.write(id) };
-        }
-        // SAFETY: writable.
-        None => unsafe { oid.write(*target.id()) },
-    }
+    *oid = match annotation {
+        Some((tagger, message)) => write_annotation(repo, tag_name, target, tagger, message)
+            .map_err(|_| ErrorCode::GENERIC)?,
+        None => *target.id(),
+    };
+    create_ref(repo, &refname, oid, allow_ref_overwrite)
+}
+
+/// `git_reference_create(&new_ref, repo, refname, oid, allow_ref_overwrite,
+/// NULL)`, the new reference freed.
+fn create_ref(
+    repo: &git_repository,
+    refname: &GitStr,
+    oid: &Oid,
+    allow_ref_overwrite: bool,
+) -> Result<()> {
     let mut new_ref = RefHandle(ptr::null_mut());
-    // SAFETY: a live repository, a NUL-terminated name, a valid id.
+    // SAFETY: `new_ref.0` is writable; `repo` is live (a reference, read by
+    // the refs module through `&` only); `as_c` is a NUL-terminated name
+    // that `refname` keeps for the call; `oid` is a readable id.
     let r = unsafe {
         p::git_reference_create(
             &raw mut new_ref.0,
-            repo,
-            as_c(&refname),
+            repo_raw(repo),
+            as_c(refname),
             oid,
             c_int::from(allow_ref_overwrite),
             CStrArg::NULL,
@@ -543,28 +557,24 @@ pub unsafe fn create_internal(
 
 /// `git_tag_create_from_buffer`: validate the tag in `buffer`, write it,
 /// and create its reference.
-///
-/// # Safety
-///
-/// `repo` is a live repository; `oid` writable.
-pub unsafe fn create_from_buffer(
-    oid: *mut Oid,
-    repo: *mut git_repository,
+pub fn create_from_buffer(
+    oid: &mut Oid,
+    repo: &git_repository,
     buffer: &[u8],
     allow_ref_overwrite: bool,
 ) -> Result<()> {
-    // SAFETY: a live repository.
-    let odb = unsafe { object::repo_odb_weak(repo) }.map_err(|_| ErrorCode::GENERIC)?;
+    // The repository's odb, live while it is (and `repo` is, for the call).
+    let odb = repo.odb_weak().map_err(|_| ErrorCode::GENERIC)?.as_ptr();
     // Validate the buffer (C leaks what it parsed when this fails:
     // rust/DEFECTS.md).
-    // SAFETY: as above.
-    let oid_type = unsafe { object::repo_oid_type(repo) };
+    let oid_type = repo.oid_type_raw();
     let (target, tag) = parse(buffer, oid_type).map_err(|_| ErrorCode::GENERIC)?;
     let mut refname = GitStr::new();
     let error = {
         // Validate the target.
         let mut target_obj = ptr::null_mut();
-        // SAFETY: a live odb, a valid id, a writable out.
+        // SAFETY: the repository's live odb (above), a readable id, a
+        // writable out-parameter.
         if unsafe { p::git_odb_read(&raw mut target_obj, odb, &raw const target) } < 0 {
             return Err(ErrorCode::GENERIC);
         }
@@ -572,12 +582,16 @@ pub unsafe fn create_from_buffer(
         struct Held(*mut p::git_odb_object);
         impl Drop for Held {
             fn drop(&mut self) {
-                // SAFETY: the reference this value holds.
+                // SAFETY: the odb object `git_odb_read` gave this value,
+                // freed once, here.
                 unsafe { p::git_odb_object_free(self.0) }
             }
         }
         let held = Held(target_obj);
-        // SAFETY: a live object's `git_cached_obj` prefix.
+        // SAFETY: `held.0` is the odb object read above (non-NULL on
+        // success), live until `held` drops; it starts with its
+        // `git_cached_obj`, whose `type_` is set before `git_odb_read`
+        // returns it and not written after. A place read, no reference.
         let ttype = git_object_t::from(unsafe { (*held.0.cast::<object::GitCachedObj>()).type_ });
         if tag.kind != ttype {
             let _ = git_error_set!(ErrorClass::TAG, "the type for the given target is invalid");
@@ -587,8 +601,7 @@ pub unsafe fn create_from_buffer(
             .name
             .as_ref()
             .map_or(&[][..], |n| n.as_c_str().to_bytes());
-        // SAFETY: a live repository.
-        let error = unsafe { retrieve_oid(oid, &mut refname, repo, name) };
+        let error = retrieve_oid(oid, &mut refname, repo, name);
         if error < 0 && error != ErrorCode::NOT_FOUND.raw() {
             return Err(ErrorCode::GENERIC);
         }
@@ -601,78 +614,70 @@ pub unsafe fn create_from_buffer(
     }
     // Write the buffer.
     let mut stream = ptr::null_mut();
-    // SAFETY: a live odb, a writable out.
+    // SAFETY: the repository's live odb, a writable out-parameter.
     ErrorCode::check(unsafe {
         p::git_odb_open_wstream(&raw mut stream, odb, buffer.len() as u64, GIT_OBJECT_TAG)
     })?;
-    // SAFETY: a live stream, readable data.
+    // SAFETY: the stream just opened (live until freed below); `buffer` is
+    // readable for its length.
     let mut error =
         unsafe { p::git_odb_stream_write(stream, buffer.as_ptr().cast(), buffer.len()) };
     if error == 0 {
-        // SAFETY: a live stream, a writable id.
+        // SAFETY: the live stream; `oid` a writable id (a `&mut`).
         error = unsafe { p::git_odb_stream_finalize_write(oid, stream) };
     }
-    // SAFETY: the stream, freed once.
+    // SAFETY: the stream opened above, freed once, not used after.
     unsafe { p::git_odb_stream_free(stream) };
     ErrorCode::check(error)?;
-    let mut new_ref = RefHandle(ptr::null_mut());
-    // SAFETY: a live repository, a NUL-terminated name, a valid id.
-    let r = unsafe {
-        p::git_reference_create(
-            &raw mut new_ref.0,
-            repo,
-            as_c(&refname),
-            oid,
-            c_int::from(allow_ref_overwrite),
-            CStrArg::NULL,
-        )
-    };
-    ErrorCode::check(r).map(|_| ())
+    create_ref(repo, &refname, oid, allow_ref_overwrite)
 }
 
 /// `git_tag_delete`: delete `refs/tags/<name>`.
-///
-/// # Safety
-///
-/// `repo` is a live repository.
-pub unsafe fn delete(repo: *mut git_repository, tag_name: &[u8]) -> Result<()> {
+pub fn delete(repo: &git_repository, tag_name: &[u8]) -> Result<()> {
     let refname = ref_name(tag_name).map_err(|_| ErrorCode::GENERIC)?;
     let mut r = RefHandle(ptr::null_mut());
-    // SAFETY: a live repository, a NUL-terminated name, a writable out.
-    ErrorCode::check(unsafe { p::git_reference_lookup(&raw mut r.0, repo, as_c(&refname)) })?;
-    // SAFETY: a live reference.
+    // SAFETY: `r.0` is writable; `repo` is live (a reference, read by the
+    // refs module through `&` only); `as_c` is a NUL-terminated name that
+    // `refname` keeps for the call.
+    ErrorCode::check(unsafe {
+        p::git_reference_lookup(&raw mut r.0, repo_raw(repo), as_c(&refname))
+    })?;
+    // SAFETY: the reference just looked up (non-NULL on success), live
+    // until `r` drops.
     ErrorCode::check(unsafe { p::git_reference_delete(r.0) }).map(|_| ())
 }
 
 /// `git_tag_foreach`: call `cb(refname, id)` for each tag reference; a
 /// non-zero return stops, and is returned (with
 /// `git_error_set_after_callback_function`).
-///
-/// # Safety
-///
-/// `repo` is a live repository.
-pub unsafe fn foreach(
-    repo: *mut git_repository,
-    cb: &mut dyn FnMut(&CStr, &Oid) -> c_int,
-) -> c_int {
+pub fn foreach(repo: &git_repository, cb: &mut dyn FnMut(&CStr, &Oid) -> c_int) -> c_int {
     struct Data<'a> {
-        repo: *mut git_repository,
+        repo: &'a git_repository,
         cb: &'a mut dyn FnMut(&CStr, &Oid) -> c_int,
     }
+    /// # Safety
+    ///
+    /// `payload` is the `Data` of the running `foreach`; `name` a
+    /// reference name (NUL-terminated, live for the call).
     unsafe extern "C" fn tags_cb(name: *const c_char, payload: *mut c_void) -> c_int {
         crate::util::export::barrier(|| {
-            // SAFETY: `payload` is the `Data` below, alive and borrowed by
-            // nothing else during the iteration.
+            // SAFETY: `payload` is `foreach`'s `data`, which lives on its
+            // stack for the whole iteration and is used by nothing else
+            // while the refs module runs this callback (it only passes the
+            // pointer on).
             let d = unsafe { &mut *payload.cast::<Data<'_>>() };
-            // SAFETY: a reference name, NUL-terminated.
+            // SAFETY: a reference name the refs module passes: NUL-terminated
+            // and unchanged during the call (this function's contract).
             let name = unsafe { CStr::from_ptr(name) };
             if crate::util::util::prefixcmp(name.to_bytes(), GIT_REFS_TAGS_DIR) != 0 {
                 return 0; // not a tag
             }
             let mut oid = Oid::NONE;
-            // SAFETY: a live repository, a NUL-terminated name, a writable id.
-            let mut error =
-                unsafe { p::git_reference_name_to_id(&raw mut oid, d.repo, name.as_ptr()) };
+            // SAFETY: `oid` is a writable local; `d.repo` is live (a
+            // reference, read through `&` only); `name` is NUL-terminated.
+            let mut error = unsafe {
+                p::git_reference_name_to_id(&raw mut oid, repo_raw(d.repo), name.as_ptr())
+            };
             if error == 0 {
                 error = (d.cb)(name, &oid);
                 if error != 0 {
@@ -683,21 +688,22 @@ pub unsafe fn foreach(
         })
     }
     let mut data = Data { repo, cb };
-    // SAFETY: a live repository; the callback and its payload live for the
-    // call.
+    // SAFETY: `repo` is live (a reference, read through `&` only);
+    // `tags_cb` is sound with `data`'s address as its payload (its
+    // contract), and `data` outlives the call.
     unsafe {
-        p::git_reference_foreach_name(repo, tags_cb, crate::util::export::payload(&raw mut data))
+        p::git_reference_foreach_name(
+            repo_raw(repo),
+            tags_cb,
+            crate::util::export::payload(&raw mut data),
+        )
     }
 }
 
 /// `git_tag_list_match`: the names of the tags matching `pattern` (all,
 /// when empty), as `git_strarray`'s `strings` and `count`. Failures give an
 /// empty list (C returns 0 anyway).
-///
-/// # Safety
-///
-/// `repo` is a live repository.
-pub unsafe fn list_match(repo: *mut git_repository, pattern: &[u8]) -> (*mut *mut c_char, usize) {
+pub fn list_match(repo: &git_repository, pattern: &[u8]) -> (*mut *mut c_char, usize) {
     let Ok(mut taglist) = GitVector::with_capacity(8, None) else {
         return (ptr::null_mut(), 0);
     };
@@ -726,8 +732,7 @@ pub unsafe fn list_match(repo: *mut git_repository, pattern: &[u8]) -> (*mut *mu
         }
         0
     };
-    // SAFETY: a live repository.
-    let error = unsafe { foreach(repo, &mut cb) };
+    let error = foreach(repo, &mut cb);
     if error < 0 {
         // (C leaks the names here: rust/DEFECTS.md.)
         for s in taglist.iter() {
@@ -858,7 +863,8 @@ impl<'repo> Tag<'repo> {
 
     /// `git_tag_target`.
     pub fn target(&self) -> core::result::Result<Object<'repo>, Error> {
-        // SAFETY: a live tag of a repository.
+        // SAFETY: the live tag this value holds a reference to (its type
+        // checked when it was made), so not freed during the call.
         let o = unsafe { target(self.0.as_ptr().cast())? };
         // SAFETY: an object of the same repository.
         Ok(unsafe { self.0.sibling(o) })
@@ -884,18 +890,14 @@ impl<'repo> Tag<'repo> {
         let v = GitSignatureView::of_ref(&tagger.into());
         no_nul(v.name)?;
         no_nul(v.email)?;
-        // SAFETY: a live repository and object (`create_internal` checks
-        // that the object is the repository's).
-        unsafe {
-            create_internal(
-                &raw mut oid,
-                crate::object::repo_ptr(repo),
-                no_nul(name)?,
-                target.header(),
-                Some((&v, no_nul(message)?)),
-                force,
-            )?
-        };
+        create_internal(
+            &mut oid,
+            repo.raw(),
+            no_nul(name)?,
+            target.header(),
+            Some((&v, no_nul(message)?)),
+            force,
+        )?;
         Ok(oid)
     }
 
@@ -911,16 +913,13 @@ impl<'repo> Tag<'repo> {
         let v = GitSignatureView::of_ref(&tagger.into());
         no_nul(v.name)?;
         no_nul(v.email)?;
-        // SAFETY: a live repository and object.
-        Ok(unsafe {
-            write_annotation(
-                crate::object::repo_ptr(repo),
-                no_nul(name)?,
-                target.header(),
-                &v,
-                no_nul(message)?,
-            )?
-        })
+        Ok(write_annotation(
+            repo.raw(),
+            no_nul(name)?,
+            target.header(),
+            &v,
+            no_nul(message)?,
+        )?)
     }
 
     /// `git_tag_create_lightweight`: a reference `refs/tags/<name>` to
@@ -933,17 +932,14 @@ impl<'repo> Tag<'repo> {
     ) -> core::result::Result<Oid, Error> {
         let name = name.as_ref();
         let mut oid = Oid::NONE;
-        // SAFETY: a live repository and object.
-        unsafe {
-            create_internal(
-                &raw mut oid,
-                crate::object::repo_ptr(repo),
-                no_nul(name)?,
-                target.header(),
-                None,
-                force,
-            )?
-        };
+        create_internal(
+            &mut oid,
+            repo.raw(),
+            no_nul(name)?,
+            target.header(),
+            None,
+            force,
+        )?;
         Ok(oid)
     }
 
@@ -955,23 +951,14 @@ impl<'repo> Tag<'repo> {
     ) -> core::result::Result<Oid, Error> {
         let buffer = buffer.as_ref();
         let mut oid = Oid::NONE;
-        // SAFETY: a live repository.
-        unsafe {
-            create_from_buffer(
-                &raw mut oid,
-                crate::object::repo_ptr(repo),
-                no_nul(buffer)?,
-                force,
-            )?
-        };
+        create_from_buffer(&mut oid, repo.raw(), no_nul(buffer)?, force)?;
         Ok(oid)
     }
 
     /// `git_tag_delete`.
     pub fn delete(repo: &Repository, name: impl AsRef<[u8]>) -> core::result::Result<(), Error> {
         let name = name.as_ref();
-        // SAFETY: a live repository.
-        let _: () = unsafe { delete(crate::object::repo_ptr(repo), no_nul(name)?)? };
+        delete(repo.raw(), no_nul(name)?)?;
         Ok(())
     }
 
@@ -981,8 +968,7 @@ impl<'repo> Tag<'repo> {
         pattern: Option<&[u8]>,
     ) -> core::result::Result<Vec<Vec<u8>>, Error> {
         let pattern = no_nul(pattern.unwrap_or(b""))?;
-        // SAFETY: a live repository.
-        let (strings, count) = unsafe { list_match(crate::object::repo_ptr(repo), pattern) };
+        let (strings, count) = list_match(repo.raw(), pattern);
         // SAFETY: the array and strings `list_match` made, owned here.
         let arr = unsafe {
             crate::strarray::StrArray::from_raw(crate::strarray::GitStrArray { strings, count })
@@ -1015,8 +1001,7 @@ impl<'repo> Tag<'repo> {
                 }
             }
         };
-        // SAFETY: a live repository.
-        let r = unsafe { foreach(crate::object::repo_ptr(repo), &mut cb) };
+        let r = foreach(repo.raw(), &mut cb);
         // A panic in `f` resumes here, after the walk let go of its state
         // (S-6d), as the other closures of the API do.
         if let Some(p) = panic {
@@ -1058,7 +1043,7 @@ pub mod ffi {
     use crate::object::GitObject;
     use crate::strarray::GitStrArray;
     use crate::util::cabi::CStrArg;
-    use crate::util::export::{barrier, cstr_bytes, status};
+    use crate::util::export::{barrier, status};
 
     /// `git_tag__free`.
     ///
@@ -1069,7 +1054,9 @@ pub mod ffi {
     pub unsafe extern "C" fn git_tag__free(tag: *mut c_void) {
         barrier(|| {
             if let Some(t) = NonNull::new(tag.cast::<GitTag>()) {
-                // SAFETY: the caller's contract.
+                // SAFETY: a tag (the object table allocates them with
+                // `alloc`) whose last reference is gone (this export's
+                // contract).
                 unsafe { free(t) }
             }
         })
@@ -1079,26 +1066,24 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `target` is writable; `t` NULL or a live tag.
+    /// `target` is NULL or writable; `t` is NULL or a live tag of the
+    /// object table (its repository live).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tag_target(
-        target: *mut *mut GitObject,
-        t: *const GitTag,
+        mut target: Out<'_, *mut GitObject>,
+        t: Option<&GitTag>,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!t.is_null(), "t", -1);
-            // SAFETY: non-null (checked above).
-            let nn = unsafe { NonNull::new_unchecked(t.cast_mut()) };
+            let t = git_arg!(t, "t", -1);
             // As C's `git_object_lookup`: `repo` (C dereferences a NULL one
             // first), then the out-parameter.
-            // SAFETY: a live tag, read only.
-            git_assert_arg!(!unsafe { nn.as_ref() }.object.repo.is_null(), "repo", -1);
+            git_assert_arg!(!t.object.repo.is_null(), "repo", -1);
             git_assert_arg!(!target.is_null(), "object_out", -1);
-            // SAFETY: a live tag.
-            match unsafe { super::target(nn) } {
+            // SAFETY: a live tag whose repository is live (this export's
+            // contract).
+            match unsafe { super::target(NonNull::from(t)) } {
                 Ok(o) => {
-                    // SAFETY: writable.
-                    unsafe { target.write(o.as_ptr()) };
+                    target.write(o.as_ptr());
                     0
                 }
                 Err(e) => e.raw(),
@@ -1112,10 +1097,9 @@ pub mod ffi {
     ///
     /// `t` is NULL or a live tag.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tag_target_id(t: *const GitTag) -> *const Oid {
-        git_assert_arg!(!t.is_null(), "t", ptr::null());
-        // SAFETY: a field of a live tag.
-        unsafe { &raw const (*t).target }
+    pub unsafe extern "C" fn git_tag_target_id(t: Option<&GitTag>) -> *const Oid {
+        let t = git_arg!(t, "t", ptr::null());
+        &raw const t.target
     }
 
     /// `git_tag_target_type`.
@@ -1124,10 +1108,8 @@ pub mod ffi {
     ///
     /// `t` is NULL or a live tag.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tag_target_type(t: *const GitTag) -> git_object_t {
-        git_assert_arg!(!t.is_null(), "t", GIT_OBJECT_INVALID);
-        // SAFETY: a live tag, read only.
-        unsafe { (*t).kind }
+    pub unsafe extern "C" fn git_tag_target_type(t: Option<&GitTag>) -> git_object_t {
+        git_arg!(t, "t", GIT_OBJECT_INVALID).kind
     }
 
     /// `git_tag_name`.
@@ -1136,10 +1118,8 @@ pub mod ffi {
     ///
     /// `t` is NULL or a live tag.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tag_name(t: *const GitTag) -> *const c_char {
-        git_assert_arg!(!t.is_null(), "t", ptr::null());
-        // SAFETY: a live tag, read only.
-        unsafe { (*t).tag_name }
+    pub unsafe extern "C" fn git_tag_name(t: Option<&GitTag>) -> *const c_char {
+        git_arg!(t, "t", ptr::null()).tag_name
     }
 
     /// `git_tag_tagger` (NULL for a NULL tag; C crashes).
@@ -1148,12 +1128,8 @@ pub mod ffi {
     ///
     /// `t` is NULL or a live tag.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tag_tagger(t: *const GitTag) -> *const GitSignature {
-        if t.is_null() {
-            return ptr::null();
-        }
-        // SAFETY: a live tag, read only.
-        unsafe { (*t).tagger }
+    pub unsafe extern "C" fn git_tag_tagger(t: Option<&GitTag>) -> *const GitSignature {
+        t.map_or(ptr::null(), |t| t.tagger)
     }
 
     /// `git_tag_message`.
@@ -1162,75 +1138,49 @@ pub mod ffi {
     ///
     /// `t` is NULL or a live tag.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tag_message(t: *const GitTag) -> *const c_char {
-        git_assert_arg!(!t.is_null(), "t", ptr::null());
-        // SAFETY: a live tag, read only.
-        unsafe { (*t).message }
-    }
-
-    /// The arguments common to the create functions.
-    ///
-    /// # Safety
-    ///
-    /// `target` is NULL or a live object.
-    unsafe fn target_ref<'a>(target: *const GitObject) -> Option<&'a GitObject> {
-        // SAFETY: NULL or live (read only once published).
-        unsafe { target.as_ref() }
-    }
-
-    fn write_id(oid: *mut Oid, local: &Oid) {
-        if !oid.is_null() {
-            // SAFETY: the exports' callers pass a writable (or NULL) id.
-            unsafe { oid.write(*local) };
-        }
+    pub unsafe extern "C" fn git_tag_message(t: Option<&GitTag>) -> *const c_char {
+        git_arg!(t, "t", ptr::null()).message
     }
 
     /// `git_tag_create`.
     ///
     /// # Safety
     ///
-    /// `oid` is writable; `repo` NULL or live; `tag_name` and `message`
-    /// NULL or NUL-terminated; `target` NULL or a live object; `tagger`
-    /// NULL or a valid signature.
+    /// `oid` is NULL or a writable id that no other argument points into;
+    /// `repo` NULL or live; `tag_name` and `message` NULL or NUL-terminated;
+    /// `target` NULL or a live object; `tagger` NULL or a valid signature
+    /// (NULL or NUL-terminated strings). All live and unwritten by others
+    /// during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tag_create(
-        oid: *mut Oid,
-        repo: *mut git_repository,
+        oid: Option<&mut Oid>,
+        repo: Option<&git_repository>,
         tag_name: CStrArg<'_>,
-        target: *const GitObject,
-        tagger: *const GitSignature,
-        message: *const c_char,
+        target: Option<&GitObject>,
+        tagger: Option<&GitSignature>,
+        message: CStrArg<'_>,
         allow_ref_overwrite: c_int,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!repo.is_null(), "repo", -1);
+            let repo = git_arg!(repo, "repo", -1);
             let tag_name = git_arg!(tag_name.get(), "tag_name", -1);
-            git_assert_arg!(!target.is_null(), "target", -1);
-            git_assert_arg!(
-                !tagger.is_null() && !message.is_null(),
-                "!create_tag_annotation || (tagger && message)",
-                -1
-            );
-            let name = tag_name.to_bytes();
-            // SAFETY: as above.
-            let msg = unsafe { cstr_bytes(message) };
-            // SAFETY: a live object.
-            let t = unsafe { target_ref(target) };
-            // SAFETY: a valid signature, live for the call.
+            let target = git_arg!(target, "target", -1);
+            let (Some(tagger), Some(message)) = (tagger, message.get()) else {
+                let _ = errors::assert_arg_failed("!create_tag_annotation || (tagger && message)");
+                return -1;
+            };
+            // SAFETY: `tagger`'s strings are NULL or NUL-terminated, live
+            // and unwritten for the call (this export's contract).
             let v = unsafe { GitSignatureView::from_c(tagger) };
-            let Some(t) = t else { return -1 };
-            git_assert_arg!(!oid.is_null(), "oid", -1);
-            // SAFETY: a live repository and object; `oid` writable.
-            status(unsafe {
-                create_internal(
-                    oid,
-                    repo,
-                    name,
-                    t,
-                    Some((&v, msg)),
-                    allow_ref_overwrite != 0,
-                )
-            })
+            let oid = git_arg!(oid, "oid", -1);
+            status(create_internal(
+                oid,
+                repo,
+                tag_name.to_bytes(),
+                target,
+                Some((&v, message.to_bytes())),
+                allow_ref_overwrite != 0,
+            ))
         })
     }
 
@@ -1238,32 +1188,28 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// As [`git_tag_create`].
+    /// `oid` is NULL or writable; the rest as [`git_tag_create`]'s.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tag_annotation_create(
-        oid: *mut Oid,
-        repo: *mut git_repository,
+        mut oid: Out<'_, Oid>,
+        repo: Option<&git_repository>,
         tag_name: CStrArg<'_>,
         target: Option<&GitObject>,
-        tagger: *const GitSignature,
+        tagger: Option<&GitSignature>,
         message: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!oid.is_null(), "oid", -1);
-            git_assert_arg!(!repo.is_null(), "repo", -1);
+            let repo = git_arg!(repo, "repo", -1);
             let tag_name = git_arg!(tag_name.get(), "tag_name", -1);
             let target = git_arg!(target, "target", -1);
-            git_assert_arg!(!tagger.is_null(), "tagger", -1);
+            let tagger = git_arg!(tagger, "tagger", -1);
             let message = git_arg!(message.get(), "message", -1);
-            let name = tag_name.to_bytes();
-            let msg = message.to_bytes();
-            let t = target;
-            // SAFETY: a valid signature.
+            // SAFETY: as in `git_tag_create`.
             let v = unsafe { GitSignatureView::from_c(tagger) };
-            // SAFETY: a live repository and object.
-            match unsafe { write_annotation(repo, name, t, &v, msg) } {
+            match write_annotation(repo, tag_name.to_bytes(), target, &v, message.to_bytes()) {
                 Ok(id) => {
-                    write_id(oid, &id);
+                    oid.write(id);
                     0
                 }
                 Err(e) => e.raw(),
@@ -1278,21 +1224,25 @@ pub mod ffi {
     /// As [`git_tag_create`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tag_create_lightweight(
-        oid: *mut Oid,
-        repo: *mut git_repository,
+        oid: Option<&mut Oid>,
+        repo: Option<&git_repository>,
         tag_name: CStrArg<'_>,
         target: Option<&GitObject>,
         allow_ref_overwrite: c_int,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!repo.is_null(), "repo", -1);
+            let repo = git_arg!(repo, "repo", -1);
             let tag_name = git_arg!(tag_name.get(), "tag_name", -1);
             let target = git_arg!(target, "target", -1);
-            let name = tag_name.to_bytes();
-            let t = target;
-            git_assert_arg!(!oid.is_null(), "oid", -1);
-            // SAFETY: a live repository and object; `oid` writable.
-            status(unsafe { create_internal(oid, repo, name, t, None, allow_ref_overwrite != 0) })
+            let oid = git_arg!(oid, "oid", -1);
+            status(create_internal(
+                oid,
+                repo,
+                tag_name.to_bytes(),
+                target,
+                None,
+                allow_ref_overwrite != 0,
+            ))
         })
     }
 
@@ -1300,21 +1250,27 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `oid` is NULL or writable; `repo` a live repository; `buffer` NULL
-    /// or NUL-terminated.
+    /// `oid` is NULL or a writable id that `buffer` does not overlap;
+    /// `repo` NULL or a live repository; `buffer` NULL or NUL-terminated,
+    /// unwritten during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tag_create_from_buffer(
-        oid: *mut Oid,
-        repo: *mut git_repository,
+        oid: Option<&mut Oid>,
+        repo: Option<&git_repository>,
         buffer: CStrArg<'_>,
         allow_ref_overwrite: c_int,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!oid.is_null(), "oid", -1);
+            let oid = git_arg!(oid, "oid", -1);
             let buffer = git_arg!(buffer.get(), "buffer", -1);
-            let b = buffer.to_bytes();
-            // SAFETY: a live repository; `oid` writable.
-            status(unsafe { create_from_buffer(oid, repo, b, allow_ref_overwrite != 0) })
+            // `git_repository_odb__weakptr`'s check (the C's first use).
+            let repo = git_arg!(repo, "repo", -1);
+            status(create_from_buffer(
+                oid,
+                repo,
+                buffer.to_bytes(),
+                allow_ref_overwrite != 0,
+            ))
         })
     }
 
@@ -1322,16 +1278,18 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `repo` is a live repository; `tag_name` NUL-terminated.
+    /// `repo` is NULL or a live repository; `tag_name` NULL or
+    /// NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tag_delete(
-        repo: *mut git_repository,
+        repo: Option<&git_repository>,
         tag_name: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             let name = tag_name.to_bytes();
-            // SAFETY: a live repository.
-            status(unsafe { delete(repo, name) })
+            // `git_reference_lookup`'s check (the C's first use).
+            let repo = git_arg!(repo, "repo", -1);
+            status(delete(repo, name))
         })
     }
 
@@ -1344,26 +1302,26 @@ pub mod ffi {
     /// # Safety
     ///
     /// `repo` is NULL or live; `cb` NULL or a function sound to call with
-    /// `cb_data`.
+    /// a reference name, a writable id and `cb_data`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tag_foreach(
-        repo: *mut git_repository,
+        repo: Option<&git_repository>,
         cb: GitTagForeachCb,
         cb_data: *mut c_void,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!repo.is_null(), "repo", -1);
+            let repo = git_arg!(repo, "repo", -1);
             let Some(cb) = cb else {
                 return errors::assert_arg_failed("cb").raw();
             };
             let mut f = |name: &CStr, oid: &Oid| -> c_int {
                 let mut o = *oid;
-                // SAFETY: the user's callback, with its payload, a
-                // NUL-terminated name and a writable id (a copy).
+                // SAFETY: the user's callback, sound with `cb_data` (this
+                // export's contract), given a NUL-terminated name and a
+                // writable id (a copy) that live for the call.
                 unsafe { cb(name.as_ptr(), &raw mut o, cb_data) }
             };
-            // SAFETY: a live repository.
-            unsafe { foreach(repo, &mut f) }
+            foreach(repo, &mut f)
         })
     }
 
@@ -1375,19 +1333,16 @@ pub mod ffi {
     /// `repo` NULL or live.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tag_list_match(
-        tag_names: *mut GitStrArray,
+        mut tag_names: Out<'_, GitStrArray>,
         pattern: CStrArg<'_>,
-        repo: *mut git_repository,
+        repo: Option<&git_repository>,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!tag_names.is_null(), "tag_names", -1);
-            git_assert_arg!(!repo.is_null(), "repo", -1);
+            let repo = git_arg!(repo, "repo", -1);
             let pattern = git_arg!(pattern.get(), "pattern", -1);
-            let pattern = pattern.to_bytes();
-            // SAFETY: a live repository.
-            let (strings, count) = unsafe { list_match(repo, pattern) };
-            // SAFETY: writable.
-            unsafe { tag_names.write(GitStrArray { strings, count }) };
+            let (strings, count) = list_match(repo, pattern.to_bytes());
+            tag_names.write(GitStrArray { strings, count });
             0
         })
     }
@@ -1399,10 +1354,11 @@ pub mod ffi {
     /// As [`git_tag_list_match`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tag_list(
-        tag_names: *mut GitStrArray,
-        repo: *mut git_repository,
+        tag_names: Out<'_, GitStrArray>,
+        repo: Option<&git_repository>,
     ) -> c_int {
-        // SAFETY: forwarded.
+        // SAFETY: the arguments are this export's, whose contract is
+        // `git_tag_list_match`'s; the pattern is a static string.
         unsafe { git_tag_list_match(tag_names, c"".into(), repo) }
     }
 
@@ -1410,13 +1366,15 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// As `git_object_peel`.
+    /// As `git_object_peel`'s: `tag_target` NULL or writable, `tag` NULL
+    /// or a live tag (an object).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tag_peel(
         tag_target: *mut *mut GitObject,
         tag: *const GitTag,
     ) -> c_int {
-        // SAFETY: forwarded.
+        // SAFETY: this export's arguments, under `git_object_peel`'s
+        // contract (a tag is an object: it starts with its header).
         unsafe { crate::object::ffi::git_object_peel(tag_target, tag.cast(), GIT_OBJECT_ANY) }
     }
 
@@ -1426,16 +1384,17 @@ pub mod ffi {
     ///
     /// `valid` is NULL or writable; `name` NULL or NUL-terminated.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tag_name_is_valid(valid: *mut c_int, name: CStrArg<'_>) -> c_int {
+    pub unsafe extern "C" fn git_tag_name_is_valid(
+        mut valid: Out<'_, c_int>,
+        name: CStrArg<'_>,
+    ) -> c_int {
         barrier(|| {
             git_assert!(!valid.is_null(), "valid", -1);
-            // SAFETY: writable.
-            unsafe { valid.write(0) };
+            valid.write(0);
             let name = name.get().map(CStr::to_bytes);
             match name_is_valid(name) {
                 Ok(v) => {
-                    // SAFETY: writable.
-                    unsafe { valid.write(c_int::from(v)) };
+                    valid.write(c_int::from(v));
                     0
                 }
                 Err(e) => e.raw(),
@@ -1546,6 +1505,28 @@ This is a test tag\n";
         assert!(name_is_valid_basic(b""));
     }
 
+    /// NULL arguments that C checks (or reaches through a checking callee)
+    /// fail with C's `invalid argument` error, before anything is read.
+    #[test]
+    fn null_arguments_are_invalid() {
+        let _g = test_support::init();
+        let mut oid = Oid::NONE;
+        // SAFETY: a writable id; NULL repository; a string.
+        let r = unsafe { ffi::git_tag_create_from_buffer(Some(&mut oid), None, c"x".into(), 0) };
+        assert_eq!(r, -1);
+        assert_eq!(errors::last_message().unwrap(), b"invalid argument: 'repo'");
+        // SAFETY: as above.
+        let r = unsafe { ffi::git_tag_delete(None, c"x".into()) };
+        assert_eq!(r, -1);
+        assert_eq!(errors::last_message().unwrap(), b"invalid argument: 'repo'");
+        // SAFETY: NULL tag.
+        assert!(unsafe { ffi::git_tag_target_id(None) }.is_null());
+        assert_eq!(errors::last_message().unwrap(), b"invalid argument: 't'");
+        // SAFETY: NULL out-parameter.
+        let r = unsafe { ffi::git_tag_name_is_valid(Out::null(), c"v1".into()) };
+        assert_eq!(r, -1);
+    }
+
     #[test]
     fn raw_tag_object() {
         let _g = test_support::init();
@@ -1556,7 +1537,7 @@ This is a test tag\n";
         let r = unsafe { t.as_ref() };
         assert_eq!(r.name(), b"v1.0");
         // SAFETY: a live tag, read by the export as C would.
-        let tagger = unsafe { ffi::git_tag_tagger(t.as_ptr()) };
+        let tagger = unsafe { ffi::git_tag_tagger(Some(r)) };
         // SAFETY: the tagger lives as long as the tag.
         let email = unsafe { (*tagger).email };
         // SAFETY: a NUL-terminated string of the tagger.

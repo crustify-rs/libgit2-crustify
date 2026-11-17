@@ -3,7 +3,7 @@
 //! and pathspec (C that stays, `sys::{revparse, diff, pathspec}`), as
 //! small owners and safe functions over them.
 
-use crate::util::cabi::CStrArg;
+use crate::util::cabi::{CStrArg, Out};
 use core::ffi::{CStr, c_int, c_uint};
 use core::ptr::{self, NonNull};
 
@@ -40,11 +40,11 @@ impl Repo {
 /// `git_repository_odb`.
 pub fn repository_odb(repo: Repo) -> Result<*mut p::git_odb> {
     let mut out = ptr::null_mut();
-    // SAFETY: `repo` is NULL or a live repository (this function's contract),
+    // SAFETY: `repo.0` is NULL or a live repository (`Repo`'s invariant),
     // only read through `&` (its state is interior-mutable).
     let repo_ref = unsafe { repo.0.as_ref() };
-    // SAFETY: `out` is writable; the repository is NULL (which C rejects
-    // with an error) or live (the invariant).
+    // SAFETY: `out` is a writable local; the repository is NULL (which the
+    // export rejects with an error) or live.
     ErrorCode::check(unsafe {
         crate::repository::ffi::git_repository_odb(&raw mut out, repo_ref)
     })?;
@@ -57,23 +57,18 @@ pub fn repository_odb(repo: Repo) -> Result<*mut p::git_odb> {
 ///
 /// `odb` is NULL or a reference the caller owns, not used after.
 pub unsafe fn odb_free(odb: *mut p::git_odb) {
-    // SAFETY: the caller's contract.
+    // SAFETY: NULL or an odb reference the caller owns and gives up, not
+    // used after (the contract): what `git_odb_free` releases.
     unsafe { crate::odb::ffi::git_odb_free(odb) }
 }
 
 /// `git_commit_list_parse` of a node of `walk` (it is not parsed yet: the
-/// Rust checks `parsed` first, as the C does on entry).
+/// Rust checks `parsed` first, as the C does on entry). It writes the node
+/// (through `NodePtr`) and allocates from the pool and the map (in their
+/// `UnsafeCell`s, borrowed only within the pool and map calls); it does
+/// not touch the walk's state.
 pub fn commit_list_parse(walk: &GitRevwalk, node: NodePtr) -> Result<()> {
-    let w: *mut crate::commit::deps::git_revwalk = ptr::from_ref(walk).cast_mut().cast();
-    // SAFETY: a live walk and one of its nodes. C reads `repo` and `odb`,
-    // writes the node (no Rust reference covers it) and the pool, and calls
-    // `git_revwalk__commit_lookup`, which reaches `commits` and the pool:
-    // both in `UnsafeCell`s, and no Rust reference to them lives across
-    // this call. It does not touch the Rust state.
-    ErrorCode::check(unsafe {
-        crate::commit_list::ffi::git_commit_list_parse(w, node.as_void().cast())
-    })?;
-    Ok(())
+    crate::commit_list::parse(walk, node)
 }
 
 /// An owned `git_object *`.
@@ -314,31 +309,35 @@ impl Drop for Commit {
 impl Commit {
     fn lookup(repo: Repo, id: &Oid) -> Option<Commit> {
         let mut out = ptr::null_mut();
-        // SAFETY: `out` writable; `repo` live; `id` readable.
+        // SAFETY: `out` writable; `repo` NULL or live; `id` readable.
         if unsafe { p::git_commit_lookup(&raw mut out, repo.0, Some(id)) } != 0 {
             return None;
         }
         NonNull::new(out).map(Commit)
     }
 
+    /// The commit module's handle.
+    fn get(&self) -> crate::commit::CommitRef<'_> {
+        // SAFETY: a live commit of the object table that this value holds a
+        // reference to, not freed while it is borrowed.
+        unsafe { crate::commit::CommitRef::from_ptr(self.0) }
+    }
+
     fn tree(&self) -> Option<Tree> {
         let mut out = ptr::null_mut();
-        // SAFETY: a live commit; `out` writable.
-        if unsafe { crate::commit::ffi::git_commit_tree(&raw mut out, self.0.as_ptr()) } != 0 {
+        if crate::commit::ffi::commit_tree(Out::from(&mut out), self.get()) != 0 {
             return None;
         }
         NonNull::new(out).map(Tree)
     }
 
     fn parentcount(&self) -> c_uint {
-        // SAFETY: a live commit.
-        unsafe { crate::commit::ffi::git_commit_parentcount(self.0.as_ptr()) }
+        self.get().parent_ids().len() as c_uint
     }
 
     fn parent(&self, n: c_uint) -> Option<Commit> {
         let mut out = ptr::null_mut();
-        // SAFETY: a live commit; `out` writable.
-        if unsafe { crate::commit::ffi::git_commit_parent(&raw mut out, self.0.as_ptr(), n) } != 0 {
+        if crate::commit::ffi::commit_parent(Out::from(&mut out), self.get(), n) != 0 {
             return None;
         }
         NonNull::new(out).map(Commit)

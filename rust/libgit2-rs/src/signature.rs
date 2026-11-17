@@ -169,7 +169,8 @@ impl<'a> SignatureRef<'a> {
             if p.is_null() {
                 b""
             } else {
-                // SAFETY: the caller's contract.
+                // SAFETY: a non-NULL string of `s`: NUL-terminated, live and
+                // unwritten for `'a` (the contract).
                 unsafe { CStr::from_ptr(p) }.to_bytes()
             }
         };
@@ -235,38 +236,39 @@ impl fmt::Display for SignatureRef<'_> {
     }
 }
 
-/// An owned signature (`git_signature`), freed on drop.
+/// An owned signature (`git_signature`): its strings are owned
+/// `git__allocator` strings (never NULL), freed on drop.
 ///
-/// Invariant: `name` and `email` are NUL-terminated `git__allocator`
-/// strings owned by the value (never NULL), written by nothing else.
-#[repr(transparent)]
-pub struct Signature(GitSignature);
-
-// SAFETY: the strings belong to the value alone; `git__allocator` frees
-// from any thread.
-unsafe impl Send for Signature {}
-// SAFETY: `&Signature` only reads.
-unsafe impl Sync for Signature {}
-
-impl Drop for Signature {
-    fn drop(&mut self) {
-        // SAFETY: by the invariant, the value's own allocations, freed once.
-        unsafe {
-            alloc::free(self.0.name.cast());
-        }
-        // SAFETY: as above.
-        unsafe { alloc::free(self.0.email.cast()) };
-    }
+/// It has `git_signature`'s layout (`GitCStr` is a non-null `char *`;
+/// asserted below), so a `git_signature` whose strings are a signature's
+/// own can be read as one in place (a tag's tagger), and
+/// [`as_raw`](Self::as_raw) is a `const git_signature *` for C. Its fields
+/// are `Send` and `Sync` (an owned string of an allocator that frees from
+/// any thread, a plain time), so the value is too.
+#[repr(C)]
+pub struct Signature {
+    name: GitCStr,
+    email: GitCStr,
+    when: GitTime,
 }
+
+const _: () = {
+    assert!(size_of::<Signature>() == size_of::<GitSignature>());
+    assert!(align_of::<Signature>() == align_of::<GitSignature>());
+    assert!(core::mem::offset_of!(Signature, name) == core::mem::offset_of!(GitSignature, name));
+    assert!(core::mem::offset_of!(Signature, email) == core::mem::offset_of!(GitSignature, email));
+    assert!(core::mem::offset_of!(Signature, when) == core::mem::offset_of!(GitSignature, when));
+    assert!(size_of::<GitCStr>() == size_of::<*mut c_char>());
+};
+const _: () = {
+    const fn send_sync<T: Send + Sync>() {}
+    send_sync::<Signature>();
+};
 
 impl Signature {
     /// Build from owned strings.
     fn from_parts(name: GitCStr, email: GitCStr, when: GitTime) -> Signature {
-        Signature(GitSignature {
-            name: name.into_raw(),
-            email: email.into_raw(),
-            when,
-        })
+        Signature { name, email, when }
     }
 
     /// `git_signature_new`: a signature for `name` and `email` (trimmed of
@@ -310,8 +312,7 @@ impl Signature {
     /// `git_signature_default`: `user.name` and `user.email` of the
     /// repository's configuration, now.
     pub fn default_for(repo: &crate::object::Repository) -> core::result::Result<Signature, Error> {
-        // SAFETY: a live repository.
-        Ok(unsafe { default_for(crate::object::repo_ptr(repo), || ()) }?)
+        Ok(default_for(Some(repo.raw()), || ())?)
     }
 
     /// `git_signature_default_from_env`: the author and committer
@@ -320,8 +321,7 @@ impl Signature {
     pub fn default_from_env(
         repo: &crate::object::Repository,
     ) -> core::result::Result<(Signature, Signature), Error> {
-        // SAFETY: a live repository.
-        let (a, c) = unsafe { default_from_env(crate::object::repo_ptr(repo), true, true) }?;
+        let (a, c) = default_from_env(Some(repo.raw()), true, true)?;
         match (a, c) {
             (Some(a), Some(c)) => Ok((a, c)),
             _ => Err(Error::from(ErrorCode::GENERIC)),
@@ -330,19 +330,17 @@ impl Signature {
 
     /// The name.
     pub fn name(&self) -> &[u8] {
-        // SAFETY: by the invariant, a live NUL-terminated string.
-        unsafe { CStr::from_ptr(self.0.name) }.to_bytes()
+        self.name.as_bytes()
     }
 
     /// The e-mail.
     pub fn email(&self) -> &[u8] {
-        // SAFETY: as above.
-        unsafe { CStr::from_ptr(self.0.email) }.to_bytes()
+        self.email.as_bytes()
     }
 
     /// The time.
     pub fn when(&self) -> Time {
-        Time { raw: self.0.when }
+        Time { raw: self.when }
     }
 
     /// The borrowed view.
@@ -372,7 +370,7 @@ impl Signature {
 
     /// `git_signature_dup` with the internal error.
     pub(crate) fn try_clone_raw(&self) -> Result<Signature> {
-        dup_parts(self.name(), self.email(), self.0.when)
+        dup_parts(self.name(), self.email(), self.when)
     }
 
     /// A copy of the C signature at `sig` (`git_signature_dup`; a NULL
@@ -380,16 +378,17 @@ impl Signature {
     ///
     /// # Safety
     ///
-    /// `sig` is a valid signature for the call.
+    /// `sig` points to a `git_signature` whose strings are NULL or
+    /// NUL-terminated, all live and unwritten for the call.
     pub(crate) unsafe fn dup_raw(sig: *const GitSignature) -> Result<Signature> {
-        // SAFETY: per the contract.
+        // SAFETY: a live, unwritten signature for the call (the contract).
         let s = unsafe { &*sig };
         let str_of = |p: *const c_char| -> &[u8] {
             if p.is_null() {
                 return b"";
             }
-            // SAFETY: the signature's NUL-terminated strings, valid for the
-            // call.
+            // SAFETY: a non-NULL string of the signature: NUL-terminated,
+            // live and unwritten for the call (the contract).
             unsafe { CStr::from_ptr(p) }.to_bytes()
         };
         dup_parts(str_of(s.name), str_of(s.email), s.when)
@@ -402,14 +401,14 @@ impl Signature {
 
     /// The C view (`const git_signature *`), valid while `self` is.
     pub(crate) fn as_raw(&self) -> *const GitSignature {
-        &raw const self.0
+        ptr::from_ref(self).cast()
     }
 
     /// The serialised form, `<header>name <email> time ±hhmm\n`
     /// (`git_signature__writebuf`).
     pub fn to_header(&self, header: &[u8]) -> Vec<u8> {
         let mut v = Vec::new();
-        format_into(&mut v, header, self.name(), self.email(), self.0.when);
+        format_into(&mut v, header, self.name(), self.email(), self.when);
         v
     }
 
@@ -420,17 +419,22 @@ impl Signature {
         if p.is_null() {
             return Err(ErrorCode::GENERIC);
         }
-        let me = core::mem::ManuallyDrop::new(self);
-        // SAFETY: a fresh allocation of a `GitSignature` (8-aligned, as
-        // `git__allocator`'s memory is); the strings move into it.
-        unsafe {
-            p.write(GitSignature {
-                name: me.0.name,
-                email: me.0.email,
-                when: me.0.when,
-            })
-        };
+        // SAFETY: a fresh `git__allocator` block of a `GitSignature`'s size
+        // (8-aligned, as `git__allocator`'s memory is), not yet shared; the
+        // strings move into it.
+        unsafe { p.write(self.into_c()) };
         Ok(p)
+    }
+
+    /// The `git_signature` that takes over the strings (freed by
+    /// `git_signature_free`'s string frees, or leaked).
+    pub(crate) fn into_c(self) -> GitSignature {
+        let Signature { name, email, when } = self;
+        GitSignature {
+            name: name.into_raw(),
+            email: email.into_raw(),
+            when,
+        }
     }
 }
 
@@ -445,11 +449,14 @@ impl Clone for Signature {
 /// `git_signature__equal`.
 impl PartialEq for Signature {
     fn eq(&self, other: &Signature) -> bool {
-        // SAFETY: the invariant: both strings of each are NUL-terminated
-        // and live (one pass each, as C's `strcmp`).
-        let names = unsafe { c_str_eq(self.0.name, other.0.name) };
-        // SAFETY: as above.
-        names && unsafe { c_str_eq(self.0.email, other.0.email) } && self.0.when == other.0.when
+        // SAFETY: owned strings (`GitCStr`): NUL-terminated, live and
+        // unwritten while `self` and `other` are borrowed (one pass each, as
+        // C's `strcmp`).
+        let names = unsafe { c_str_eq(self.name.as_ptr(), other.name.as_ptr()) };
+        names
+            // SAFETY: as for the names.
+            && unsafe { c_str_eq(self.email.as_ptr(), other.email.as_ptr()) }
+            && self.when == other.when
     }
 }
 
@@ -460,7 +467,7 @@ impl fmt::Debug for Signature {
         f.debug_struct("Signature")
             .field("name", &Bytes(self.name()))
             .field("email", &Bytes(self.email()))
-            .field("when", &self.0.when)
+            .field("when", &self.when)
             .finish()
     }
 }
@@ -780,7 +787,8 @@ pub(crate) fn writebuf(
 ///
 /// # Safety
 ///
-/// `a` and `b` are NUL-terminated strings.
+/// `a` and `b` are NUL-terminated strings, live and unwritten during the
+/// call.
 #[inline]
 unsafe fn c_str_eq(a: *const c_char, b: *const c_char) -> bool {
     let mut i = 0;
@@ -788,9 +796,10 @@ unsafe fn c_str_eq(a: *const c_char, b: *const c_char) -> bool {
         // `i` is at most the index of either string's NUL: the earlier
         // bytes were equal and not NUL.
         let (pa, pb) = (a.wrapping_add(i), b.wrapping_add(i));
-        // SAFETY: `pa` is within `a`, up to its NUL (above).
+        // SAFETY: `pa` is within `a`, up to its NUL (above), which is live
+        // and unwritten (the contract).
         let x = unsafe { pa.read() };
-        // SAFETY: as above for `b`.
+        // SAFETY: as for `pa`, in `b`.
         let y = unsafe { pb.read() };
         if x != y {
             return false;
@@ -809,12 +818,13 @@ const NULL_STR: &[u8] = b"(null)";
 ///
 /// # Safety
 ///
-/// `p` is NULL or a NUL-terminated string valid for the returned lifetime.
+/// `p` is NULL or a NUL-terminated string, live and unwritten for `'a`.
 unsafe fn c_bytes<'a>(p: *const c_char) -> &'a [u8] {
     if p.is_null() {
         NULL_STR
     } else {
-        // SAFETY: the caller's contract.
+        // SAFETY: a non-NULL `p` is a NUL-terminated string, live and
+        // unwritten for `'a` (the contract).
         unsafe { CStr::from_ptr(p) }.to_bytes()
     }
 }
@@ -822,17 +832,13 @@ unsafe fn c_bytes<'a>(p: *const c_char) -> &'a [u8] {
 /// `git_signature_default`: `user.name` and `user.email` from the
 /// repository's configuration, now. `found` runs once both strings are read,
 /// before they are validated (where C's `git_signature_new` sets
-/// `*sig_out = NULL`).
-///
-/// # Safety
-///
-/// `repo` is a live repository.
-pub(crate) unsafe fn default_for(
-    repo: *mut crate::object::deps::git_repository,
+/// `*sig_out = NULL`). A NULL `repo` fails as C's (the snapshot's
+/// `invalid argument`).
+pub(crate) fn default_for(
+    repo: Option<&crate::object::deps::git_repository>,
     found: impl FnOnce(),
 ) -> Result<Signature> {
-    // SAFETY: the caller's contract.
-    let cfg = unsafe { config_snapshot(repo)? };
+    let cfg = config_snapshot(repo)?;
     let r = (|| {
         let name = cfg.get_string(c"user.name")?;
         let email = cfg.get_string(c"user.email")?;
@@ -878,19 +884,11 @@ impl ConfigSnapshot {
 }
 
 /// `git_repository_config_snapshot`.
-///
-/// # Safety
-///
-/// `repo` is a live repository.
-unsafe fn config_snapshot(
-    repo: *mut crate::object::deps::git_repository,
-) -> Result<ConfigSnapshot> {
+fn config_snapshot(repo: Option<&crate::object::deps::git_repository>) -> Result<ConfigSnapshot> {
     let mut cfg = ptr::null_mut();
-    // SAFETY: `repo` is NULL or a live repository (this function's contract),
-    // only read through `&` (its state is interior-mutable).
-    let repo_ref = unsafe { repo.as_ref() };
-    // SAFETY: a live repository (the caller's contract); `cfg` is writable.
-    let r = unsafe { crate::object::deps::git_repository_config_snapshot(&raw mut cfg, repo_ref) };
+    // SAFETY: `cfg` is a writable local; `repo` is NULL (which the export
+    // rejects) or a live repository (a reference).
+    let r = unsafe { crate::object::deps::git_repository_config_snapshot(&raw mut cfg, repo) };
     ErrorCode::check(r)?;
     Ok(ConfigSnapshot(cfg))
 }
@@ -898,20 +896,15 @@ unsafe fn config_snapshot(
 /// `user_from_env`: a signature from the environment variables, else the
 /// configuration (and `$EMAIL` for the e-mail), at `$<date_env_var>` or the
 /// default time.
-///
-/// # Safety
-///
-/// `repo` is a live repository.
-unsafe fn user_from_env(
-    repo: *mut crate::object::deps::git_repository,
+fn user_from_env(
+    repo: Option<&crate::object::deps::git_repository>,
     name_env_var: &CStr,
     email_env_var: &CStr,
     date_env_var: &CStr,
     default_time: i64,
     default_offset: c_int,
 ) -> Result<Signature> {
-    // SAFETY: the caller's contract.
-    let cfg = unsafe { config_snapshot(repo)? };
+    let cfg = config_snapshot(repo)?;
     let mut name_env = GitStr::new();
     let mut email_env = GitStr::new();
     let mut date_env = GitStr::new();
@@ -956,43 +949,33 @@ unsafe fn user_from_env(
 /// `git_signature_default_from_env`: the author and committer signatures
 /// (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`, else the configuration), for the
 /// ones asked.
-///
-/// # Safety
-///
-/// `repo` is a live repository.
-pub(crate) unsafe fn default_from_env(
-    repo: *mut crate::object::deps::git_repository,
+pub(crate) fn default_from_env(
+    repo: Option<&crate::object::deps::git_repository>,
     author: bool,
     committer: bool,
 ) -> Result<(Option<Signature>, Option<Signature>)> {
     let (now, offset) = current_time();
     let a = if author {
-        // SAFETY: the caller's contract.
-        Some(unsafe {
-            user_from_env(
-                repo,
-                c"GIT_AUTHOR_NAME",
-                c"GIT_AUTHOR_EMAIL",
-                c"GIT_AUTHOR_DATE",
-                now,
-                offset,
-            )?
-        })
+        Some(user_from_env(
+            repo,
+            c"GIT_AUTHOR_NAME",
+            c"GIT_AUTHOR_EMAIL",
+            c"GIT_AUTHOR_DATE",
+            now,
+            offset,
+        )?)
     } else {
         None
     };
     let c = if committer {
-        // SAFETY: the caller's contract.
-        Some(unsafe {
-            user_from_env(
-                repo,
-                c"GIT_COMMITTER_NAME",
-                c"GIT_COMMITTER_EMAIL",
-                c"GIT_COMMITTER_DATE",
-                now,
-                offset,
-            )?
-        })
+        Some(user_from_env(
+            repo,
+            c"GIT_COMMITTER_NAME",
+            c"GIT_COMMITTER_EMAIL",
+            c"GIT_COMMITTER_DATE",
+            now,
+            offset,
+        )?)
     } else {
         None
     };
@@ -1010,21 +993,23 @@ pub(crate) unsafe fn free_raw(sig: *mut GitSignature) {
         return;
     }
     // Only the two pointers are read: C may have set nothing else.
-    // SAFETY: the caller's contract: a live block (no reference formed).
+    // SAFETY: a live, non-NULL `git_signature` block (the contract): a
+    // field projection, no reference formed.
     let pn = unsafe { &raw const (*sig).name };
-    // SAFETY: as above.
+    // SAFETY: as for `pn`.
     let pe = unsafe { &raw const (*sig).email };
-    // SAFETY: a field the caller set (NULL or a string).
+    // SAFETY: an aligned field of the live block, which the caller set
+    // (NULL or a `git__allocator` string: the contract).
     let name = unsafe { pn.read() };
-    // SAFETY: as above.
+    // SAFETY: as for `name`.
     let email = unsafe { pe.read() };
-    // SAFETY: the strings and the block, each freed once.
-    unsafe {
-        alloc::free(name.cast());
-    }
-    // SAFETY: as above.
+    // SAFETY: NULL or a `git__allocator` string that nothing uses again
+    // (the contract), freed once.
+    unsafe { alloc::free(name.cast()) };
+    // SAFETY: as for `name`.
     unsafe { alloc::free(email.cast()) };
-    // SAFETY: as above.
+    // SAFETY: the `git__allocator` block itself, unused again (the
+    // contract; its fields were read above), freed once.
     unsafe { alloc::free(sig.cast()) };
 }
 
@@ -1045,15 +1030,10 @@ pub mod ffi {
     use crate::util::pool::GitPool;
 
     /// Write `sig` into C's out-parameter as a `git__allocator` block.
-    ///
-    /// # Safety
-    ///
-    /// `out` is writable.
-    unsafe fn give(out: *mut *mut GitSignature, sig: Signature) -> c_int {
+    fn give(mut out: Out<'_, *mut GitSignature>, sig: Signature) -> c_int {
         match sig.into_raw() {
             Ok(p) => {
-                // SAFETY: the caller's contract.
-                unsafe { out.write(p) };
+                out.write(p);
                 0
             }
             Err(e) => e.raw(),
@@ -1070,7 +1050,9 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_signature_free(sig: *mut GitSignature) {
         barrier(|| {
-            // SAFETY: the caller's contract.
+            // SAFETY: NULL or a `git__allocator` signature block whose
+            // strings are NULL or `git__allocator` strings, unused after
+            // (this export's contract): `free_raw`'s.
             unsafe { free_raw(sig) }
         })
     }
@@ -1079,10 +1061,11 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `sig_out` is writable; `name` and `email` are NULL or NUL-terminated.
+    /// `sig_out` is NULL (which C dereferences: nothing is written here) or
+    /// writable; `name` and `email` are NULL or NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_signature_new(
-        sig_out: *mut *mut GitSignature,
+        mut sig_out: Out<'_, *mut GitSignature>,
         name: CStrArg<'_>,
         email: CStrArg<'_>,
         time: git_time_t,
@@ -1091,13 +1074,11 @@ pub mod ffi {
         barrier(|| {
             let name = git_arg!(name.get(), "name", -1);
             let email = git_arg!(email.get(), "email", -1);
-            // SAFETY: the caller's contract.
-            unsafe { sig_out.write(ptr::null_mut()) };
+            sig_out.write(ptr::null_mut());
             let name = name.to_bytes();
             let email = email.to_bytes();
             match new_sig(name, email, time, offset) {
-                // SAFETY: writable, as above.
-                Ok(s) => unsafe { give(sig_out, s) },
+                Ok(s) => give(sig_out, s),
                 Err(e) => e.raw(),
             }
         })
@@ -1110,13 +1091,14 @@ pub mod ffi {
     /// As [`git_signature_new`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_signature_now(
-        sig_out: *mut *mut GitSignature,
+        sig_out: Out<'_, *mut GitSignature>,
         name: CStrArg<'_>,
         email: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             let (now, offset) = current_time();
-            // SAFETY: forwarded.
+            // SAFETY: this export's arguments, whose contract is
+            // `git_signature_new`'s.
             unsafe { git_signature_new(sig_out, name, email, now, offset) }
         })
     }
@@ -1125,19 +1107,17 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `dest` is writable; `source` is NULL or a valid signature whose
-    /// strings are NULL or NUL-terminated.
+    /// `dest` is NULL or writable; `source` is NULL or a valid signature
+    /// whose strings are NULL or NUL-terminated, unwritten during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_signature_dup(
         mut dest: Out<'_, *mut GitSignature>,
-        source: *const GitSignature,
+        source: Option<&GitSignature>,
     ) -> c_int {
         barrier(|| {
-            if source.is_null() {
+            let Some(s) = source else {
                 return 0;
-            }
-            // SAFETY: a valid signature, read by value.
-            let s = unsafe { source.read() };
+            };
             // C's `git__strdup` of a NULL string crashes; a NULL string is
             // copied as NULL (rust/DEFECTS.md).
             let p = alloc::calloc(1, size_of::<GitSignature>()).cast::<GitSignature>();
@@ -1148,25 +1128,26 @@ pub mod ffi {
                 if c.is_null() {
                     return Ok(ptr::null_mut());
                 }
-                // SAFETY: a NUL-terminated string (the caller's contract).
+                // SAFETY: a non-NULL string of `source`: NUL-terminated and
+                // unwritten during the call (this export's contract).
                 let r = alloc::strdup(unsafe { CStr::from_ptr(c) });
                 if r.is_null() { Err(()) } else { Ok(r) }
             };
             let Ok(name) = copy(s.name) else {
-                // SAFETY: the block just allocated, unused (C leaks it).
+                // SAFETY: the block just allocated, unused, freed once (C
+                // leaks it).
                 unsafe { alloc::free(p.cast()) };
                 return -1;
             };
             let Ok(email) = copy(s.email) else {
-                // SAFETY: as above, and the name copied into it.
-                unsafe {
-                    alloc::free(name.cast());
-                }
-                // SAFETY: as above.
+                // SAFETY: NULL or the copy just made, unused, freed once.
+                unsafe { alloc::free(name.cast()) };
+                // SAFETY: the block just allocated, unused, freed once.
                 unsafe { alloc::free(p.cast()) };
                 return -1;
             };
-            // SAFETY: a fresh block for a `GitSignature`.
+            // SAFETY: a fresh `git__allocator` block of a `GitSignature`'s
+            // size (8-aligned), not yet shared.
             unsafe {
                 p.write(GitSignature {
                     name,
@@ -1190,26 +1171,25 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_signature__pdup(
         mut dest: Out<'_, *mut GitSignature>,
-        source: *const GitSignature,
+        source: Option<&GitSignature>,
         pool: Option<&mut GitPool>,
     ) -> c_int {
         barrier(|| {
-            if source.is_null() {
+            let Some(s) = source else {
                 return 0;
-            }
+            };
             let pool = git_arg!(pool, "pool", -1);
-            // SAFETY: a valid signature, read by value.
-            let s = unsafe { source.read() };
             let r = (|| -> Result<*mut GitSignature> {
                 let sig = pool
                     .mallocz(size_of::<GitSignature>())?
                     .cast::<GitSignature>();
-                // SAFETY: NUL-terminated strings (the caller's contract).
+                // SAFETY: `source`'s name is NUL-terminated and unwritten
+                // during the call (this export's contract).
                 let name = pool.strdup(unsafe { CStr::from_ptr(s.name) })?;
-                // SAFETY: as above.
+                // SAFETY: as for the name.
                 let email = pool.strdup(unsafe { CStr::from_ptr(s.email) })?;
-                // SAFETY: the pool's zeroed, 8-aligned block for one
-                // `GitSignature`.
+                // SAFETY: the pool's fresh zeroed block of a `GitSignature`'s
+                // size (the pool's blocks are 8-aligned), not yet shared.
                 unsafe {
                     sig.as_ptr().write(GitSignature {
                         name: name.as_ptr(),
@@ -1233,21 +1213,18 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` is writable; `repo` is a live repository.
+    /// `out` is NULL (which C dereferences: nothing is written here) or
+    /// writable; `repo` is NULL or a live repository.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_signature_default(
-        out: *mut *mut GitSignature,
-        repo: *mut crate::object::deps::git_repository,
+        mut out: Out<'_, *mut GitSignature>,
+        repo: Option<&crate::object::deps::git_repository>,
     ) -> c_int {
         barrier(|| {
             // C's `git_signature_new` sets `*out = NULL` once the identity
             // is read, before validating it.
-            // SAFETY: `out` is writable (the caller's contract).
-            let found = || unsafe { out.write(ptr::null_mut()) };
-            // SAFETY: the caller's contract.
-            match unsafe { default_for(repo, found) } {
-                // SAFETY: writable.
-                Ok(s) => unsafe { give(out, s) },
+            match default_for(repo, || out.write(ptr::null_mut())) {
+                Ok(s) => give(out, s),
                 Err(e) => e.raw(),
             }
         })
@@ -1257,13 +1234,13 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `author_out` and `committer_out` are NULL or writable; `repo` is a
-    /// live repository.
+    /// `author_out` and `committer_out` are NULL or writable; `repo` is
+    /// NULL or a live repository.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_signature_default_from_env(
-        author_out: *mut *mut GitSignature,
-        committer_out: *mut *mut GitSignature,
-        repo: *mut crate::object::deps::git_repository,
+        mut author_out: Out<'_, *mut GitSignature>,
+        mut committer_out: Out<'_, *mut GitSignature>,
+        repo: Option<&crate::object::deps::git_repository>,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(
@@ -1271,10 +1248,8 @@ pub mod ffi {
                 "author_out || committer_out",
                 -1
             );
-            git_assert_arg!(!repo.is_null(), "repo", -1);
-            // SAFETY: the caller's contract.
-            let r =
-                unsafe { default_from_env(repo, !author_out.is_null(), !committer_out.is_null()) };
+            let repo = git_arg!(repo, "repo", -1);
+            let r = default_from_env(Some(repo), !author_out.is_null(), !committer_out.is_null());
             let (a, c) = match r {
                 Ok(v) => v,
                 Err(e) => return e.raw(),
@@ -1286,18 +1261,18 @@ pub mod ffi {
             let c = match c.map(Signature::into_raw).transpose() {
                 Ok(c) => c,
                 Err(e) => {
-                    // SAFETY: the block just made, not handed out.
+                    // SAFETY: NULL or the block just made by `into_raw`
+                    // (its strings its own), not handed out, freed once.
                     unsafe { free_raw(a.unwrap_or(ptr::null_mut())) };
                     return e.raw();
                 }
             };
+            // (`Some` only for a non-NULL out-parameter, asked above.)
             if let Some(a) = a {
-                // SAFETY: non-NULL, so writable.
-                unsafe { author_out.write(a) };
+                author_out.write(a);
             }
             if let Some(c) = c {
-                // SAFETY: as above.
-                unsafe { committer_out.write(c) };
+                committer_out.write(c);
             }
             0
         })
@@ -1309,39 +1284,38 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `sig` is writable (its old contents are overwritten, not freed);
-    /// `*buffer_out` .. `buffer_end` is a readable range; `header` is NULL
-    /// or NUL-terminated.
+    /// `sig` is NULL (which C dereferences: nothing is written here) or
+    /// writable (its old contents are overwritten, not freed);
+    /// `buffer_out` is NULL (C dereferences it: here an invalid argument)
+    /// or a readable and writable pointer that no other argument points
+    /// into; `*buffer_out` .. `buffer_end` is a readable range, unwritten
+    /// during the call; `header` is NULL or NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_signature__parse(
         mut sig: Out<'_, GitSignature>,
-        buffer_out: *mut *const c_char,
+        buffer_out: Option<&mut *const c_char>,
         buffer_end: *const c_char,
         header: CStrArg<'_>,
         ender: c_char,
     ) -> c_int {
         barrier(|| {
             sig.write(GitSignature::ZERO);
-            // SAFETY: readable.
-            let start = unsafe { *buffer_out };
+            let buffer_out = git_arg!(buffer_out, "buffer_out", -1);
+            let start = *buffer_out;
             // An end before the start (C's `memchr` with a huge length, UB)
             // is an empty range: rust/DEFECTS.md.
             let len = (buffer_end as usize).saturating_sub(start as usize);
-            // SAFETY: the caller's readable range.
+            // SAFETY: `start .. start + len` is within `*buffer_out` ..
+            // `buffer_end`, readable and unwritten during the call (this
+            // export's contract).
             let buf = unsafe { crate::util::export::bytes(start, len) };
             let header = header.get().map(CStr::to_bytes);
             match parse(buf, header, ender as u8) {
                 Ok((s, consumed)) => {
-                    let s = core::mem::ManuallyDrop::new(s);
                     // The strings move into it.
-                    sig.write(GitSignature {
-                        name: s.0.name,
-                        email: s.0.email,
-                        when: s.0.when,
-                    });
-                    // SAFETY: writable; C's `buffer_end + 1` (not
-                    // dereferenced).
-                    unsafe { buffer_out.write(start.wrapping_add(consumed)) };
+                    sig.write(s.into_c());
+                    // C's `buffer_end + 1` at most (not dereferenced).
+                    *buffer_out = start.wrapping_add(consumed);
                     0
                 }
                 Err(e) => e.raw(),
@@ -1356,18 +1330,16 @@ pub mod ffi {
     /// `out` is NULL or writable; `buf` is NULL or NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_signature_from_buffer(
-        out: *mut *mut GitSignature,
+        mut out: Out<'_, *mut GitSignature>,
         buf: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!out.is_null(), "out", -1);
             let buf = git_arg!(buf.get(), "buf", -1);
-            // SAFETY: writable.
-            unsafe { out.write(ptr::null_mut()) };
+            out.write(ptr::null_mut());
             let b = buf.to_bytes();
             match parse(b, None, 0) {
-                // SAFETY: writable.
-                Ok((s, _)) => unsafe { give(out, s) },
+                Ok((s, _)) => give(out, s),
                 Err(e) => e.raw(),
             }
         })
@@ -1377,22 +1349,24 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `buf` is a valid `git_str`; `header` is NULL or NUL-terminated; `sig`
-    /// is a valid signature (NULL strings print as `(null)`, as glibc's
-    /// `printf`), none of them in `buf`'s buffer.
+    /// `buf` is NULL or a valid `git_str`; `header` is NULL or
+    /// NUL-terminated; `sig` is NULL (which C dereferences: here an invalid
+    /// argument) or a valid signature (NULL strings print as `(null)`, as
+    /// glibc's `printf`); none of them in `buf`'s buffer or struct, and
+    /// none written by others during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_signature__writebuf(
         buf: Option<&mut GitStr>,
         header: CStrArg<'_>,
-        sig: *const GitSignature,
+        sig: Option<&GitSignature>,
     ) {
         barrier(|| {
             let buf = git_arg!(buf, "buf", ());
-            // SAFETY: a valid signature, read by value.
-            let s = unsafe { sig.read() };
-            // SAFETY: NULL or a NUL-terminated string, valid for the call.
+            let s = git_arg!(sig, "sig", ());
+            // SAFETY: NULL or a NUL-terminated string of `sig`, unwritten
+            // during the call (this export's contract).
             let name = unsafe { c_bytes(s.name) };
-            // SAFETY: as above.
+            // SAFETY: as for the name.
             let email = unsafe { c_bytes(s.email) };
             let header = header.get().map(CStr::to_bytes);
             // The text is formatted first, so `buf` may alias nothing that
@@ -1407,25 +1381,22 @@ pub mod ffi {
     /// # Safety
     ///
     /// `one` and `two` are NULL or valid signatures with NULL or
-    /// NUL-terminated strings.
+    /// NUL-terminated strings, unwritten during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_signature__equal(
-        one: *const GitSignature,
-        two: *const GitSignature,
+        one: Option<&GitSignature>,
+        two: Option<&GitSignature>,
     ) -> bool {
         barrier(|| {
-            git_assert_arg!(!one.is_null(), "one", true);
-            git_assert_arg!(!two.is_null(), "two", true);
-            // SAFETY: a valid signature, read by value.
-            let a = unsafe { one.read() };
-            // SAFETY: as above.
-            let b = unsafe { two.read() };
+            let a = git_arg!(one, "one", true);
+            let b = git_arg!(two, "two", true);
             // `git__strcmp` (C crashes on NULL: here NULL equals only NULL).
             let same = |x: *mut c_char, y: *mut c_char| {
                 if x.is_null() || y.is_null() {
                     return x.is_null() && y.is_null();
                 }
-                // SAFETY: NUL-terminated strings (the caller's contract).
+                // SAFETY: two non-NULL strings of the signatures:
+                // NUL-terminated and unwritten (this export's contract).
                 unsafe { c_str_eq(x, y) }
             };
             same(a.name, b.name)
@@ -1462,7 +1433,7 @@ mod tests {
 
     fn p(s: &[u8], h: Option<&[u8]>, e: u8) -> Parsed {
         match parse(s, h, e) {
-            Ok((sig, n)) => Ok((sig.name().to_vec(), sig.email().to_vec(), sig.0.when, n)),
+            Ok((sig, n)) => Ok((sig.name().to_vec(), sig.email().to_vec(), sig.when, n)),
             Err(c) => Err((c.raw(), errors::last_message().unwrap_or_default())),
         }
     }
@@ -1589,19 +1560,25 @@ mod tests {
     fn ffi_roundtrip() {
         let _g = test_support::init();
         let mut out = ptr::null_mut();
-        // SAFETY: valid arguments.
-        let r = unsafe { ffi::git_signature_new(&raw mut out, c" a ".into(), c"b".into(), 3, 0) };
+        // SAFETY: a writable local; two strings.
+        let r = unsafe {
+            ffi::git_signature_new(Out::from(&mut out), c" a ".into(), c"b".into(), 3, 0)
+        };
         assert_eq!(r, 0);
+        // SAFETY: the signature just made, live until freed below.
+        let one = unsafe { out.as_ref() };
         let mut d = ptr::null_mut();
-        // SAFETY: a valid signature.
-        assert_eq!(unsafe { ffi::git_signature_dup(Out::from(&mut d), out) }, 0);
+        // SAFETY: a valid signature; a writable local.
+        assert_eq!(unsafe { ffi::git_signature_dup(Out::from(&mut d), one) }, 0);
+        // SAFETY: the copy just made, live until freed below.
+        let two = unsafe { d.as_ref() };
         // SAFETY: two valid signatures.
-        assert!(unsafe { ffi::git_signature__equal(out, d) });
+        assert!(unsafe { ffi::git_signature__equal(one, two) });
         // SAFETY: NULL arguments are allowed (and answer true).
-        assert!(unsafe { ffi::git_signature__equal(ptr::null(), d) });
-        // SAFETY: the block made above, freed once.
+        assert!(unsafe { ffi::git_signature__equal(None, two) });
+        // SAFETY: the block made above, freed once (`one` not used after).
         unsafe { ffi::git_signature_free(out) };
-        // SAFETY: as above.
+        // SAFETY: as above, for `two`.
         unsafe { ffi::git_signature_free(d) };
         let mut sig = GitSignature::ZERO;
         let text = b"committer a <b> 1 +0100\nx";
@@ -1610,7 +1587,7 @@ mod tests {
         let r = unsafe {
             ffi::git_signature__parse(
                 Out::from(&mut sig),
-                &raw mut cur,
+                Some(&mut cur),
                 text.as_ptr().wrapping_add(text.len()).cast(),
                 c"committer ".into(),
                 b'\n' as c_char,
@@ -1620,8 +1597,17 @@ mod tests {
         assert_eq!(cur as usize - text.as_ptr() as usize, 24);
         let mut b = GitStr::new();
         // SAFETY: valid arguments.
-        unsafe { ffi::git_signature__writebuf(Some(&mut b), CStrArg::NULL, &raw const sig) };
+        unsafe { ffi::git_signature__writebuf(Some(&mut b), CStrArg::NULL, Some(&sig)) };
         assert_eq!(b.as_bytes(), b"a <b> 1 +0100\n");
+        // SAFETY: NULL signature (C crashes): an invalid argument, nothing
+        // written.
+        unsafe { ffi::git_signature__writebuf(Some(&mut b), CStrArg::NULL, None) };
+        assert_eq!(b.as_bytes(), b"a <b> 1 +0100\n");
+        assert_eq!(errors::last_message().unwrap(), b"invalid argument: 'sig'");
+        // SAFETY: NULL `buffer_out` (C crashes): an invalid argument.
+        let r =
+            unsafe { ffi::git_signature__parse(Out::null(), None, ptr::null(), CStrArg::NULL, 0) };
+        assert_eq!(r, -1);
         let raw = alloc::malloc(size_of::<GitSignature>()).cast::<GitSignature>();
         // SAFETY: a fresh block; the parsed signature's strings move in.
         unsafe { raw.write(sig) };
