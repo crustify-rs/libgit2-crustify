@@ -23,6 +23,7 @@
 //! filebuf and no `&mut GitFilebuf` covers it.
 
 use core::ffi::{CStr, c_char, c_int, c_void};
+use std::os::fd::AsRawFd;
 
 use super::alloc;
 use super::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
@@ -181,8 +182,16 @@ pub struct GitFilebuf {
     last_error: c_int,
 }
 
-// SAFETY: a filebuf owns its buffers, paths, descriptor and contexts; none
-// is tied to a thread.
+// SAFETY: field by field: `path_original`, `path_lock`, `buffer` and
+// `z_buf` are NULL or `git__allocator` allocations that only this filebuf
+// points to (the invariant), and `git__allocator` frees from any thread;
+// `zs.stream` is NULL or a heap cell (Rust's allocator) that only this
+// filebuf and zlib's own state (which points back at it, and is reached
+// only through it) refer to, and zlib streams have no thread affinity;
+// `write` is a function pointer, `digest` plain data (`HashCtx`), `fd` a
+// descriptor number (usable from any thread), the rest integers and
+// booleans. Moving the filebuf to another thread moves every user of what
+// it points to.
 unsafe impl Send for GitFilebuf {}
 
 impl Default for GitFilebuf {
@@ -203,21 +212,33 @@ impl core::fmt::Debug for GitFilebuf {
 }
 
 /// The C string at `p` (NULL: none).
-fn opt_cstr<'a>(p: *const c_char) -> Option<&'a CStr> {
+///
+/// # Safety
+///
+/// `p` is NULL or a NUL-terminated string that stays allocated and
+/// unwritten for `'a` (a path field of a filebuf, which owns it, while the
+/// field is neither freed nor changed).
+unsafe fn opt_cstr<'a>(p: *const c_char) -> Option<&'a CStr> {
     if p.is_null() {
         None
     } else {
-        // SAFETY: the filebuf's paths are NULL or NUL-terminated strings it
-        // owns (its invariant), alive while it is borrowed.
+        // SAFETY: a non-null `p` is a string live and unwritten for `'a`
+        // (this fn's contract).
         Some(unsafe { CStr::from_ptr(p) })
     }
 }
 
-/// `strerror`-free flavour of `free` for the filebuf's own allocations.
-fn free_owned<T>(p: &mut *mut T) {
+/// Free `*p` and clear it (`git__free(p); p = NULL`).
+///
+/// # Safety
+///
+/// `*p` is NULL or a `git__allocator` allocation that nothing else frees
+/// or uses after the call (one of a filebuf's own pointers).
+unsafe fn free_owned<T>(p: &mut *mut T) {
     if !p.is_null() {
-        // SAFETY: the filebuf's pointers are NULL or its own allocations of
-        // `git__allocator` (its invariant), freed once and cleared.
+        // SAFETY: a non-null `*p` is a `git__allocator` allocation that
+        // nothing uses after the call (this fn's contract); it is cleared
+        // below, so freed once.
         unsafe { alloc::free(p.cast()) };
     }
     *p = core::ptr::null_mut();
@@ -261,12 +282,16 @@ impl GitFilebuf {
 
     /// The target path.
     pub fn original_path(&self) -> Option<&CStr> {
-        opt_cstr(self.path_original)
+        // SAFETY: `path_original` is NULL or a string this filebuf owns
+        // (the invariant), which `&self` keeps from being freed or changed
+        // for the result's lifetime.
+        unsafe { opt_cstr(self.path_original) }
     }
 
     /// The lock (or temporary) file's path.
     pub fn lock_path(&self) -> Option<&CStr> {
-        opt_cstr(self.path_lock)
+        // SAFETY: as in `original_path`, for `path_lock`.
+        unsafe { opt_cstr(self.path_lock) }
     }
 
     fn verify_last_error(&self) -> Result<()> {
@@ -293,9 +318,12 @@ impl GitFilebuf {
     }
 
     fn lock_file(&mut self, flags: c_int, mode: mode_t) -> Result<()> {
-        // The paths are borrowed through their own pointers: the fields are
-        // not changed while they are used.
-        let lock = opt_cstr(self.path_lock).unwrap_or(c"");
+        // The paths are borrowed through their own pointers, apart from
+        // `&mut self`.
+        // SAFETY: `path_lock` is NULL or a string this filebuf owns (the
+        // invariant); this fn changes only `fd`, `fd_is_open` and `digest`,
+        // so the string stays allocated and unwritten while `lock` is used.
+        let lock = unsafe { opt_cstr(self.path_lock) }.unwrap_or(c"");
         if fs_path::exists(lock) {
             errors::clear();
             let _ = git_error_set!(
@@ -318,9 +346,10 @@ impl GitFilebuf {
             }
         };
         self.fd_is_open = true;
-        let original = opt_cstr(self.path_original).unwrap_or(c"");
+        // SAFETY: as for `lock`, with `path_original`.
+        let original = unsafe { opt_cstr(self.path_original) }.unwrap_or(c"");
         if flags & GIT_FILEBUF_APPEND != 0 && fs_path::exists(original) {
-            let Ok(source) = posix::open(original, libc::O_RDONLY, 0) else {
+            let Ok(source) = posix::open_owned(original, libc::O_RDONLY, 0) else {
                 return Err(git_error_set!(
                     ErrorClass::OS,
                     "failed to open file '{}' for reading",
@@ -329,14 +358,13 @@ impl GitFilebuf {
             };
             let mut buffer = Vec::new();
             if buffer.try_reserve_exact(GIT_BUFSIZE_FILEIO).is_err() {
-                // SAFETY: a descriptor this code opened, closed once.
-                let _ = unsafe { posix::close(source) };
+                drop(source);
                 return Err(errors::oom());
             }
             buffer.resize(GIT_BUFSIZE_FILEIO, 0);
             let mut write_failed = false;
             let read = loop {
-                match posix::read(source, &mut buffer) {
+                match posix::read(source.as_raw_fd(), &mut buffer) {
                     Ok(0) => break Ok(()),
                     Ok(n) => {
                         if posix::write(self.fd, &buffer[..n]).is_err() {
@@ -348,8 +376,7 @@ impl GitFilebuf {
                     Err(e) => break Err(e),
                 }
             };
-            // SAFETY: a descriptor this code opened, closed once.
-            let _ = unsafe { posix::close(source) };
+            drop(source);
             if read.is_err() {
                 return Err(git_error_set!(
                     ErrorClass::OS,
@@ -384,16 +411,21 @@ impl GitFilebuf {
         }
         // (`git_hash_ctx_cleanup` has nothing to release.)
         self.compute_digest = false;
-        free_owned(&mut self.buffer);
+        // SAFETY: `buffer` is NULL or this filebuf's own allocation (the
+        // invariant), not used after: the filebuf is reset below.
+        unsafe { free_owned(&mut self.buffer) };
         if !self.z_buf.is_null() {
-            free_owned(&mut self.z_buf);
+            // SAFETY: as for `buffer`.
+            unsafe { free_owned(&mut self.z_buf) };
             // SAFETY: the stream is initialized while `z_buf` is set (the
             // invariant), and ended once; reached only through its pointer.
             unsafe { zlib::deflate_end(self.zs.stream) };
         }
         self.zs.free();
-        free_owned(&mut self.path_original);
-        free_owned(&mut self.path_lock);
+        // SAFETY: as for `buffer`.
+        unsafe { free_owned(&mut self.path_original) };
+        // SAFETY: as for `buffer`.
+        unsafe { free_owned(&mut self.path_lock) };
         *self = GitFilebuf::new();
         self.fd = -1;
     }
@@ -673,7 +705,10 @@ impl GitFilebuf {
 
     /// `git_filebuf_commit_at`: commit to `path` instead.
     pub fn commit_at(&mut self, path: &CStr) -> Result<()> {
-        free_owned(&mut self.path_original);
+        // SAFETY: `path_original` is NULL or this filebuf's own string (the
+        // invariant), replaced right below; `path` is the caller's, so not
+        // that string (a `&CStr` of the filebuf's own path borrows `self`).
+        unsafe { free_owned(&mut self.path_original) };
         self.path_original = alloc::strdup(path);
         if self.path_original.is_null() {
             return Err(ErrorCode::GENERIC);
@@ -695,8 +730,11 @@ impl GitFilebuf {
         let _ = self.flush_buffer();
         self.verify_last_error()?;
         self.fd_is_open = false;
-        // As in `lock_file`: the paths do not change during the commit.
-        let lock = opt_cstr(self.path_lock).unwrap_or(c"");
+        // SAFETY: as in `lock_file`: `path_lock` is NULL or this filebuf's
+        // own string, and this fn changes neither path (only `fd`,
+        // `fd_is_open`, `did_rename`, and the buffer through the flush
+        // above), so it stays allocated and unwritten while used.
+        let lock = unsafe { opt_cstr(self.path_lock) }.unwrap_or(c"");
         if self.do_fsync && posix::fsync(self.fd).is_err() {
             let _ = git_error_set!(
                 ErrorClass::OS,
@@ -717,7 +755,8 @@ impl GitFilebuf {
             ));
         }
         self.fd = -1;
-        let original = opt_cstr(self.path_original).unwrap_or(c"");
+        // SAFETY: as for `lock`, with `path_original`.
+        let original = unsafe { opt_cstr(self.path_original) }.unwrap_or(c"");
         if posix::rename(lock, original).is_err() {
             return Err(git_error_set!(
                 ErrorClass::OS,

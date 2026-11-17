@@ -5,33 +5,34 @@
 
 use super::*;
 use crate::util::cabi::{CStrArg, Out};
-use crate::util::export::{barrier, cstr_bytes, status};
+use crate::util::export::{barrier, status};
 
-/// The filebuf at `file`.
-///
-/// # Safety
-///
-/// `file` is NULL or a valid `git_filebuf` (`GIT_FILEBUF_INIT` or opened)
-/// that nothing else accesses during the call.
-unsafe fn f<'a>(file: *mut GitFilebuf) -> Option<&'a mut GitFilebuf> {
-    // SAFETY: forwarded.
-    unsafe { file.as_mut() }
-}
+// The exports' `file` is `Option<&mut GitFilebuf>`: NULL or a valid
+// `git_filebuf` (`GIT_FILEBUF_INIT`, opened, or cleaned up) that nothing
+// else accesses during the call. A `&mut GitFilebuf` covers the struct
+// only: its buffers, paths and deflate stream are separate allocations
+// reached through its pointers, so data arguments may lie in them.
 
 /// `write_normal`, stored in `git_filebuf.write`.
 ///
 /// # Safety
 ///
-/// `file` is a valid, opened filebuf; `source` readable for `len` bytes.
+/// `file` is a valid, opened filebuf that nothing else accesses during the
+/// call; `source` readable for `len` bytes, unwritten during the call.
+///
+/// (`file` stays a raw pointer: the function is stored in the C's
+/// `git_filebuf.write` slot, of the C's type, [`WriteFn`].)
 pub(super) unsafe extern "C" fn write_normal(
     file: *mut GitFilebuf,
     source: *mut c_void,
     len: usize,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: a valid, opened filebuf, used only by this call.
+        // SAFETY: `file` is a valid, opened filebuf that nothing else
+        // accesses during the call (this fn's contract).
         let file = unsafe { &mut *file };
-        // SAFETY: `len` readable bytes, outside the filebuf.
+        // SAFETY: `source` is readable for `len` bytes and unwritten during
+        // the call (this fn's contract).
         let data = unsafe { crate::util::export::bytes(source.cast(), len) };
         match file.write_normal(data) {
             Ok(()) => 0,
@@ -51,9 +52,9 @@ pub(super) unsafe extern "C" fn write_deflate(
     len: usize,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: a valid, opened filebuf, used only by this call.
+        // SAFETY: as in `write_normal`.
         let file = unsafe { &mut *file };
-        // SAFETY: `len` readable bytes, outside the filebuf.
+        // SAFETY: as in `write_normal`.
         let data = unsafe { crate::util::export::bytes(source.cast(), len) };
         match file.write_deflate(data) {
             Ok(()) => 0,
@@ -66,12 +67,12 @@ pub(super) unsafe extern "C" fn write_deflate(
 ///
 /// # Safety
 ///
-/// As [`f`] (not NULL).
+/// `file` is NULL or a valid `git_filebuf` that nothing else accesses
+/// during the call.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_filebuf_cleanup(file: *mut GitFilebuf) {
+pub unsafe extern "C" fn git_filebuf_cleanup(file: Option<&mut GitFilebuf>) {
     barrier(|| {
-        // SAFETY: the caller's contract.
-        if let Some(file) = unsafe { f(file) } {
+        if let Some(file) = file {
             file.cleanup();
         }
     })
@@ -81,12 +82,11 @@ pub unsafe extern "C" fn git_filebuf_cleanup(file: *mut GitFilebuf) {
 ///
 /// # Safety
 ///
-/// As [`f`].
+/// As [`git_filebuf_cleanup`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_filebuf_flush(file: *mut GitFilebuf) -> c_int {
+pub unsafe extern "C" fn git_filebuf_flush(file: Option<&mut GitFilebuf>) -> c_int {
     barrier(|| {
-        // SAFETY: the caller's contract.
-        let Some(file) = (unsafe { f(file) }) else {
+        let Some(file) = file else {
             return -1;
         };
         file.flush()
@@ -97,17 +97,19 @@ pub unsafe extern "C" fn git_filebuf_flush(file: *mut GitFilebuf) -> c_int {
 ///
 /// # Safety
 ///
-/// `file` is a writable `git_filebuf` (zeroed, or cleaned up: its `buffer`
-/// is NULL); `path` a NUL-terminated string. The filebuf does not move
-/// until it is cleaned up.
+/// `file` is NULL or a valid `git_filebuf` (zeroed, or cleaned up: its
+/// `buffer` is NULL) that nothing else accesses during the call; `path`
+/// NULL or a NUL-terminated string, unwritten during the call. The filebuf
+/// does not move until it is cleaned up.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_filebuf_open(
-    file: *mut GitFilebuf,
-    path: *const c_char,
+    file: Option<&mut GitFilebuf>,
+    path: CStrArg<'_>,
     flags: c_int,
     mode: mode_t,
 ) -> c_int {
-    // SAFETY: forwarded.
+    // SAFETY: `file` and `path` are this export's arguments, under the
+    // same contract.
     unsafe { git_filebuf_open_withsize(file, path, flags, mode, WRITE_BUFFER_SIZE) }
 }
 
@@ -118,19 +120,15 @@ pub unsafe extern "C" fn git_filebuf_open(
 /// As [`git_filebuf_open`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_filebuf_open_withsize(
-    file: *mut GitFilebuf,
-    path: *const c_char,
+    file: Option<&mut GitFilebuf>,
+    path: CStrArg<'_>,
     flags: c_int,
     mode: mode_t,
     size: usize,
 ) -> c_int {
     barrier(|| {
-        crate::git_assert_arg!(!file.is_null(), "file", -1);
-        crate::git_assert_arg!(!path.is_null(), "path", -1);
-        // SAFETY: a writable filebuf, used only by this call.
-        let file = unsafe { &mut *file };
-        // SAFETY: a NUL-terminated string.
-        let p = unsafe { cstr_bytes(path) };
+        let file = crate::git_arg!(file, "file", -1);
+        let p = crate::git_arg!(path.get(), "path", -1).to_bytes();
         // SAFETY: the caller keeps the filebuf in place until it is cleaned
         // up (this export's contract).
         status(unsafe { file.open_withsize(p, flags, mode, size) })
@@ -141,17 +139,15 @@ pub unsafe extern "C" fn git_filebuf_open_withsize(
 ///
 /// # Safety
 ///
-/// `out` is writable for the algorithm's digest size; `file` as in [`f`].
+/// `out` is NULL or writable for the algorithm's digest size, and no
+/// reference covers it; `file` as in [`git_filebuf_cleanup`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_filebuf_hash(out: *mut u8, file: *mut GitFilebuf) -> c_int {
+pub unsafe extern "C" fn git_filebuf_hash(out: *mut u8, file: Option<&mut GitFilebuf>) -> c_int {
     barrier(|| {
         crate::git_assert_arg!(!out.is_null(), "out", -1);
-        // SAFETY: the caller's contract.
-        let Some(file) = (unsafe { f(file) }) else {
-            let _ = errors::assert_arg_failed("file");
-            return -1;
-        };
-        // SAFETY: the caller passes room for the digest.
+        let file = crate::git_arg!(file, "file", -1);
+        // SAFETY: the non-null `out` is writable for the digest's size
+        // (this export's contract), `hash_into`'s requirement.
         status(unsafe { file.hash_into(out) })
     })
 }
@@ -160,12 +156,17 @@ pub unsafe extern "C" fn git_filebuf_hash(out: *mut u8, file: *mut GitFilebuf) -
 ///
 /// # Safety
 ///
-/// As [`f`]; `path` is a NUL-terminated string.
+/// `file` as in [`git_filebuf_cleanup`]; `path` NULL or a NUL-terminated
+/// string, unwritten during the call, and not `file`'s own
+/// `path_original` (which the call frees before copying `path`: C's
+/// use-after-free too).
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_filebuf_commit_at(file: *mut GitFilebuf, path: CStrArg<'_>) -> c_int {
+pub unsafe extern "C" fn git_filebuf_commit_at(
+    file: Option<&mut GitFilebuf>,
+    path: CStrArg<'_>,
+) -> c_int {
     barrier(|| {
-        // SAFETY: NULL or a valid filebuf, used only by this call.
-        let Some(file) = (unsafe { f(file) }) else {
+        let Some(file) = file else {
             return -1;
         };
         let Some(p) = path.get() else {
@@ -179,12 +180,11 @@ pub unsafe extern "C" fn git_filebuf_commit_at(file: *mut GitFilebuf, path: CStr
 ///
 /// # Safety
 ///
-/// As [`f`].
+/// As [`git_filebuf_cleanup`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_filebuf_commit(file: *mut GitFilebuf) -> c_int {
+pub unsafe extern "C" fn git_filebuf_commit(file: Option<&mut GitFilebuf>) -> c_int {
     barrier(|| {
-        // SAFETY: the caller's contract.
-        let Some(file) = (unsafe { f(file) }) else {
+        let Some(file) = file else {
             return errors::assert_arg_failed("file").raw();
         };
         status(file.commit())
@@ -195,24 +195,25 @@ pub unsafe extern "C" fn git_filebuf_commit(file: *mut GitFilebuf) -> c_int {
 ///
 /// # Safety
 ///
-/// As [`f`]; `buff` is readable for `len` bytes, outside the filebuf's
-/// buffer.
+/// `file` as in [`git_filebuf_cleanup`]; `buff` is readable for `len`
+/// bytes, unwritten during the call and outside the filebuf's buffer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_filebuf_write(
-    file: *mut GitFilebuf,
+    file: Option<&mut GitFilebuf>,
     buff: *const c_void,
     len: usize,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: NULL or a valid filebuf, used only by this call.
-        let Some(file) = (unsafe { f(file) }) else {
+        let Some(file) = file else {
             return -1;
         };
         if len > isize::MAX as usize {
             // No readable buffer is this large.
             return -1;
         }
-        // SAFETY: `len` readable bytes outside the filebuf.
+        // SAFETY: `buff` has `len <= isize::MAX` readable bytes that
+        // nothing writes during the call, outside the buffer the write
+        // fills (this export's contract).
         let data = unsafe { crate::util::export::bytes(buff.cast(), len) };
         status(file.write(data))
     })
@@ -222,18 +223,17 @@ pub unsafe extern "C" fn git_filebuf_write(
 ///
 /// # Safety
 ///
-/// As [`f`]; `buff` is writable. The reserved bytes stay valid until the
-/// next call on `file`.
+/// `file` as in [`git_filebuf_cleanup`]; `buff` is NULL or writable. The
+/// reserved bytes stay valid until the next call on `file`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_filebuf_reserve(
-    file: *mut GitFilebuf,
+    file: Option<&mut GitFilebuf>,
     mut buff: Out<'_, *mut c_void>,
     len: usize,
 ) -> c_int {
     barrier(|| {
         buff.write(core::ptr::null_mut());
-        // SAFETY: the caller's contract.
-        let Some(file) = (unsafe { f(file) }) else {
+        let Some(file) = file else {
             return -1;
         };
         match file.reserve_offset(len) {
@@ -252,22 +252,24 @@ pub unsafe extern "C" fn git_filebuf_reserve(
 ///
 /// # Safety
 ///
-/// As [`f`]; `data` is readable for `len` bytes when `len >= 0`.
+/// `file` as in [`git_filebuf_cleanup`]; `data` is readable for `len`
+/// bytes when `len >= 0`, unwritten during the call and outside the
+/// filebuf's buffer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_filebuf__printf_formatted(
-    file: *mut GitFilebuf,
+    file: Option<&mut GitFilebuf>,
     data: *const c_char,
     len: c_int,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the caller's contract.
-        let Some(file) = (unsafe { f(file) }) else {
+        let Some(file) = file else {
             return -1;
         };
         let d = if len < 0 {
             None
         } else {
-            // SAFETY: `len` readable bytes.
+            // SAFETY: `data` has `len >= 0` readable bytes, unwritten
+            // during the call (this export's contract).
             Some(unsafe { crate::util::export::bytes(data, len as usize) })
         };
         status(file.printf_formatted(d))
@@ -278,16 +280,16 @@ pub unsafe extern "C" fn git_filebuf__printf_formatted(
 ///
 /// # Safety
 ///
-/// As [`f`]; `mtime` and `size` are NULL or writable.
+/// `file` is NULL or a valid `git_filebuf` that nothing writes during the
+/// call; `mtime` and `size` are NULL or writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_filebuf_stats(
     mut mtime: Out<'_, libc::time_t>,
     mut size: Out<'_, usize>,
-    file: *mut GitFilebuf,
+    file: Option<&GitFilebuf>,
 ) -> c_int {
     barrier(|| {
-        // SAFETY: the caller's contract.
-        let Some(file) = (unsafe { f(file) }) else {
+        let Some(file) = file else {
             return -1;
         };
         match file.stats() {
