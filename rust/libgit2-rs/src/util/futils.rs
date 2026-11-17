@@ -13,6 +13,7 @@
 //!   C's `git_pool` + `git_hashset_str` to it.
 
 use core::ffi::{CStr, c_int, c_uint, c_void};
+use std::os::fd::{AsRawFd, IntoRawFd, OwnedFd};
 
 use super::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
 use super::fs_path::{self, WalkStep, c_str, str_c_bytes, str_cpath, to_cstring};
@@ -134,10 +135,17 @@ pub fn mktmp(path_out: &mut GitStr, filename: &[u8], mode: mode_t) -> Result<c_i
 
 /// `git_futils_creat_withpath`.
 pub fn creat_withpath(path: &CStr, dirmode: mode_t, mode: mode_t) -> Result<c_int> {
+    creat_withpath_owned(path, dirmode, mode).map(IntoRawFd::into_raw_fd)
+}
+
+/// [`creat_withpath`], the descriptor owned (closed on drop).
+fn creat_withpath_owned(path: &CStr, dirmode: mode_t, mode: mode_t) -> Result<OwnedFd> {
     if mkpath2file(path.to_bytes(), dirmode).is_err() {
         return Err(ErrorCode::GENERIC);
     }
-    posix::creat(path, mode).map_err(|_| {
+    // `p_creat`'s flags (`posix::creat`).
+    let flags = libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC | libc::O_CLOEXEC;
+    posix::open_owned(path, flags, mode).map_err(|_| {
         git_error_set!(
             ErrorClass::OS,
             "failed to create file '{}'",
@@ -173,17 +181,21 @@ pub fn creat_locked_withpath(path: &CStr, dirmode: mode_t, mode: mode_t) -> Resu
 
 /// `git_futils_open_ro`.
 pub fn open_ro(path: &CStr) -> Result<c_int> {
-    posix::open(path, libc::O_RDONLY, 0)
+    open_ro_owned(path).map(IntoRawFd::into_raw_fd)
+}
+
+/// [`open_ro`], the descriptor owned (closed on drop).
+pub fn open_ro_owned(path: &CStr) -> Result<OwnedFd> {
+    posix::open_owned(path, libc::O_RDONLY, 0)
         .map_err(|Errno(e)| fs_path::set_error(e, path.to_bytes(), "open"))
 }
 
 /// `git_futils_truncate`: truncate `path`, creating it with `mode`.
 pub fn truncate(path: &CStr, mode: c_int) -> Result<()> {
     let flags = libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC | libc::O_CLOEXEC;
-    let fd = posix::open(path, flags, mode as mode_t)
+    let fd = posix::open_owned(path, flags, mode as mode_t)
         .map_err(|Errno(e)| fs_path::set_error(e, path.to_bytes(), "open"))?;
-    // SAFETY: a descriptor this code opened, closed once.
-    let _ = unsafe { posix::close(fd) };
+    drop(fd);
     Ok(())
 }
 
@@ -219,13 +231,13 @@ pub fn canonical_mode(raw_mode: mode_t) -> mode_t {
 /// Read `len` bytes from `fd` into the room after the contents of `buf`
 /// (which has at least `len + 1` bytes of room); the count read, or -1.
 fn read_into_spare(buf: &mut GitStr, fd: c_int, len: usize) -> isize {
-    // SAFETY: the caller writes the NUL back (`readbuffer_fd`) before the
-    // string is read.
-    let spare = unsafe { buf.spare_with_nul_mut() };
-    assert!(spare.len() > len, "room was made for the read");
-    // SAFETY: `spare` is writable for more than `len` bytes; `read_raw`
-    // writes at most `len` (it only initializes them).
-    unsafe { posix::read_raw(fd, spare.as_mut_ptr().cast(), len) }
+    let (p, room) = buf.spare_ptr();
+    assert!(room > len, "room was made for the read");
+    // SAFETY: `p` starts `room > len` bytes of the string's own buffer,
+    // which `&mut buf` lets this write and nothing else references;
+    // `read_raw` writes at most `len` of them. The NUL it may overwrite is
+    // put back by the caller (`readbuffer_fd`) before the string is read.
+    unsafe { posix::read_raw(fd, p, len) }
 }
 
 /// `git_futils_readbuffer_fd`: read exactly `len` bytes of `fd` into `buf`.
@@ -253,15 +265,12 @@ pub fn readbuffer_fd(buf: &mut GitStr, fd: c_int, len: usize) -> Result<()> {
         return Err(ErrorCode::GENERIC);
     }
     let n = read_size as usize;
-    // C's `buf->ptr[read_size] = '\0'`: the room has `alloc_len > n` bytes.
-    // SAFETY: the NUL is written here.
-    let spare = unsafe { buf.spare_with_nul_mut() };
-    spare[n].write(0);
     // SAFETY: owned (grown above); its first `start + n` bytes are
     // initialized (the old contents, empty, and what `read` wrote), and
-    // `start + n < capacity` (followed by the NUL just written).
+    // `start + n < alloc_len <= capacity`. The NUL is written next.
     unsafe { buf.set_len(start + n) };
-    Ok(())
+    // C's `buf->ptr[read_size] = '\0'`: within the room, so no growth.
+    buf.terminate()
 }
 
 /// `git_futils_readbuffer_fd_full`: read `fd` to its end into `buf`.
@@ -281,9 +290,10 @@ pub fn readbuffer_fd_full(buf: &mut GitStr, fd: c_int) -> Result<()> {
         // string's room (`capacity >= alloc_len = total + BLOCKSIZE`).
         let (p, room) = buf.spare_ptr();
         assert!(room >= BLOCKSIZE, "room was made for the block");
-        // SAFETY: `p` is writable for `room >= BLOCKSIZE` bytes, and
-        // `read_raw` writes at most that many; the NUL it may overwrite is
-        // restored below before the string is read.
+        // SAFETY: `p` starts `room >= BLOCKSIZE` bytes of the string's own
+        // buffer, which `&mut buf` lets this write and nothing else
+        // references; `read_raw` writes at most `BLOCKSIZE` of them. The
+        // NUL it may overwrite is restored below before the string is read.
         let read_size = unsafe { posix::read_raw(fd, p, BLOCKSIZE) };
         let n = total + read_size as usize;
         // SAFETY: owned; its first `n` bytes are the earlier blocks and what
@@ -318,16 +328,15 @@ pub fn readbuffer_updated(
         return Err(ErrorCode::NOT_FOUND);
     }
     // (C's `git__is_sizet(st_size + 1)` check is always true on LP64.)
-    let fd = open_ro(path)?;
+    let fd = open_ro_owned(path)?;
     // The size of the file opened, not of the one `stat` saw: a writer
     // that renames a new file over `path` in between (a ref update while
     // another thread reads it) made C read the old size from the new file
     // ("could not read (expected …)"; S-5, rust/DIVERGENCES.md).
-    let size = posix::fstat(fd).map_or(st.st_size, |f| f.st_size);
+    let size = posix::fstat(fd.as_raw_fd()).map_or(st.st_size, |f| f.st_size);
     let mut buf = GitStr::new();
-    let r = readbuffer_fd(&mut buf, fd, size as usize);
-    // SAFETY: a descriptor this code opened, closed once.
-    let _ = unsafe { posix::close(fd) };
+    let r = readbuffer_fd(&mut buf, fd.as_raw_fd(), size as usize);
+    drop(fd);
     if r.is_err() {
         return Err(ErrorCode::GENERIC);
     }
@@ -372,22 +381,19 @@ pub fn writebuffer(buf: &[u8], path: &CStr, flags: c_int, mode: mode_t) -> Resul
         mode
     };
     let p = Bytes(path.to_bytes());
-    let fd = posix::open(path, flags, mode)
+    let fd = posix::open_owned(path, flags, mode)
         .map_err(|_| git_error_set!(ErrorClass::OS, "could not open '{p}' for writing"))?;
-    if posix::write(fd, buf).is_err() {
+    if posix::write(fd.as_raw_fd(), buf).is_err() {
         let _ = git_error_set!(ErrorClass::OS, "could not write to '{p}'");
-        // SAFETY: a descriptor this code opened, closed once.
-        let _ = unsafe { posix::close(fd) };
+        drop(fd);
         return Err(ErrorCode::GENERIC);
     }
-    if do_fsync && posix::fsync(fd).is_err() {
+    if do_fsync && posix::fsync(fd.as_raw_fd()).is_err() {
         let _ = git_error_set!(ErrorClass::OS, "could not fsync '{p}'");
-        // SAFETY: a descriptor this code opened, closed once.
-        let _ = unsafe { posix::close(fd) };
+        drop(fd);
         return Err(ErrorCode::GENERIC);
     }
-    // SAFETY: a descriptor this code opened, closed once.
-    if unsafe { posix::close(fd) }.is_err() {
+    if posix::close_owned(fd).is_err() {
         return Err(git_error_set!(ErrorClass::OS, "error while closing '{p}'"));
     }
     if do_fsync && flags & libc::O_CREAT != 0 {
@@ -419,15 +425,11 @@ pub fn mmap_ro(fd: c_int, begin: i64, len: usize) -> Result<GitMap> {
 
 /// `git_futils_mmap_ro_file`.
 pub fn mmap_ro_file(path: &CStr) -> Result<GitMap> {
-    let fd = open_ro(path)?;
-    let r = (|| {
-        let len = filesize(fd)?;
-        // (C's `git__is_sizet(len)` check is always true on LP64.)
-        mmap_ro(fd, 0, len as usize)
-    })();
-    // SAFETY: a descriptor this code opened, closed once.
-    let _ = unsafe { posix::close(fd) };
-    r
+    let fd = open_ro_owned(path)?;
+    let len = filesize(fd.as_raw_fd())?;
+    // (C's `git__is_sizet(len)` check is always true on LP64.)
+    mmap_ro(fd.as_raw_fd(), 0, len as usize)
+    // `fd` is closed here, after the mapping is made.
 }
 
 // ---------------------------------------------------------------------------
@@ -945,14 +947,15 @@ pub fn rmdir_r(path: &[u8], base: Option<&[u8]>, flags: u32) -> Result<()> {
 
 /// `git_futils_fake_symlink`: write `target` into a new file `path`.
 pub fn fake_symlink(target: &[u8], path: &CStr) -> Result<()> {
-    let fd = creat_withpath(path, 0o755, 0o644).map_err(|_| ErrorCode::GENERIC)?;
-    let r = posix::write(fd, c_str(target));
-    // SAFETY: a descriptor this code opened, closed once.
-    let _ = unsafe { posix::close(fd) };
+    let fd = creat_withpath_owned(path, 0o755, 0o644).map_err(|_| ErrorCode::GENERIC)?;
+    let r = posix::write(fd.as_raw_fd(), c_str(target));
+    drop(fd);
     r.map_err(|_| ErrorCode::GENERIC)
 }
 
-fn cp_by_fd(ifd: c_int, ofd: c_int, close_fd_when_done: bool) -> Result<()> {
+/// `cp_by_fd(ifd, ofd, true)`: copy `ifd` to `ofd`, then close both (the
+/// only way `git_futils_cp` calls it).
+fn cp_by_fd(ifd: OwnedFd, ofd: OwnedFd) -> Result<()> {
     let mut buffer = Vec::new();
     let r = if buffer.try_reserve_exact(GIT_BUFSIZE_FILEIO).is_err() {
         Err(errors::oom())
@@ -961,10 +964,10 @@ fn cp_by_fd(ifd: c_int, ofd: c_int, close_fd_when_done: bool) -> Result<()> {
         let mut error = Ok(());
         let mut read_failed = false;
         loop {
-            match posix::read(ifd, &mut buffer) {
+            match posix::read(ifd.as_raw_fd(), &mut buffer) {
                 Ok(0) => break,
                 Ok(n) => {
-                    if posix::write(ofd, &buffer[..n]).is_err() {
+                    if posix::write(ofd.as_raw_fd(), &buffer[..n]).is_err() {
                         error = Err(ErrorCode::GENERIC);
                         break;
                     }
@@ -984,24 +987,20 @@ fn cp_by_fd(ifd: c_int, ofd: c_int, close_fd_when_done: bool) -> Result<()> {
         }
         error
     };
-    if close_fd_when_done {
-        // SAFETY: a descriptor this code opened, closed once.
-        let _ = unsafe { posix::close(ifd) };
-        // SAFETY: a descriptor this code opened, closed once.
-        let _ = unsafe { posix::close(ofd) };
-    }
+    // C's order: `ifd`, then `ofd`.
+    drop(ifd);
+    drop(ofd);
     r
 }
 
 /// `git_futils_cp`: copy the file `from` to a new file `to` with mode
 /// `filemode`.
 pub fn cp(from: &CStr, to: &CStr, filemode: mode_t) -> Result<()> {
-    let ifd = open_ro(from)?;
-    let ofd = match posix::open(to, libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL, filemode) {
+    let ifd = open_ro_owned(from)?;
+    let ofd = match posix::open_owned(to, libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL, filemode) {
         Ok(fd) => fd,
         Err(_) => {
-            // SAFETY: a descriptor this code opened, closed once.
-            let _ = unsafe { posix::close(ifd) };
+            drop(ifd);
             return Err(fs_path::set_error(
                 errors::errno(),
                 to.to_bytes(),
@@ -1009,7 +1008,7 @@ pub fn cp(from: &CStr, to: &CStr, filemode: mode_t) -> Result<()> {
             ));
         }
     };
-    cp_by_fd(ifd, ofd, true)
+    cp_by_fd(ifd, ofd)
 }
 
 /// `git_futils_touch`: set `path`'s access and modification times to
@@ -1262,13 +1261,11 @@ pub fn filestamp_set(target: &mut Filestamp, source: Option<&Filestamp>) {
 /// `git_futils_fsync_dir`.
 pub fn fsync_dir(path: &CStr) -> Result<()> {
     let p = Bytes(path.to_bytes());
-    let fd = posix::open(path, libc::O_RDONLY, 0)
+    let fd = posix::open_owned(path, libc::O_RDONLY, 0)
         .map_err(|_| git_error_set!(ErrorClass::OS, "failed to open directory '{p}' for fsync"))?;
-    let r = posix::fsync(fd)
-        .map_err(|_| git_error_set!(ErrorClass::OS, "failed to fsync directory '{p}'"));
-    // SAFETY: a descriptor this code opened, closed once.
-    let _ = unsafe { posix::close(fd) };
-    r
+    posix::fsync(fd.as_raw_fd())
+        .map_err(|_| git_error_set!(ErrorClass::OS, "failed to fsync directory '{p}'"))
+    // `fd` is closed here.
 }
 
 /// `git_futils_fsync_parent`: `fsync` the directory that contains `path`.
