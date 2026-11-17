@@ -22,7 +22,12 @@
 //! `UnsafeCell`, and nothing frees it, during the call. A reference
 //! argument is protected for the call under Stacked/Tree Borrows, so a free
 //! or a foreign write before the export returns is undefined behaviour
-//! even if the reference is not used again. `Option<&mut T>` adds that
+//! even if the reference is not used again. That includes the export's
+//! own writes: an id C lets the caller pass as both input and `out`
+//! (`git_odb_exists_prefix(&id, db, &id, n)`), an id that may be the
+//! field the call updates (`git_treebuilder_insert` with the entry's own
+//! id) or an element it shifts (`git_oidarray__remove`), stays a raw
+//! pointer read once up front. `Option<&mut T>` adds that
 //! nothing else reads it either: no other argument may alias it (a
 //! `git_str` whose own buffer is also passed as data stays a raw pointer).
 //! Where any of this fails, keep the raw pointer and convert it at the
@@ -32,7 +37,11 @@
 //! read or written, and then only for that read or write, so they keep the
 //! raw pointer's aliasing behaviour: they apply wherever the export reads
 //! the string or writes the out-parameter at a single point, as the code
-//! before them did with `CStr::from_ptr` / `ptr.write`.
+//! before them did with `CStr::from_ptr` / `ptr.write`. A string the call
+//! itself frees or rewrites (a path in the output `git_str`'s buffer, an
+//! entry's name in the block the call frees) is read or copied before
+//! that point, and no `&CStr` of it is passed to a fn that frees it (a
+//! reference argument is protected for that fn's whole call).
 //!
 //! Rust code obtains these values safely only from Rust references
 //! (`From<&CStr>`, `From<&mut T>`); from a raw pointer only through the
