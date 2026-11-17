@@ -473,12 +473,11 @@ impl GitRefcount {
     ///
     /// `p` addresses a live `GitRefcount`.
     unsafe fn count<'a>(p: *const GitRefcount) -> &'a Atomic32 {
-        // SAFETY: the caller's contract: a projection of a live count's
-        // place, which forms no reference.
-        let f = unsafe { &raw const (*p).refcount };
-        // SAFETY: the caller's contract; a pointer to the field alone, so
-        // only the atomic is borrowed.
-        unsafe { &*f }
+        // SAFETY: `p` addresses a live, aligned `GitRefcount` (this fn's
+        // contract); `&(*p).refcount` borrows that field alone (a place
+        // projection forms no reference to the whole), an atomic, which
+        // tolerates the concurrent atomic accesses C and Rust make.
+        unsafe { &(*p).refcount }
     }
 
     /// The owner's atomic, borrowed alone.
@@ -487,11 +486,8 @@ impl GitRefcount {
     ///
     /// As [`count`](Self::count).
     unsafe fn owner_cell<'a>(p: *const GitRefcount) -> &'a AtomicPtr<c_void> {
-        // SAFETY: the caller's contract: a projection of a live count's
-        // place, which forms no reference.
-        let f = unsafe { &raw const (*p).owner };
-        // SAFETY: as above.
-        unsafe { &*f }
+        // SAFETY: as in `count`, for the `owner` atomic.
+        unsafe { &(*p).owner }
     }
 
     /// One reference and no owner, for an object nothing else reaches
@@ -700,23 +696,29 @@ pub type TlsdataDestroyFn = unsafe extern "C" fn(*mut c_void);
 /// no error message on failure (the error state is itself thread-local).
 pub mod ffi {
     use super::*;
+    use crate::util::cabi::Out;
 
     /// `git_tlsdata_init`.
     ///
     /// # Safety
     ///
-    /// `key` is valid for a write; `destroy_fn` is NULL or sound to call at
-    /// thread exit with each value set for the key.
+    /// `key` is NULL (the key is made, not stored) or valid for a write;
+    /// `destroy_fn` is NULL or sound to call at thread exit with each
+    /// value set for the key.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tlsdata_init(
-        key: *mut TlsdataKey,
+        mut key: Out<'_, TlsdataKey>,
         destroy_fn: Option<TlsdataDestroyFn>,
     ) -> c_int {
-        // SAFETY: the caller passes a writable `key` and vouches for
-        // `destroy_fn`.
-        if unsafe { libc::pthread_key_create(key, destroy_fn) } != 0 {
+        let mut k: TlsdataKey = 0;
+        // SAFETY: `k` is a writable local; `destroy_fn` is NULL or sound to
+        // call at thread exit with the key's values (this export's
+        // contract).
+        if unsafe { libc::pthread_key_create(&raw mut k, destroy_fn) } != 0 {
             -1
         } else {
+            // `pthread_key_create` wrote the key only on success, as here.
+            key.write(k);
             0
         }
     }
@@ -863,7 +865,7 @@ mod tests {
         let mut v = 7u32;
         // SAFETY: a key created here, used and disposed on this thread.
         unsafe {
-            assert_eq!(ffi::git_tlsdata_init(&mut key, None), 0);
+            assert_eq!(ffi::git_tlsdata_init((&mut key).into(), None), 0);
             assert!(ffi::git_tlsdata_get(key).is_null());
             assert_eq!(ffi::git_tlsdata_set(key, (&raw mut v).cast()), 0);
             assert_eq!(ffi::git_tlsdata_get(key), (&raw mut v).cast());
