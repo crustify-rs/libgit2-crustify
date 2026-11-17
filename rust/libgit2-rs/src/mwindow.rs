@@ -967,7 +967,7 @@ pub fn global_init() -> Result<()> {
 pub mod ffi {
     use super::*;
     use crate::git_arg;
-    use crate::util::cabi::Out;
+    use crate::util::cabi::{CStrArg, Out};
     use crate::util::export::{barrier, status};
 
     /// `git_mwindow_global_init`.
@@ -1017,20 +1017,22 @@ pub mod ffi {
     /// # Safety
     ///
     /// `mwf` is a live `git_mwindow_file` that stays at its address while it
-    /// has windows; `cursor` is a valid cursor (NULL or a window a previous
-    /// call stored); `left` is NULL or writable.
+    /// has windows; `cursor` is NULL or a valid cursor (a `git_mwindow *`
+    /// that is NULL or a window a previous call stored, as
+    /// [`Cursor::from_raw_mut`] states), used by nothing else during the
+    /// call; `left` is NULL or writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_mwindow_open(
         mwf: Option<&GitMwindowFile>,
-        cursor: *mut *mut GitMwindow,
+        cursor: Option<&mut Cursor>,
         offset: i64,
         extra: usize,
         mut left: Out<'_, c_uint>,
     ) -> *mut u8 {
         barrier(|| {
             let mwf = git_arg!(mwf, "mwf", core::ptr::null_mut());
-            // SAFETY: a valid cursor, used only here (the caller).
-            let cursor = unsafe { Cursor::from_raw_mut(cursor) };
+            // (C dereferences a NULL cursor.)
+            let cursor = git_arg!(cursor, "cursor", core::ptr::null_mut());
             match cursor.open_raw(mwf, offset, extra) {
                 Some((p, l)) => {
                     if !left.is_null() {
@@ -1053,7 +1055,8 @@ pub mod ffi {
     pub unsafe extern "C" fn git_mwindow_file_register(mwf: Option<&GitMwindowFile>) -> c_int {
         barrier(|| {
             let mwf = git_arg!(mwf, "mwf", -1);
-            // SAFETY: it stays put until deregistered (the caller).
+            // SAFETY: `mwf` stays at its address until deregistered (this
+            // export's contract), as `file_register` requires.
             status(unsafe { file_register(mwf) })
         })
     }
@@ -1073,27 +1076,27 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `window` is a valid cursor.
+    /// `window` is NULL or a valid cursor (as in [`git_mwindow_open`]).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_mwindow_close(window: *mut *mut GitMwindow) {
-        // SAFETY: the caller's contract.
-        barrier(|| unsafe { Cursor::from_raw_mut(window) }.close())
+    pub unsafe extern "C" fn git_mwindow_close(window: Option<&mut Cursor>) {
+        barrier(|| git_arg!(window, "window", ()).close())
     }
 
     /// `git_mwindow_get_pack`.
     ///
     /// # Safety
     ///
-    /// `out` is writable; `path` is a NUL-terminated string.
+    /// `out` is NULL or writable; `path` is NULL or a NUL-terminated
+    /// string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_mwindow_get_pack(
         mut out: Out<'_, *mut GitPackFile>,
-        path: *const c_char,
+        path: CStrArg<'_>,
         oid_type: git_oid_t,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: NUL-terminated (the caller).
-            let path = unsafe { CStr::from_ptr(path) };
+            // (C dereferences a NULL `path`.)
+            let path = git_arg!(path.get(), "path", -1);
             match get_pack(path, oid_type) {
                 Ok(p) => {
                     out.write(p);
@@ -1112,7 +1115,8 @@ pub mod ffi {
     /// caller gives up.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_mwindow_put_pack(pack: *mut GitPackFile) -> c_int {
-        // SAFETY: the caller's contract is `put_pack`'s.
+        // SAFETY: a pack from `git_mwindow_get_pack` whose reference the
+        // caller gives up (this export's contract), as `put_pack` requires.
         barrier(|| status(unsafe { put_pack(pack) }))
     }
 }

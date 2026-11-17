@@ -97,7 +97,8 @@ impl<'r> Odb<'r> {
     ///
     /// `raw` is a live odb.
     pub(crate) unsafe fn new_ref(raw: NonNull<GitOdb>) -> Odb<'r> {
-        // SAFETY: the caller's contract.
+        // SAFETY: `raw` is a live odb made by `CShared` (this fn's
+        // contract); `from_borrowed` takes a new reference to it.
         let db = unsafe { CShared::from_borrowed(raw.as_ptr()) }.expect("non-null");
         Odb(db, PhantomData)
     }

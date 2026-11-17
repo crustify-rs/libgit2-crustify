@@ -959,7 +959,8 @@ pub struct LooseBackend(std::sync::Arc<Loose>);
 ///
 /// # Safety
 ///
-/// The pointers are writable.
+/// The pointers are aligned and writable, and no reference to their
+/// pointees is live.
 unsafe fn write_raw(
     buffer_p: *mut *mut c_void,
     len_p: *mut usize,
@@ -968,11 +969,12 @@ unsafe fn write_raw(
 ) {
     let (buf, len, t) = raw;
     let (p, _) = buf.into_raw_parts();
-    // SAFETY: the caller's contract.
+    // SAFETY: `buffer_p` is writable (this fn's contract); the buffer's
+    // ownership passes to the caller.
     unsafe { buffer_p.write(p.cast()) };
-    // SAFETY: as above.
+    // SAFETY: `len_p` is writable (this fn's contract).
     unsafe { len_p.write(len) };
-    // SAFETY: as above.
+    // SAFETY: `type_p` is writable (this fn's contract).
     unsafe { type_p.write(t) };
 }
 
@@ -1194,7 +1196,7 @@ pub fn new_backend(
 pub mod ffi {
     use super::*;
     use crate::git_arg;
-    use crate::util::cabi::CStrArg;
+    use crate::util::cabi::{CStrArg, Out};
     use crate::util::export::barrier;
 
     /// `git_odb_backend_loose_options_init`.
@@ -1204,7 +1206,7 @@ pub mod ffi {
     /// `opts` is NULL or writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_odb_backend_loose_options_init(
-        opts: *mut GitOdbBackendLooseOptions,
+        mut opts: Out<'_, GitOdbBackendLooseOptions>,
         version: c_uint,
     ) -> c_int {
         barrier(|| {
@@ -1214,8 +1216,7 @@ pub mod ffi {
             {
                 return e.raw();
             }
-            // SAFETY: the caller's contract.
-            unsafe { opts.write(GitOdbBackendLooseOptions::default()) };
+            opts.write(GitOdbBackendLooseOptions::default());
             0
         })
     }
@@ -1224,24 +1225,30 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `backend_out` is writable; `objects_dir` is a NUL-terminated
-    /// string; `opts` is NULL or a readable options struct.
+    /// `backend_out` is NULL or writable; `objects_dir` is NULL or a
+    /// NUL-terminated string; `opts` is NULL or a readable options struct
+    /// that nothing writes during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_odb__backend_loose(
-        backend_out: *mut *mut GitOdbBackend,
+        backend_out: Out<'_, *mut GitOdbBackend>,
         objects_dir: CStrArg<'_>,
-        opts: *mut GitOdbBackendLooseOptions,
+        opts: Option<&GitOdbBackendLooseOptions>,
+    ) -> c_int {
+        backend_loose(backend_out, objects_dir, opts)
+    }
+
+    /// The body of both loose-backend constructors.
+    fn backend_loose(
+        mut backend_out: Out<'_, *mut GitOdbBackend>,
+        objects_dir: CStrArg<'_>,
+        opts: Option<&GitOdbBackendLooseOptions>,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!backend_out.is_null(), "backend_out", -1);
             let objects_dir = git_arg!(objects_dir.get(), "objects_dir", -1);
-            let dir = objects_dir.to_bytes();
-            // SAFETY: the caller's contract.
-            let opts = unsafe { opts.as_ref() };
-            match new_backend(dir, opts) {
+            match new_backend(objects_dir.to_bytes(), opts) {
                 Ok(b) => {
-                    // SAFETY: the caller's contract.
-                    unsafe { backend_out.write(b.as_ptr()) };
+                    backend_out.write(b.as_ptr());
                     0
                 }
                 Err(e) => e.raw(),
@@ -1256,12 +1263,11 @@ pub mod ffi {
     /// As [`git_odb__backend_loose`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_odb_backend_loose(
-        backend_out: *mut *mut GitOdbBackend,
+        backend_out: Out<'_, *mut GitOdbBackend>,
         objects_dir: CStrArg<'_>,
-        opts: *mut GitOdbBackendLooseOptions,
+        opts: Option<&GitOdbBackendLooseOptions>,
     ) -> c_int {
-        // SAFETY: forwarded.
-        unsafe { git_odb__backend_loose(backend_out, objects_dir, opts) }
+        backend_loose(backend_out, objects_dir, opts)
     }
 }
 

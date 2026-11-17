@@ -946,7 +946,8 @@ pub mod ffi {
     /// the result is used, whose source is still allocated and unwritten.
     unsafe fn borrow_index(p: *const git_delta_index) -> ManuallyDrop<DeltaIndex<'static>> {
         ManuallyDrop::new(DeltaIndex {
-            // SAFETY: the caller's contract: a non-null live block.
+            // SAFETY: `p` is a live index block (this fn's contract), so
+            // not NULL.
             block: unsafe { NonNull::new_unchecked(p.cast_mut()) },
             _src: core::marker::PhantomData,
         })
@@ -1002,7 +1003,9 @@ pub mod ffi {
     pub unsafe extern "C" fn git_delta_index_free(index: *mut git_delta_index) {
         barrier(|| {
             if !index.is_null() {
-                // SAFETY: the caller's contract: a live index from `init`.
+                // SAFETY: a non-NULL `index` is a live block of
+                // `git_delta_index_init` (`git__allocator`), not used again
+                // (this export's contract), freed once.
                 unsafe { alloc::free(index.cast()) };
             }
         })
@@ -1017,7 +1020,8 @@ pub mod ffi {
     pub unsafe extern "C" fn git_delta_index_size(index: *mut git_delta_index) -> usize {
         barrier(|| {
             git_assert_arg!(!index.is_null(), "index", usize::MAX);
-            // SAFETY: the caller's contract; indexes are only read.
+            // SAFETY: a live index from `git_delta_index_init` (this
+            // export's contract; NULL rejected above), only read here.
             unsafe { borrow_index(index) }.memsize()
         })
     }
@@ -1026,48 +1030,39 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` and `out_size` are writable; `trg_buf` is NULL or readable
-    /// for `trg_size` bytes; `index` is a live index from
+    /// `out` and `out_size` are NULL or writable; `trg_buf` is NULL or
+    /// readable for `trg_size` bytes, unwritten during the call; `index` is
+    /// NULL or a live index from
     /// [`git_delta_index_init`] (it may be NULL only when the target is
     /// empty; C dereferenced it).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_delta_create_from_index(
-        out: *mut *mut c_void,
-        out_size: *mut usize,
+        mut out: Out<'_, *mut c_void>,
+        mut out_size: Out<'_, usize>,
         index: *const git_delta_index,
         trg_buf: *const c_void,
         trg_size: usize,
         max_size: usize,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes writable out-parameters.
-            unsafe {
-                out.write(core::ptr::null_mut());
-            }
-            // SAFETY: as above.
-            unsafe {
-                out_size.write(0);
-            }
+            out.write(core::ptr::null_mut());
+            out_size.write(0);
             if trg_buf.is_null() || trg_size == 0 {
                 return 0;
             }
             git_assert_arg!(!index.is_null(), "index", -1);
-            // SAFETY: the caller's contract: a live index, and `trg_size`
-            // readable target bytes.
+            // SAFETY: `index` is a live index from `git_delta_index_init`
+            // (this export's contract; NULL rejected above), not freed
+            // during the call, its source allocated and unwritten.
             let index = unsafe { borrow_index(index) };
-            // SAFETY: as above.
+            // SAFETY: `trg_buf` is non-NULL here and readable for `trg_size`
+            // unwritten bytes (this export's contract).
             let trg = unsafe { bytes(trg_buf.cast::<c_char>(), trg_size) };
             match index.create_in(trg, max_size, GIT_ALLOC) {
                 Ok(Some(v)) => {
                     let (p, n) = into_c(v);
-                    // SAFETY: as above.
-                    unsafe {
-                        out.write(p);
-                    }
-                    // SAFETY: as above.
-                    unsafe {
-                        out_size.write(n);
-                    }
+                    out.write(p);
+                    out_size.write(n);
                     0
                 }
                 Ok(None) => 0,
@@ -1080,8 +1075,8 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `base_out` and `result_out` are writable; `delta` is NULL or
-    /// readable for `delta_len` bytes.
+    /// `base_out` and `result_out` are NULL or writable; `delta` is NULL
+    /// or readable for `delta_len` bytes, unwritten during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_delta_read_header(
         mut base_out: Out<'_, usize>,
@@ -1090,7 +1085,8 @@ pub mod ffi {
         delta_len: usize,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
+            // SAFETY: `delta` is NULL (an empty slice) or readable for
+            // `delta_len` unwritten bytes (this export's contract).
             let delta = unsafe { bytes(delta.cast::<c_char>(), delta_len) };
             let mut pos = 0;
             // C writes the base size before reading the result's.
@@ -1112,12 +1108,12 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `base_sz` and `res_sz` are writable; `stream` is a live
-    /// `git_packfile_stream`.
+    /// `base_sz` and `res_sz` are NULL or writable; `stream` is a live
+    /// `git_packfile_stream` that nothing else uses during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_delta_read_header_fromstream(
-        base_sz: *mut usize,
-        res_sz: *mut usize,
+        mut base_sz: Out<'_, usize>,
+        mut res_sz: Out<'_, usize>,
         stream: *mut c_void,
     ) -> c_int {
         barrier(|| {
@@ -1130,14 +1126,8 @@ pub mod ffi {
             };
             match read_header_from(&mut read) {
                 Ok((b, r)) => {
-                    // SAFETY: the caller passes writable out-parameters.
-                    unsafe {
-                        base_sz.write(b);
-                    }
-                    // SAFETY: as above.
-                    unsafe {
-                        res_sz.write(r);
-                    }
+                    base_sz.write(b);
+                    res_sz.write(r);
                     0
                 }
                 Err(_) => -1,
@@ -1180,41 +1170,31 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` and `out_len` are writable; `base` is NULL or readable for
-    /// `base_len` bytes, `delta` for `delta_len` bytes.
+    /// `out` and `out_len` are NULL or writable; `base` is NULL or readable
+    /// for `base_len` bytes, `delta` for `delta_len` bytes, all unwritten
+    /// during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_delta_apply(
-        out: *mut *mut c_void,
-        out_len: *mut usize,
+        mut out: Out<'_, *mut c_void>,
+        mut out_len: Out<'_, usize>,
         base: *const u8,
         base_len: usize,
         delta: *const u8,
         delta_len: usize,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes writable out-parameters.
-            unsafe {
-                out.write(core::ptr::null_mut());
-            }
-            // SAFETY: as above.
-            unsafe {
-                out_len.write(0);
-            }
-            // SAFETY: the caller's contract.
+            out.write(core::ptr::null_mut());
+            out_len.write(0);
+            // SAFETY: `base` is NULL (an empty slice) or readable for
+            // `base_len` unwritten bytes (this export's contract).
             let base = unsafe { bytes(base.cast::<c_char>(), base_len) };
-            // SAFETY: as above.
+            // SAFETY: likewise for `delta` and `delta_len`.
             let delta = unsafe { bytes(delta.cast::<c_char>(), delta_len) };
             let max = crate::sys::indexer::max_object_size();
             match apply_c(base, delta, max) {
                 Ok((p, n)) => {
-                    // SAFETY: as above.
-                    unsafe {
-                        out.write(p);
-                    }
-                    // SAFETY: as above.
-                    unsafe {
-                        out_len.write(n);
-                    }
+                    out.write(p);
+                    out_len.write(n);
                     0
                 }
                 Err(e) => e.raw(),

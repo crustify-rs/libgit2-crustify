@@ -140,7 +140,9 @@ impl Indexer {
         size: usize,
         stats: *mut GitIndexerProgress,
     ) -> c_int {
-        // SAFETY: the caller's contract; a live indexer.
+        // SAFETY: the live indexer this value owns (`&mut self`: used by
+        // this call alone); `data` readable for `size` bytes and `stats`
+        // NULL or writable (this fn's contract).
         unsafe { git_indexer_append(self.0.as_ptr(), data, size, stats) }
     }
 
@@ -150,7 +152,8 @@ impl Indexer {
     ///
     /// `stats` is NULL or a writable `git_indexer_progress`.
     pub unsafe fn commit(&mut self, stats: *mut GitIndexerProgress) -> c_int {
-        // SAFETY: a live indexer; `stats` per the caller.
+        // SAFETY: the live indexer this value owns (`&mut self`); `stats`
+        // NULL or writable (this fn's contract).
         unsafe { git_indexer_commit(self.0.as_ptr(), stats) }
     }
 }
