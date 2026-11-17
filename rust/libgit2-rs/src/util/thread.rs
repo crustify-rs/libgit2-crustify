@@ -54,10 +54,16 @@ pub struct GitMutex(UnsafeCell<libc::pthread_mutex_t>);
 // SAFETY: a pthread mutex is made to be shared and locked from any thread;
 // every access to the inner value goes through the pthread functions.
 unsafe impl Sync for GitMutex {}
-// SAFETY: an unlocked pthread mutex is not tied to a thread; a locked one is
+// `Send` is automatic (`UnsafeCell` of a `pthread_mutex_t`, plain bytes):
+// an unlocked pthread mutex is not tied to a thread, and a locked one is
 // only reachable through `&self` (a guard borrows it), so it cannot move
-// while locked.
-unsafe impl Send for GitMutex {}
+// while locked. The same holds for `GitRwLock` and `GitCond`.
+const _: () = {
+    const fn send<T: Send>() {}
+    send::<GitMutex>();
+    send::<GitRwLock>();
+    send::<GitCond>();
+};
 
 impl GitMutex {
     /// An unlocked mutex (`PTHREAD_MUTEX_INITIALIZER`, what
@@ -175,10 +181,9 @@ impl Drop for GitMutexGuard<'_> {
 #[repr(transparent)]
 pub struct GitRwLock(UnsafeCell<libc::pthread_rwlock_t>);
 
-// SAFETY: as for `GitMutex`.
+// SAFETY: as for `GitMutex`: a pthread rwlock is made to be shared and
+// locked from any thread, only through the pthread functions.
 unsafe impl Sync for GitRwLock {}
-// SAFETY: as for `GitMutex`.
-unsafe impl Send for GitRwLock {}
 
 impl GitRwLock {
     /// An unlocked lock (`GIT_RWLOCK_STATIC_INIT`).
@@ -264,10 +269,10 @@ impl Drop for GitWriteGuard<'_> {
 #[repr(transparent)]
 pub struct GitCond(UnsafeCell<libc::pthread_cond_t>);
 
-// SAFETY: as for `GitMutex`.
+// SAFETY: as for `GitMutex`: a pthread condition variable is made to be
+// waited on and signalled from any thread, only through the pthread
+// functions.
 unsafe impl Sync for GitCond {}
-// SAFETY: as for `GitMutex`.
-unsafe impl Send for GitCond {}
 
 impl GitCond {
     /// A condition variable (`git_cond_init`).
