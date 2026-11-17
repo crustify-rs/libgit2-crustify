@@ -41,10 +41,12 @@ pub struct TreeEntryRef<'t> {
     entry: &'t GitTreeEntry,
 }
 
-// SAFETY: the entry is read only while borrowed (`'t`): a tree's entries
-// are immutable once parsed, a builder's are only changed through
-// `&mut TreeBuilder`, which the borrow excludes. Its name pointer points
-// into the tree's data or the entry's own block, both as immutable.
+// SAFETY: the only field is a `&GitTreeEntry`, which is not `Sync` only for
+// its `filename` pointer. The entry is read only while borrowed (`'t`): a
+// tree's entries are immutable once parsed, a builder's are only changed
+// through `&mut TreeBuilder`, which the borrow excludes; the name pointer
+// points into the tree's data or the entry's own block, as immutable, and
+// any thread may read it.
 unsafe impl Send for TreeEntryRef<'_> {}
 // SAFETY: as above; every method only reads.
 unsafe impl Sync for TreeEntryRef<'_> {}
@@ -87,9 +89,10 @@ impl<'t> TreeEntryRef<'t> {
 
     /// An owned copy (`git_tree_entry_dup`).
     pub fn to_owned(&self) -> Result<TreeEntry, Error> {
-        // SAFETY: as in `name`.
+        // SAFETY: as in `name`: the entry's name is readable and unwritten
+        // for `'t`, which spans the call.
         let p = unsafe { super::entry_dup(self.entry) }.map_err(Error::from)?;
-        // SAFETY: a fresh entry, ours.
+        // SAFETY: a fresh, non-NULL `alloc_entry` block, handed over.
         Ok(unsafe { TreeEntry::from_raw(p) })
     }
 
@@ -119,8 +122,9 @@ pub struct TreeEntry {
     raw: NonNull<GitTreeEntry>,
 }
 
-// SAFETY: the value owns its `git__allocator` block (the entry and its
-// name), which nothing else reaches; any thread may free it.
+// SAFETY: the only field points to the `git__allocator` block (the entry,
+// its name and id) that the value owns, which nothing else reaches; any
+// thread may read it and free it (`git__allocator` is thread-safe).
 unsafe impl Send for TreeEntry {}
 // SAFETY: `&self` methods only read the block.
 unsafe impl Sync for TreeEntry {}
@@ -131,7 +135,7 @@ impl TreeEntry {
     /// `p` is a non-NULL `alloc_entry` block, handed over.
     unsafe fn from_raw(p: *mut GitTreeEntry) -> TreeEntry {
         TreeEntry {
-            // SAFETY: non-NULL (contract).
+            // SAFETY: non-NULL (this fn's contract).
             raw: unsafe { NonNull::new_unchecked(p) },
         }
     }
@@ -330,7 +334,8 @@ impl<'a> Tree<'a> {
     }
 
     fn entries(&self) -> &[GitTreeEntry] {
-        // SAFETY: a live tree; its entries are unchanged while it lives.
+        // SAFETY: a live, parsed tree, which `self` keeps (its reference);
+        // its entries are unchanged while it lives.
         unsafe { super::entries(self.t()) }
     }
 
@@ -361,7 +366,7 @@ impl<'a> Tree<'a> {
 
     /// `git_tree_entry_byname`.
     pub fn get_name(&self, name: impl AsRef<[u8]>) -> Option<TreeEntryRef<'_>> {
-        // SAFETY: a live tree.
+        // SAFETY: as in `entries`.
         unsafe { super::entry_fromname(self.t(), name.as_ref()) }
             .map(|entry| TreeEntryRef { entry })
     }
@@ -384,16 +389,19 @@ impl<'a> Tree<'a> {
                 return Err(crate::util::errors::assert_arg_failed("repo"));
             }
             let mut t = ptr::null_mut();
-            // SAFETY: the tree's repository (or NULL: the C's assertion).
+            // SAFETY: the tree's live repository (non-NULL, checked above);
+            // `t` writable.
             ErrorCode::check(unsafe { pend::git_tree_lookup(&raw mut t, repo, Some(id)) })?;
             Ok(t)
         };
-        // SAFETY: trees from `lookup`, released once.
+        // SAFETY: `entry_bypath` passes only trees from `lookup`, each
+        // once.
         let mut free = |t: *mut GitTree| unsafe { pend::git_tree_free(t) };
-        // SAFETY: a live tree.
+        // SAFETY: as in `entries`; `lookup` returns live trees, released
+        // only by `free`.
         let p = unsafe { super::entry_bypath(self.t(), path, &mut lookup, &mut free) }
             .map_err(Error::from)?;
-        // SAFETY: a fresh entry, ours.
+        // SAFETY: a fresh, non-NULL `alloc_entry` block, handed over.
         Ok(unsafe { TreeEntry::from_raw(p) })
     }
 
@@ -411,11 +419,12 @@ impl<'a> Tree<'a> {
                 return Err(crate::util::errors::assert_arg_failed("repo"));
             }
             let mut t = ptr::null_mut();
-            // SAFETY: the tree's repository.
+            // SAFETY: the tree's live repository (non-NULL, checked above);
+            // `t` writable.
             ErrorCode::check(unsafe { pend::git_tree_lookup(&raw mut t, repo, Some(id)) })?;
             Ok(t)
         };
-        // SAFETY: trees from `lookup`, released once.
+        // SAFETY: `walk` passes only trees from `lookup`, each once.
         let mut free = |t: *mut GitTree| unsafe { pend::git_tree_free(t) };
         let mut cb = |root: &GitStr, entry: &GitTreeEntry| match f(
             root.as_bytes(),
@@ -554,7 +563,7 @@ impl<'r> TreeBuilder<'r> {
         filemode: u32,
     ) -> Result<TreeEntryRef<'_>, Error> {
         let name = cstring(name.as_ref(), "name")?;
-        // SAFETY: the builder's repository outlives `'r`.
+        // SAFETY: the builder's repository is live: it outlives `'r`.
         let e = unsafe { self.b_mut().insert(&name, id, filemode) }.map_err(Error::from)?;
         Ok(TreeEntryRef {
             // SAFETY: an entry the builder owns, unchanged while `self` is
@@ -600,7 +609,7 @@ impl<'r> TreeBuilder<'r> {
 
     /// `git_treebuilder_write`: write the tree; its id.
     pub fn write(&mut self) -> Result<Oid, Error> {
-        // SAFETY: the builder's repository outlives `'r`.
+        // SAFETY: the builder's repository is live: it outlives `'r`.
         unsafe { self.b_mut().write() }.map_err(Error::from)
     }
 }

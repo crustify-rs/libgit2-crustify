@@ -60,11 +60,12 @@ pub struct GitTreeCache {
 /// `node` is a node made by [`new`] (its `namelen` bytes follow it), not
 /// written during `'a`.
 unsafe fn name_of<'a>(node: *const GitTreeCache) -> &'a [u8] {
-    // SAFETY: the caller's contract.
+    // SAFETY: a live node (this fn's contract); one field read.
     let n = unsafe { (*node).namelen };
     let p = node.cast::<u8>().wrapping_add(size_of::<GitTreeCache>());
-    // SAFETY: the caller's contract: `namelen` initialized bytes follow the
-    // node, in the same allocation.
+    // SAFETY: a `new` node: `namelen` initialized bytes follow it in the
+    // same block, which the node's pointer covers (so within `isize::MAX`),
+    // unwritten during `'a` (this fn's contract).
     unsafe { core::slice::from_raw_parts(p, n) }
 }
 
@@ -84,7 +85,9 @@ impl GitTreeCache {
         if self.children.is_null() || self.children_count == 0 {
             return &[];
         }
-        // SAFETY: a tree's `children` holds `children_count` pointers.
+        // SAFETY: `self` is a node of a tree (this fn's contract), whose
+        // non-NULL `children` holds `children_count` initialized pointers in
+        // one pool block, unwritten while `self` is borrowed.
         unsafe { core::slice::from_raw_parts(self.children, self.children_count) }
     }
 }
@@ -133,7 +136,9 @@ impl RawPool {
 // SAFETY: as the pool it points to (`RawPool::new`'s contract).
 unsafe impl NodeAlloc for RawPool {
     fn alloc(&mut self, size: usize, zeroed: bool) -> Result<core::ptr::NonNull<u8>> {
-        // SAFETY: `new`'s contract; the borrow ends with the allocation.
+        // SAFETY: a valid, initialized pool, live while the handle is and
+        // used by nothing else during an allocation (`new`'s contract); the
+        // borrow ends with the allocation.
         unsafe { &mut *self.0 }.alloc(size, zeroed)
     }
 }
@@ -167,14 +172,17 @@ pub(crate) fn new_in<A: NodeAlloc + ?Sized>(
         namelen: name.len(),
         name: [],
     };
-    // SAFETY: `p` is a fresh pool block of `alloc_size` bytes, aligned to 8
-    // (the pool's rounding), room for the node and `name` and its NUL.
+    const { assert!(align_of::<GitTreeCache>() <= 8) };
+    // SAFETY: `p` is a fresh, writable block of `alloc_size` bytes (the
+    // `NodeAlloc` contract), aligned to 8 (enough: asserted above), room for
+    // the node, `name` and its NUL.
     unsafe { p.write(node) };
     // the bytes right after the node, within the block
     let name_ptr = p.cast::<u8>().wrapping_add(size_of::<GitTreeCache>());
-    // SAFETY: as above; `name` is a distinct allocation.
+    // SAFETY: as above: the name's room after the node, in the block;
+    // `name` is a distinct allocation.
     unsafe { ptr::copy_nonoverlapping(name.as_ptr(), name_ptr, name.len()) };
-    // SAFETY: the last byte of the block.
+    // SAFETY: as above: the last byte of the block.
     unsafe { name_ptr.wrapping_add(name.len()).write(0) };
     Ok(p)
 }
@@ -183,17 +191,20 @@ pub(crate) fn new_in<A: NodeAlloc + ?Sized>(
 ///
 /// # Safety
 ///
-/// `tree` is a non-null node of a tree.
+/// `tree` is a non-null node of a tree, which nothing writes during the
+/// call.
 unsafe fn find_child(tree: *const GitTreeCache, name: &[u8]) -> *mut GitTreeCache {
-    // SAFETY: the caller's contract.
+    // SAFETY: a non-NULL node of a tree, unwritten during the call (this
+    // fn's contract).
     let t = unsafe { &*tree };
-    // SAFETY: as above.
+    // SAFETY: as above: a node of a tree.
     let children = unsafe { t.children() };
     for &child in children {
         if child.is_null() {
             continue;
         }
-        // SAFETY: a child of a tree is a node of it.
+        // SAFETY: a non-NULL child of a tree's node is a node of the tree
+        // (live, unwritten).
         let c = unsafe { &*child };
         // SAFETY: as above.
         if c.namelen == name.len() && name == unsafe { name_of(child) } {
@@ -215,16 +226,19 @@ pub unsafe fn invalidate_path(tree: *mut GitTreeCache, path: &[u8]) {
     if tree.is_null() {
         return;
     }
-    // SAFETY: a node of the tree, not otherwise accessed (the contract).
+    // SAFETY: the tree's non-NULL root, which nothing else accesses during
+    // the call (this fn's contract): written in place.
     unsafe { (*tree).entry_count = -1 };
     let mut rest = path;
     while let Some(slash) = memchr::memchr(b'/', rest) {
-        // SAFETY: `tree` is a non-null node.
+        // SAFETY: `tree` is a non-null node of the tree, unwritten during
+        // the lookup.
         tree = unsafe { find_child(tree, &rest[..slash]) };
         if tree.is_null() {
             return;
         }
-        // SAFETY: as above.
+        // SAFETY: a non-NULL node of the tree, which nothing else accesses
+        // (as above): written in place.
         unsafe { (*tree).entry_count = -1 };
         rest = &rest[slash + 1..];
     }
@@ -235,7 +249,8 @@ pub unsafe fn invalidate_path(tree: *mut GitTreeCache, path: &[u8]) {
 ///
 /// # Safety
 ///
-/// `tree` is a tree (see the module documentation).
+/// `tree` is a tree (see the module documentation) that nothing writes
+/// during the call.
 pub unsafe fn get(tree: *const GitTreeCache, path: &[u8]) -> *const GitTreeCache {
     let mut tree = tree;
     if tree.is_null() {
@@ -248,7 +263,8 @@ pub unsafe fn get(tree: *const GitTreeCache, path: &[u8]) -> *const GitTreeCache
             Some(s) => &rest[..s],
             None => rest,
         };
-        // SAFETY: `tree` is a non-null node of the tree.
+        // SAFETY: `tree` is a non-null node of the tree (this fn's
+        // contract, or a child found below), unwritten during the call.
         tree = unsafe { find_child(tree, name) };
         if tree.is_null() {
             return ptr::null();
@@ -289,7 +305,8 @@ fn read_node(
         return corrupt();
     };
     p += used;
-    // SAFETY: `tree` is the fresh node.
+    // SAFETY: `tree` is the fresh node `new` just made, which only this
+    // function reaches: written in place (here and below).
     unsafe { (*tree).entry_count = count as isize };
     if buf.get(p) != Some(&b' ') {
         return corrupt();
@@ -373,7 +390,8 @@ pub fn read_into(
     stack.try_reserve(1).map_err(|_| errors::oom())?;
     stack.push((root, 0));
     while let Some(&mut (node, ref mut next)) = stack.last_mut() {
-        // SAFETY: `node` is a node made by `read_node`, in `pool`.
+        // SAFETY: `node` is a node made by `read_node`, in `pool`, which
+        // only this function reaches until it returns.
         let count = unsafe { (*node).children_count };
         if *next == count {
             stack.pop();
@@ -385,9 +403,10 @@ pub fn read_into(
             Ok(c) => c,
             Err(_) => return Err(corrupted()),
         };
-        // SAFETY: `node` is a node of `pool`, only accessed here.
+        // SAFETY: as above.
         let slots = unsafe { (*node).children };
-        // SAFETY: `node`'s children array has `count` slots, `i < count`.
+        // SAFETY: `node`'s children array is a zeroed pool block of `count`
+        // slots (`read_node`), and `i < count`.
         unsafe { slots.wrapping_add(i).write(child) };
         if stack.try_reserve(1).is_err() {
             return Err(corrupted());
@@ -474,7 +493,8 @@ unsafe fn read_tree_recursive<S: TreeSource, A: NodeAlloc + ?Sized>(
             break;
         }
         let child = new_in(name, oid_type, pool)?;
-        // SAFETY: `children` has `ntrees` slots and `j < ntrees`.
+        // SAFETY: `children` is a fresh, zeroed block of `ntrees` slots, and
+        // `j < ntrees`.
         unsafe { children.wrapping_add(j).write(child) };
         let subtree = src.lookup(&eid)?;
         // SAFETY: `child` is the node just made in `pool`, which only this
@@ -509,7 +529,8 @@ pub(crate) fn read_tree<S: TreeSource, A: NodeAlloc + ?Sized>(
 ///
 /// # Safety
 ///
-/// `tree` is a non-null tree (see the module documentation).
+/// `tree` is a non-null tree (see the module documentation) that nothing
+/// writes during the call.
 pub unsafe fn write(out: &mut GitStr, tree: *const GitTreeCache) -> Result<()> {
     // `write_tree`, pre-order, with an explicit stack.
     let mut stack: Vec<(*const GitTreeCache, usize)> = Vec::new();
@@ -517,9 +538,10 @@ pub unsafe fn write(out: &mut GitStr, tree: *const GitTreeCache) -> Result<()> {
     let mut i = 0usize;
     loop {
         if i == 0 {
-            // SAFETY: a node of the tree (the contract).
+            // SAFETY: a node of the tree (this fn's contract: the root, or
+            // a child of a node), live and unwritten during the call.
             let n = unsafe { &*node };
-            // SAFETY: as above.
+            // SAFETY: as above: a `new` node.
             let name = unsafe { name_of(node) };
             // C: "%s%c%"PRIdZ" %"PRIuZ"\n" (12 characters), `%s` stopping at
             // the name's NUL.
@@ -574,8 +596,9 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` is a valid `git_str`; `tree` is a non-null tree cache (made by
-    /// these functions, in a live pool), not written meanwhile.
+    /// `out` is NULL or a valid `git_str` that nothing else uses during the
+    /// call; `tree` is a non-null tree cache (made by these functions, in a
+    /// live pool), not written meanwhile.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tree_cache_write(
         out: Option<&mut GitStr>,
@@ -583,7 +606,8 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             let out = git_arg!(out, "out", -1);
-            // SAFETY: the caller's contract.
+            // SAFETY: a non-NULL tree cache, unwritten during the call (this
+            // export's contract).
             status(unsafe { write(out, tree) })
         })
     }
@@ -607,7 +631,9 @@ pub mod ffi {
             let Some(t) = OidType::from_raw(oid_type) else {
                 return corrupted().raw();
             };
-            // SAFETY: the caller's contract.
+            // SAFETY: `buffer_size` readable bytes in one object (so within
+            // `isize::MAX`), unwritten during the call (this export's
+            // contract).
             let buf = unsafe { crate::util::export::bytes(buffer, buffer_size) };
             let pool = git_arg!(pool, "pool", -1);
             let mut t_out = ptr::null_mut();
@@ -624,7 +650,7 @@ pub mod ffi {
     /// # Safety
     ///
     /// `tree` is NULL or a tree cache not otherwise accessed meanwhile;
-    /// `path` is a NUL-terminated string.
+    /// `path` is NULL or a NUL-terminated string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tree_cache_invalidate_path(
         tree: *mut GitTreeCache,
@@ -632,7 +658,8 @@ pub mod ffi {
     ) {
         barrier(|| {
             let path = path.to_bytes();
-            // SAFETY: as above.
+            // SAFETY: NULL or a tree cache that nothing else accesses during
+            // the call (this export's contract).
             unsafe { invalidate_path(tree, path) }
         })
     }
@@ -641,7 +668,8 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `tree` is NULL or a tree cache; `path` is a NUL-terminated string.
+    /// `tree` is NULL or a tree cache, not written meanwhile; `path` is NULL
+    /// or a NUL-terminated string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tree_cache_get(
         tree: *const GitTreeCache,
@@ -649,7 +677,8 @@ pub mod ffi {
     ) -> *const GitTreeCache {
         barrier(|| {
             let path = path.to_bytes();
-            // SAFETY: as above.
+            // SAFETY: NULL or a tree cache, unwritten during the call (this
+            // export's contract).
             unsafe { get(tree, path) }
         })
     }
@@ -695,9 +724,12 @@ pub mod ffi {
         pool: *mut GitPool,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
+            // SAFETY: a live tree for the call (this export's contract),
+            // which `src` and `root` do not outlive.
             let (src, root) = unsafe { crate::index::foreign::CTrees::borrow(tree) };
-            // SAFETY: as above.
+            // SAFETY: a valid, initialized pool, live for the call, that
+            // nothing else uses meanwhile, C included (this export's
+            // contract).
             let mut pool = unsafe { RawPool::new(pool) };
             match read_tree(&src, &root, oid_type, &mut pool) {
                 Ok(t) => {
