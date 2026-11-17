@@ -16,7 +16,7 @@ use super::ops::{self, MatchedPathCb};
 use super::{
     GIT_INDEX_OPTIONS_VERSION, GitIndex, GitIndexConflictIterator, GitIndexEntry, GitIndexIterator,
     GitIndexNameEntry, GitIndexOptions, GitIndexReucEntry, GitIndexWriter, INDEX_VERSION_NUMBER_LB,
-    INDEX_VERSION_NUMBER_UB, IndexPtr, as_entry, entry_srch,
+    INDEX_VERSION_NUMBER_UB, IndexPtr, entry_srch,
 };
 use crate::oid::{Oid, OidType};
 use crate::util::errors::{self, Bytes, ErrorClass, ErrorCode, Result};
@@ -218,7 +218,7 @@ unsafe fn srch(key: *const c_void, member: *const c_void, icase: bool) -> c_int 
     // SAFETY: as above.
     let path = unsafe { crate::util::export::bytes(k.path, k.pathlen) };
     // SAFETY: as above.
-    unsafe { entry_srch(path, k.stage, as_entry(member.cast_mut()), icase) }
+    unsafe { entry_srch(path, k.stage, member.cast(), icase) }
 }
 
 // ---------------------------------------------------------------------------

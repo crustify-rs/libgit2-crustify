@@ -1501,7 +1501,7 @@ pub(crate) fn update_all(ix: IndexPtr, paths: Paths<'_>, cb: Option<MatchedPathC
 /// reference and a reader on the index (removals are deferred meanwhile).
 pub(crate) fn snapshot_new(ix: IndexPtr) -> Result<GitVector> {
     ix.incref();
-    ix.readers().inc();
+    ix.with_readers(crate::util::thread::Atomic32::inc);
     // SAFETY: no foreign call; shared access (C's iterators take snapshots
     // of one index from several threads: `threads::diff`), exclusive only
     // for a sort the vector needs.
@@ -1528,7 +1528,7 @@ pub(crate) fn snapshot_new(ix: IndexPtr) -> Result<GitVector> {
 pub(crate) unsafe fn snapshot_release(mut snap: GitVector, ix: IndexPtr) {
     snap.dispose();
     // the reader and reference the snapshot holds
-    ix.readers().dec();
+    ix.with_readers(crate::util::thread::Atomic32::dec);
     // SAFETY: the snapshot's reference, given up (this fn's contract).
     unsafe { ix.decref() };
 }
