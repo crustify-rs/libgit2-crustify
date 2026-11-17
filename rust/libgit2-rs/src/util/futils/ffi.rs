@@ -29,8 +29,9 @@ pub unsafe extern "C" fn git_futils_mkpath2file(path: CStrArg<'_>, mode: mode_t)
 ///
 /// # Safety
 ///
-/// `path_out` is a valid `git_str`; `filename` a NUL-terminated string
-/// (which may lie in `path_out`).
+/// `path_out` is NULL (-1) or a valid `git_str` that nothing else accesses
+/// during the call; `filename` NULL (`""`) or a NUL-terminated string that
+/// nothing but the call writes (it may lie in `path_out`'s buffer).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_futils_mktmp(
     path_out: *mut GitStr,
@@ -38,8 +39,12 @@ pub unsafe extern "C" fn git_futils_mktmp(
     mode: mode_t,
 ) -> c_int {
     barrier(|| {
+        // Copied first: it may lie in `path_out`'s buffer, which `mktmp`
+        // rewrites.
         let f = filename.to_bytes().to_vec();
-        // SAFETY: a valid `git_str`.
+        // SAFETY: `path_out` is NULL or a valid `git_str` that nothing else
+        // accesses during the call (this export's contract); `filename`
+        // is not read again.
         let Some(out) = (unsafe { path_out.as_mut() }) else {
             return -1;
         };
@@ -307,6 +312,11 @@ pub unsafe extern "C" fn git_futils_mmap_free(out: Option<&mut GitMap>) {
 
 /// C's mkdir cache: the caller's `git_pool` and `git_hashset_str`, through
 /// their Rust ports (`GitPool`, `GitHashSetStr`).
+///
+/// Invariant: made only by [`git_futils_mkdir_relative`]'s export from
+/// C's options, for that call: `pool` and `set` are each NULL or the
+/// caller's live object, used by nothing else during the call, and the
+/// pool outlives the set's entries (that export's contract).
 struct CCache {
     pool: *mut GitPool,
     set: *mut GitHashSetStr<'static>,
@@ -347,7 +357,8 @@ impl MkdirCache for CCache {
 /// # Safety
 ///
 /// `relative_path` is a NUL-terminated string, `base` NULL or one; `opts`
-/// is NULL or a valid `struct git_futils_mkdir_options` whose
+/// is NULL or a valid `struct git_futils_mkdir_options`, used by nothing
+/// else during the call, whose
 /// `cache_pathset` is NULL or a live `git_hashset_str`, and `cache_pool`
 /// NULL or a live `git_pool` (of 1-byte items) that outlives the set.
 #[unsafe(no_mangle)]
@@ -356,13 +367,11 @@ pub unsafe extern "C" fn git_futils_mkdir_relative(
     base: CStrArg<'_>,
     mode: mode_t,
     flags: u32,
-    opts: *mut MkdirOptions,
+    opts: Option<&mut MkdirOptions>,
 ) -> c_int {
     barrier(|| {
         let rel = relative_path.to_bytes();
         let base = base.get().map(CStr::to_bytes);
-        // SAFETY: NULL or valid options, used only by this call.
-        let opts = unsafe { opts.as_mut() };
         match opts {
             None => status(mkdir_relative(
                 rel,

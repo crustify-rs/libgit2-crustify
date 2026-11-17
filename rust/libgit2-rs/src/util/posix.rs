@@ -198,14 +198,16 @@ pub fn fsync(fd: c_int) -> SysResult<()> {
     check(unsafe { libc::fsync(fd) })
 }
 
-fn stat_with(
-    f: unsafe extern "C" fn(*const c_char, *mut Stat) -> c_int,
-    path: &CStr,
-) -> SysResult<Stat> {
+/// `stat`, or `lstat` when `link`, of `path`.
+fn stat_with(link: bool, path: &CStr) -> SysResult<Stat> {
     let mut st = core::mem::MaybeUninit::<Stat>::uninit();
-    // SAFETY: `path` is NUL-terminated and `st` writable; `f` is `stat` or
-    // `lstat`.
-    let r = unsafe { f(path.as_ptr(), st.as_mut_ptr()) };
+    let r = if link {
+        // SAFETY: `path` is NUL-terminated and `st` writable for a `stat`.
+        unsafe { libc::lstat(path.as_ptr(), st.as_mut_ptr()) }
+    } else {
+        // SAFETY: as above.
+        unsafe { libc::stat(path.as_ptr(), st.as_mut_ptr()) }
+    };
     if r < 0 {
         return Err(last_errno());
     }
@@ -215,12 +217,12 @@ fn stat_with(
 
 /// `p_stat`.
 pub fn stat(path: &CStr) -> SysResult<Stat> {
-    stat_with(libc::stat, path)
+    stat_with(false, path)
 }
 
 /// `p_lstat` (and `p_lstat_posixly`).
 pub fn lstat(path: &CStr) -> SysResult<Stat> {
-    stat_with(libc::lstat, path)
+    stat_with(true, path)
 }
 
 /// `p_fstat`.
