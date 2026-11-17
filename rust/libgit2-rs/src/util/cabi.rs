@@ -293,6 +293,25 @@ pub unsafe fn slice<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
 /// `GIT_ASSERT_ARG(x)` for an `Option<&T>` / `Option<&mut T>` argument:
 /// the reference, or set `invalid argument: '<text>'` and return `$ret`
 /// (`Err(GENERIC)` without it), as [`git_assert_arg!`](crate::git_assert_arg).
+/// The failure of [`git_arg!`]: set `invalid argument: '<text>'` and give
+/// back `ret`. Cold and out of line, and returning its argument, so that
+/// the check costs the caller a test and a tail jump, not a stack frame.
+///
+/// It is `extern "C"` so that it cannot unwind into its caller (a panic
+/// in it aborts, as in an export): the caller then needs no landing pad,
+/// so no frame either. Setting the error does not panic in practice.
+#[cold]
+#[inline(never)]
+#[doc(hidden)]
+#[allow(improper_ctypes_definitions)] // called from Rust only
+pub extern "C" fn arg_failed<R>(text: &str, ret: R) -> R {
+    let _ = super::errors::assert_arg_failed(text);
+    ret
+}
+
+/// `GIT_ASSERT_ARG(x)` for an `Option<&T>` / `Option<&mut T>` argument:
+/// the reference, or set `invalid argument: '<text>'` and return `$ret`
+/// (`Err(GENERIC)` without it), as [`git_assert_arg!`](crate::git_assert_arg).
 #[macro_export]
 #[doc(hidden)] // crate-internal: expands to crate-private paths
 macro_rules! git_arg {
@@ -308,8 +327,7 @@ macro_rules! git_arg {
         match $opt {
             ::core::option::Option::Some(v) => v,
             ::core::option::Option::None => {
-                let _ = $crate::util::errors::assert_arg_failed($text);
-                return;
+                return $crate::util::cabi::arg_failed($text, ());
             }
         }
     };
@@ -317,8 +335,7 @@ macro_rules! git_arg {
         match $opt {
             ::core::option::Option::Some(v) => v,
             ::core::option::Option::None => {
-                let _ = $crate::util::errors::assert_arg_failed($text);
-                return $ret;
+                return $crate::util::cabi::arg_failed($text, $ret);
             }
         }
     };
