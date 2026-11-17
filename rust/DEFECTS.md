@@ -1340,3 +1340,30 @@ out-of-memory error instead.
   as the code reading it decides (absent, or empty where the C would read
   it as a string). Before, such a NULL was a NULL reference or a write
   through NULL in the Rust as well (undefined behaviour).
+
+### strarray: `git_strarray_copy(arr, arr)` empties the array
+- C: `src/util/strarray.c`, `git_strarray_copy`: `memset(tgt, 0, …)` runs
+  before `src` is read, so with `tgt == src` the copy sees `count == 0`.
+- Trigger: `git_strarray_copy(&a, &a)`.
+- Rust: as the C (a defined result: the array is emptied, 0 is returned,
+  and its strings are neither freed nor copied — they stay with whoever
+  else holds them, leaked if nobody does).
+
+### config: the file backend reads its repository after the repository is freed
+- C: `src/libgit2/config_file.c`: `config_file_open` keeps `repo` in the
+  backend without a reference, and every refresh (`config_file_refresh`,
+  on any read or write of a config holding the backend) evaluates
+  `includeIf.gitdir:` / `onbranch:` conditions through it
+  (`conditional_match_gitdir`, `conditional_match_onbranch`).
+- Trigger: a config that outlives the repository it was opened with:
+  `git_repository_config(&cfg, repo)` then `git_repository_free(repo)`
+  then `git_config_get_string_buf(&b, cfg, "x")` after the file changed,
+  or `git_config_add_file_ondisk(cfg, path, level, repo, 0)` with `repo`
+  freed first; the file has an `includeIf.gitdir:` or `onbranch:` section.
+  (`git_repository_free`'s documentation calls the use of spawned objects
+  afterwards undefined; `git_config_add_file_ondisk`'s does not.)
+- Rust: the backend keeps the pointer as C does, but reaches it only while
+  the repository is registered live (`repository::live`: registered at
+  allocation, unregistered first in `git_repository_free`, which waits for
+  in-flight uses); afterwards the conditions are evaluated as with no
+  repository (they do not match), as when `repo` is NULL.

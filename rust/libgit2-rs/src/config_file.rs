@@ -18,7 +18,7 @@
 
 use core::ffi::{CStr, c_char, c_int};
 use core::ptr::NonNull;
-use std::sync::atomic::{AtomicI32, AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicPtr, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use ffibox::vtable::CTable;
@@ -98,9 +98,14 @@ pub struct FileBackend {
     /// The entries (`values_mutex`, `config_list`); `None` before `open`
     /// and after a failed one.
     values: Mutex<Option<Arc<ConfigList>>>,
-    /// Invariant: NULL, or a live repository that outlives the backend
-    /// (only `open`, an `unsafe fn` with that contract, stores it).
+    /// The repository `open` was given (NULL for none), kept without a
+    /// reference as C does, and reached only through
+    /// [`live::with_live`](crate::repository::live::with_live) with
+    /// `repo_serial`: it may have been freed since (C reads it anyway).
     repo: AtomicPtr<git_repository>,
+    /// The repository's serial in the live registry (0 for none), written
+    /// before `repo`.
+    repo_serial: AtomicU64,
     level: AtomicI32,
     /// `file`: the tree of files read.
     file: Mutex<ConfigFile>,
@@ -604,12 +609,17 @@ impl FileBackend {
         self.locked.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// The repository `open` was given, if any.
-    fn repo(&self) -> Option<&git_repository> {
+    /// Run `f` with the repository `open` was given, if it is still live
+    /// (`None` when there was none, or it has been freed: the conditions
+    /// that need it then do not match).
+    fn with_repo<R>(&self, f: impl FnOnce(Option<&git_repository>) -> R) -> R {
         let p = self.repo.load(Ordering::Acquire).cast_const();
-        // SAFETY: NULL or a live repository that outlives the backend, so
-        // `&self` (the field's invariant); it is `Sync`, and only read.
-        unsafe { p.as_ref() }
+        let serial = self.repo_serial.load(Ordering::Acquire);
+        crate::repository::live::with_live(
+            p,
+            crate::repository::live::Token::from_parts(p, serial),
+            f,
+        )
     }
 
     fn level(&self) -> c_int {
@@ -640,13 +650,14 @@ impl FileBackend {
     ///
     /// # Safety
     ///
-    /// `repo` is NULL or a live repository that outlives the backend (the
-    /// `open` slot's contract: the file backend keeps it, for conditional
-    /// includes).
+    /// `repo` is NULL or a live repository for the call. It is kept without
+    /// a reference, as C does, and reached later only while it is still
+    /// registered live ([`with_repo`](Self::with_repo)).
     unsafe fn open(&self, level: c_int, repo: *const git_repository) -> Result<()> {
         self.level.store(level, Ordering::Release);
+        let tok = crate::repository::live::token(repo);
+        self.repo_serial.store(tok.serial(), Ordering::Release);
         self.repo.store(repo.cast_mut(), Ordering::Release);
-        let repo = self.repo();
         *self.lock_values() = Some(ConfigList::new().freeze());
         let cpath = self.cpath();
         let cpath = as_cstr(&cpath);
@@ -659,7 +670,7 @@ impl FileBackend {
         }
         let mut list = ConfigList::new();
         let mut file = self.lock_file().without_includes();
-        let r = read(&mut list, repo, &mut file, level, 0);
+        let r = self.with_repo(|repo| read(&mut list, repo, &mut file, level, 0));
         *self.lock_file() = file;
         match r {
             Ok(()) => {
@@ -690,7 +701,8 @@ impl FileBackend {
         };
         let mut file = file;
         let mut list = ConfigList::new();
-        let r = read(&mut list, self.repo(), &mut file, self.level(), 0);
+        let level = self.level();
+        let r = self.with_repo(|repo| read(&mut list, repo, &mut file, level, 0));
         *self.lock_file() = file;
         let r = r.and_then(|()| self.set_entries(cfg, list));
         match r {
@@ -703,7 +715,8 @@ impl FileBackend {
     fn refresh_from_buffer(&self, cfg: BackendPtr, buf: &[u8]) -> Result<()> {
         let mut file = self.lock_file().without_includes();
         let mut list = ConfigList::new();
-        let r = read_buffer(&mut list, self.repo(), &mut file, self.level(), 0, buf);
+        let level = self.level();
+        let r = self.with_repo(|repo| read_buffer(&mut list, repo, &mut file, level, 0, buf));
         *self.lock_file() = file;
         r?;
         self.set_entries(cfg, list)
@@ -933,8 +946,8 @@ ffibox::impl_cvtable! {
     fn open(@cfg, level: c_int, repo: *const git_repository) -> c_int {
         on panic: slot_panicked(),
         on busy: slot_busy(),
-        // SAFETY: `repo` is NULL or a live repository that outlives the
-        // backend (the `open` slot's contract, sys/config.h).
+        // SAFETY: `repo` is NULL or a live repository for the call (the
+        // `open` slot's contract, sys/config.h).
         |b: &FileBackend| status(unsafe { b.open(level, repo) }),
     }
     /// `config_file_get`.
@@ -1036,6 +1049,7 @@ pub fn backend_from_file(path: &[u8]) -> Result<Backend> {
     let state = FileBackend {
         values: Mutex::new(None),
         repo: AtomicPtr::new(core::ptr::null_mut()),
+        repo_serial: AtomicU64::new(0),
         level: AtomicI32::new(0),
         file: Mutex::new(file),
         locked: Mutex::new(None),
@@ -1143,6 +1157,30 @@ mod tests {
         };
         parse(Some(b"f"), input, &mut w).unwrap();
         w.buf
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)] // the repository's free reaches C
+    fn the_repository_is_not_reached_after_its_free() {
+        let _g = crate::util::test_support::init();
+        let repo = crate::repository::GitRepository::alloc();
+        assert!(!repo.is_null());
+        // As `open` keeps it, without a reference.
+        let b = FileBackend {
+            values: Mutex::new(None),
+            repo: AtomicPtr::new(repo),
+            repo_serial: AtomicU64::new(crate::repository::live::token(repo).serial()),
+            level: AtomicI32::new(0),
+            file: Mutex::new(ConfigFile::new(b"/nonexistent/config").unwrap()),
+            locked: Mutex::new(None),
+        };
+        assert!(b.with_repo(|r| r.is_some()));
+        // SAFETY: the repository allocated above, which nothing else uses
+        // (the backend does not hold a reference: C's model).
+        unsafe { crate::repository::GitRepository::free(repo) };
+        // A refresh now reads the conditions without a repository instead
+        // of reading freed memory.
+        assert!(b.with_repo(|r| r.is_none()));
     }
 
     #[test]

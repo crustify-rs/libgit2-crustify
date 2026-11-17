@@ -62,6 +62,7 @@ pub mod ffi;
 pub mod handles;
 pub(crate) mod head;
 mod init;
+pub(crate) mod live;
 mod open;
 #[cfg(test)]
 mod tests;
@@ -302,6 +303,7 @@ impl GitRepository {
             }
         };
         r.configmap_cache_clear();
+        live::register(repo);
         repo
     }
 
@@ -315,6 +317,9 @@ impl GitRepository {
         if repo.is_null() {
             return;
         }
+        // First, so that a holder without a reference (a file config
+        // backend) stops reaching it, and in-flight uses end.
+        live::unregister(repo);
         {
             // SAFETY: a live repository from `alloc` (the contract), aligned;
             // the reference ends with this block.

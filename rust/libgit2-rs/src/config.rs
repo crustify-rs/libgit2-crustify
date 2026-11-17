@@ -410,14 +410,17 @@ pub trait BackendCalls: sealed::Sealed {
     ///
     /// # Safety
     ///
-    /// `repo` is NULL or a live repository that outlives the backend (the
-    /// file backend keeps it, for conditional includes).
+    /// `repo` is NULL, or a live repository for the call that, if the
+    /// backend keeps it (C's contract for the `open` slot, sys/config.h),
+    /// stays live while the backend uses it. This crate's file backend
+    /// keeps it without that requirement: it reaches it only while it is
+    /// registered live (`repository::live`), as conditional includes need.
     unsafe fn open(&self, level: c_int, repo: *const git_repository) -> Result<()> {
         let p = self.raw();
         let f = slot!(self, open).ok_or_else(|| no_slot("open"))?;
         // SAFETY: `f` is the `open` slot of `p`, called with its live table
-        // (the trait's invariant); `repo` is NULL or a repository that
-        // outlives the backend (this method's contract).
+        // (the trait's invariant); `repo` as the slot requires (this
+        // method's contract).
         ErrorCode::check(unsafe { f(p, level, repo) }).map(drop)
     }
 
@@ -2189,7 +2192,10 @@ pub mod ffi {
     /// # Safety
     ///
     /// `config` is NULL or live; `path` is NULL or NUL-terminated; `repo` is
-    /// NULL or a live repository that outlives the backend.
+    /// NULL or a live repository for the call. (The file backend keeps
+    /// `repo` for conditional includes; once the repository is freed, they
+    /// read as if there were none, where C reads freed memory:
+    /// rust/DEFECTS.md.)
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_add_file_ondisk(
         config: Option<&GitConfig>,
