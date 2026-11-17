@@ -32,11 +32,9 @@ fn add(ix: &mut GitIndex, path: &[u8], stage: c_int, id: u8) -> Result<EntryPtr>
 
 fn paths(ix: &mut GitIndex) -> Vec<(Vec<u8>, c_int)> {
     ix.sort();
-    // SAFETY: live entries of the index.
-    ix.entries
-        .iter()
-        .map(|e| unsafe { eps(as_entry(e)) })
-        .map(|(p, s)| (p.to_vec(), s))
+    (0..ix.entries.len())
+        .filter_map(|i| ix.entry_ref(i))
+        .map(|e| (e.path().to_vec(), e.stage()))
         .collect()
 }
 
@@ -53,8 +51,8 @@ fn insert_find_remove() {
     add(&mut ix, b"a/y", 0, 3).unwrap();
     // replacing keeps one entry, with the new id
     let e = add(&mut ix, b"b", 0, 9).unwrap();
-    // SAFETY: live.
-    assert_eq!(unsafe { (*e.as_ptr()).entry.id }, oid(9));
+    assert_eq!(ix.get_bypath(b"b", 0).map(EntryRef::as_ptr), Some(e));
+    assert_eq!(ix.get_bypath(b"b", 0).unwrap().entry().id, oid(9));
     assert_eq!(
         paths(&mut ix),
         vec![
@@ -146,10 +144,7 @@ fn names_and_extensions() {
     ix.name_add(Some(c"b"), Some(c"o"), None).unwrap();
     ix.name_add(Some(c"a"), None, Some(c"t")).unwrap();
     ix.sort_names();
-    // SAFETY: a name entry of the index.
-    let first = unsafe { &*ix.names.get(0).unwrap().cast::<GitIndexNameEntry>() };
-    // SAFETY: a string the entry owns.
-    assert_eq!(unsafe { opt_cstr(first.ancestor) }, Some(&b"a"[..]));
+    assert_eq!(ix.name_at(0).unwrap()[0], Some(c"a"));
     ix.name_clear();
     assert!(ix.names.is_empty());
 
@@ -180,7 +175,8 @@ fn removal_is_deferred_while_a_snapshot_reads() {
     ix.remove(b"x", 0).unwrap();
     assert_eq!(ix.deleted.len(), 1);
     // the snapshot's entries are still readable
-    // SAFETY: deferred, so live.
+    // SAFETY: a deferred entry (the snapshot is a reader), so live and
+    // unwritten.
     let p = unsafe { epath(as_entry(snap.get(0).unwrap())) };
     assert_eq!(p, b"x");
     // clear frees nothing while the reader is there
@@ -242,11 +238,12 @@ fn tree_cache_is_invalidated_by_changes() {
     ix.tree = tree_cache::read(&data, OidType::Sha1, &mut ix.tree_pool).unwrap();
     add(&mut ix, b"top", 0, 1).unwrap();
     ix.remove(b"top", 0).unwrap();
-    // SAFETY: the index's tree.
+    // SAFETY: the index's tree cache (non-NULL here), in its pool, which
+    // nothing writes during the reads below.
     assert_eq!(unsafe { (*ix.tree).entry_count }, -1);
-    // SAFETY: as above.
+    // SAFETY: as above: a tree cache.
     let d = unsafe { tree_cache::get(ix.tree, b"d") };
-    // SAFETY: as above.
+    // SAFETY: as above: a node of it (non-NULL here).
     assert_eq!(unsafe { (*d).entry_count }, 1);
     dispose(ix);
 }
@@ -397,8 +394,7 @@ fn parses_extensions() {
     r.unwrap();
     assert!(!ix.tree.is_null());
     assert_eq!(ix.reuc.len(), 1);
-    // SAFETY: the REUC entry.
-    let re = unsafe { &*ix.reuc.get(0).unwrap().cast::<GitIndexReucEntry>() };
+    let (re, _) = ix.reuc_at(0).unwrap();
     assert_eq!(re.mode, [0o100644, 0, 0o100755]);
     assert_eq!(re.oid[2], Oid::from_bytes(&[5; 20], OidType::Sha1).unwrap());
     assert_eq!(ix.names.len(), 1);

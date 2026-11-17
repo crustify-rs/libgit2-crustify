@@ -472,7 +472,8 @@ impl<'r> Index<'r> {
     }
 
     fn from_ptr(ptr: IndexPtr) -> Index<'r> {
-        // SAFETY: `open_ext` gives up a reference to a live index.
+        // SAFETY: `open_ext` gives up a reference to a live index of
+        // `CShared`'s, which the handle takes over.
         let ix = unsafe { CShared::from_raw(ptr.as_ptr()) }.expect("non-null");
         Index::wrap(ix)
     }
@@ -502,7 +503,9 @@ impl<'r> Index<'r> {
         let lock = api_lock_of(raw);
         let ix = {
             let _g = lock.lock();
-            // SAFETY: the caller's contract.
+            // SAFETY: `raw` is a live index of this module's (`CShared`'s),
+            // live for `'r` (this fn's contract), whose count is taken
+            // under its lock.
             unsafe { CShared::from_borrowed(raw.as_ptr()) }.expect("non-null")
         };
         Index::wrap_locked(ix, lock)
@@ -608,7 +611,9 @@ impl<'r> Index<'r> {
                 "Failed to write tree. the index file is not backed up by an existing repository",
             )));
         };
-        // SAFETY: the lock is held and no reference into the index is live.
+        // SAFETY: the lock is held, so no other safe user reaches the index,
+        // and no reference into it is live; the C the write runs (odb,
+        // filters) does not reach it.
         unsafe { super::foreign::tree_write_index(ix, repo) }.map_err(err)
     }
 
@@ -620,7 +625,9 @@ impl<'r> Index<'r> {
         // SAFETY: a live repository, borrowed for the call.
         let repo = unsafe { super::foreign::Repo::new(repo.raw_ptr().cast()) }
             .ok_or_else(|| err(crate::util::errors::assert_arg_failed("repo")))?;
-        // SAFETY: the lock is held and no reference into the index is live.
+        // SAFETY: the lock is held, so no other safe user reaches the index,
+        // and no reference into it is live; the C the write runs (odb,
+        // filters) does not reach it.
         unsafe { super::foreign::tree_write_index(ix, repo) }.map_err(err)
     }
 
