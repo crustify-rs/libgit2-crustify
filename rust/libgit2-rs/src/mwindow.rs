@@ -292,10 +292,15 @@ impl Ctl {
 /// window.
 #[inline]
 fn contains(w: &GitMwindow, offset: i64, extra: i64) -> bool {
+    contains_range(w.offset, w.window_map.len, offset, extra)
+}
+
+/// [`contains`] over a window's offset and length.
+#[inline]
+fn contains_range(win_off: i64, win_len: usize, offset: i64, extra: i64) -> bool {
     // C's `offset + extra` overflows (UB) for huge values; it does not
     // hold them here.
-    let win_off = w.offset;
-    let end = win_off.saturating_add(w.window_map.len as i64);
+    let end = win_off.saturating_add(win_len as i64);
     win_off <= offset && offset.checked_add(extra).is_some_and(|e| e <= end)
 }
 
@@ -418,11 +423,13 @@ fn close_lru_window_locked(ctl: &mut Ctl) -> Result<()> {
 /// `w` came from [`new_window_locked`], is in no list, and no cursor holds
 /// it.
 unsafe fn free_window(w: *mut GitMwindow) {
-    // SAFETY: the caller's contract: the window, from `Box::into_raw`,
-    // is ours alone.
+    // SAFETY: `w` is the `Box::into_raw` of `new_window_locked` (this fn's
+    // contract), freed only here; in no list and held by no cursor, no
+    // pointer to it remains in use, so the box is ours alone.
     let mut w = unsafe { Box::from_raw(w) };
-    // SAFETY: the window's own mapping; no reference into it lives (no
-    // cursor holds the window).
+    // SAFETY: the window's own mapping, unmapped once (the box goes with
+    // it); no slice into it lives, as slices are lent only by a cursor
+    // holding the window (`Cursor::open`), and none does.
     unsafe { posix::munmap(&mut w.window_map) };
 }
 
@@ -553,8 +560,11 @@ fn new_window_locked(ctl: &mut Ctl, fd: c_int, size: i64, offset: i64) -> Option
 #[repr(transparent)]
 pub struct Cursor(*mut GitMwindow);
 
-// SAFETY: a cursor is a held window, which any thread may release (under
-// the global mutex).
+// SAFETY: the one field is NULL or a window the cursor holds: a heap
+// `GitMwindow` whose fields any thread reads and writes only under the
+// global mutex (`Ctl`), and whose mapping, not tied to a thread, stays
+// mapped while it is held. So a cursor may move to, and release its
+// window on, another thread. (Not `Sync`: `open` takes `&mut self`.)
 unsafe impl Send for Cursor {}
 
 impl Cursor {
@@ -567,12 +577,14 @@ impl Cursor {
     ///
     /// # Safety
     ///
-    /// `p` is a valid, writable `git_mwindow *` that is NULL or a window a
-    /// cursor holds (that `git_mwindow_open` stored and no
-    /// `git_mwindow_close` released), not used otherwise for `'a`.
+    /// `p` is a valid, aligned, writable `git_mwindow *` that is NULL or a
+    /// window a cursor holds (that `git_mwindow_open` stored and no
+    /// `git_mwindow_close` released), not accessed otherwise for `'a`.
     pub unsafe fn from_raw_mut<'a>(p: *mut *mut GitMwindow) -> &'a mut Cursor {
-        // SAFETY: `Cursor` is `#[repr(transparent)]` over the pointer; the
-        // caller's contract gives its invariant.
+        // SAFETY: `Cursor` is `#[repr(transparent)]` over `*mut GitMwindow`,
+        // so `p` is valid and aligned for it; its value is NULL or a held
+        // window, the cursor's invariant; nothing else accesses it for `'a`
+        // (this fn's contract), so the `&mut` is unique.
         unsafe { &mut *p.cast::<Cursor>() }
     }
 
@@ -982,19 +994,36 @@ pub mod ffi {
 
     /// `git_mwindow_contains`.
     ///
+    /// (`win` stays a raw pointer: another thread may hold a `&mut` to the
+    /// window, under the mutex, to update its use count and clock, which
+    /// an `&GitMwindow` here would alias. Only `offset` and `window_map`,
+    /// written once before the window is published, are read.)
+    ///
     /// # Safety
     ///
-    /// `win` is a live window that no other thread changes during the call
+    /// `win` is NULL or a live window that stays mapped during the call
     /// (the caller holds it in a cursor, or holds `git_mwindow__mutex`).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_mwindow_contains(
-        win: Option<&GitMwindow>,
+        win: *const GitMwindow,
         offset: i64,
         extra: i64,
     ) -> c_int {
-        let win = git_arg!(win, "win", -1);
-        let w = win;
-        contains(w, offset, extra) as c_int
+        if win.is_null() {
+            let _ = crate::util::errors::assert_arg_failed("win");
+            return -1;
+        }
+        // SAFETY: `win` is a live window (this export's contract; not NULL,
+        // checked), so aligned and allocated for the call; `offset` and
+        // `window_map.len` are written only by `new_window_locked`, before
+        // the window is in any list or cursor, so these two place reads
+        // race with nothing (the other fields, which other threads may
+        // write under the mutex, are not touched, and no reference to the
+        // whole window is made).
+        let win_off = unsafe { (*win).offset };
+        // SAFETY: as the line above, for `window_map.len`.
+        let win_len = unsafe { (*win).window_map.len };
+        contains_range(win_off, win_len, offset, extra) as c_int
     }
 
     /// `git_mwindow_free_all`.
