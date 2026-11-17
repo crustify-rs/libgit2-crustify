@@ -309,8 +309,7 @@ impl<'a> ReflogMut<'a> {
         msg: Option<&[u8]>,
     ) -> Result<()> {
         let mut entry = EntryBox::new()?;
-        // SAFETY: a valid signature, live for the call (`SigRef`).
-        let sig = unsafe { p::SigBox::dup(committer.as_ptr()) }?;
+        let sig = p::SigBox::dup(committer)?;
         entry.get().committer = sig.into_raw();
         if let Some(msg) = msg {
             // `strndup` stops at a NUL in `msg` (C's `git__strdup` of a C

@@ -46,6 +46,7 @@ use crate::refs::{
 };
 pub use crate::repository::handles::Refdb;
 pub use crate::signature::{Signature, SignatureRef};
+use crate::util::cabi::CStrArg;
 use crate::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode};
 use crate::util::pool::GitPool;
 use crate::util::wildmatch::{WildmatchFlags, wildmatch};
@@ -92,10 +93,11 @@ pub use crate::repository::Repository;
 impl Repository {
     /// The repository as the refs modules take it.
     pub(crate) fn ptr(&self) -> RepoPtr {
-        // SAFETY: an owner's repository pointer is not NULL.
-        let p = unsafe { NonNull::new_unchecked(self.raw_ptr()) };
+        let p = NonNull::new(self.raw_ptr()).expect("an owner's repository is not NULL");
         // SAFETY: the repository this owner holds, live while `self` is
-        // borrowed (the references and iterators borrow it); it is `Sync`,
+        // borrowed; every safe value made through the handle (references,
+        // iterators, reflogs, refdbs) borrows `self` too (`'repo`), and the
+        // handle itself is used only by the caller's call. It is `Sync`,
         // so the refs code may use it from the threads that share `self`.
         unsafe { RepoPtr::new(p) }
     }
@@ -440,7 +442,9 @@ impl<'repo> Reference<'repo> {
             (None, v.symbolic_target_cstr())
         };
         let db = NonNull::new(v.db()).ok_or_else(|| Error::from(ErrorCode::GENERIC))?;
-        // SAFETY: a reference's database lives while the reference does.
+        // SAFETY: the reference holds a count on its database, which keeps
+        // it live for the call; its backend and repository are those of
+        // the repository `'repo` borrows (not replaced while borrowed).
         rich(unsafe { RefdbPtr::new(db) }.delete(v.name_cstr(), old_id, old_target))
     }
 
@@ -461,7 +465,7 @@ impl<'repo> Reference<'repo> {
     pub fn is_unborn_head(&self) -> Result<bool> {
         let v = self.view();
         let db = NonNull::new(v.db()).ok_or_else(|| Error::from(ErrorCode::GENERIC))?;
-        // SAFETY: a reference's database lives while the reference does.
+        // SAFETY: as in `delete`.
         let repo = unsafe { RefdbPtr::new(db) }
             .repo()
             .ok_or_else(|| Error::from(ErrorCode::GENERIC))?;
@@ -1144,20 +1148,24 @@ fn panicked() -> c_int {
     -1
 }
 
+/// A string argument of a slot (`b""` for NULL).
+///
 /// # Safety
 ///
-/// `p` is NULL or a NUL-terminated string.
+/// `p` is NULL or a NUL-terminated string, readable and unwritten for `'a`.
 unsafe fn bytes_of<'a>(p: *const c_char) -> &'a [u8] {
-    // SAFETY: per the contract.
-    unsafe { crate::util::export::cstr_bytes(p) }
+    // SAFETY: the caller's guarantee is `CStrArg::from_ptr`'s, for `'a`.
+    unsafe { CStrArg::from_ptr(p) }.to_bytes()
 }
 
+/// An optional string argument of a slot.
+///
 /// # Safety
 ///
-/// `p` is NULL or a NUL-terminated string.
+/// As [`bytes_of`].
 unsafe fn opt_bytes<'a>(p: *const c_char) -> Option<&'a [u8]> {
-    // SAFETY: per the contract.
-    unsafe { crate::util::export::cstr(p) }.map(CStr::to_bytes)
+    // SAFETY: as in `bytes_of`.
+    unsafe { CStrArg::from_ptr(p) }.get().map(CStr::to_bytes)
 }
 
 /// A name or target from a Rust backend: a NUL would cut it short in C
@@ -1204,9 +1212,14 @@ pub(crate) struct VecIter {
     pos: usize,
 }
 
-// SAFETY: the names are blocks of the iterator's own pool, read-only.
+// SAFETY: the fields: `pool` (a `GitPool` the iterator owns;
+// `git__allocator` frees from any thread), `pos`, and `items`, whose
+// `NonNull<c_char>` names point into that pool (NUL-terminated strings
+// written once when made, then only read, freed with the pool) and whose
+// `RefValue`s are plain owned data. Nothing is thread-local.
 unsafe impl Send for VecIter {}
-// SAFETY: as above.
+// SAFETY: `&VecIter` only reads the names and values; every write is
+// through `&mut VecIter`.
 unsafe impl Sync for VecIter {}
 
 impl VecIter {

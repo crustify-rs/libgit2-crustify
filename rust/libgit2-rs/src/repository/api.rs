@@ -790,7 +790,8 @@ impl Repository {
     /// since the odb then reads the repository's object cache, which no
     /// handle that can outlive the repository may reach.
     pub fn wrap_odb(odb: Odb<'static>) -> Result<Repository> {
-        sole(odb.as_raw(), "odb")?;
+        // SAFETY: `odb` holds a reference to the live odb for the call.
+        unsafe { sole(odb.as_raw(), "odb") }?;
         crate::libgit2::ensure_init()?;
         Ok(Repository::from_nonnull(open::wrap_odb(&odb)?))
     }
@@ -805,7 +806,8 @@ impl Repository {
     /// [`odb`](Self::odb). `&mut self`: no handle of the old odb is live.
     pub fn set_odb(&mut self, odb: Odb<'static>) -> Result<()> {
         let p = odb.as_raw();
-        sole(p, "odb")?;
+        // SAFETY: `odb` holds a reference to the live odb for the call.
+        unsafe { sole(p, "odb") }?;
         // SAFETY: `odb` is live (we hold its only reference until the end
         // of the call); `&mut self`: no borrow of the repository, so no
         // handle or weak pointer of the old odb, is live.
@@ -821,8 +823,15 @@ impl Repository {
     /// handle; its owner is the repository from now on (setting a value
     /// clears the repository's configuration cache).
     pub fn set_config(&mut self, config: Config<'static>) -> Result<()> {
-        let p = NonNull::from(config.inner());
-        sole(p, "config")?;
+        // The pointer with the allocation's provenance: the repository
+        // keeps it and frees through it when it drops the last count (one
+        // made from `config.inner()`, a `&GitConfig`, may not be freed
+        // through).
+        let config = config.into_shared();
+        let p = NonNull::new(ffibox::CShared::as_ptr(&config)).expect("a CShared is not NULL");
+        // SAFETY: `config` holds a reference to the live config for the
+        // call.
+        unsafe { sole(p, "config") }?;
         // SAFETY: as in `set_odb`.
         unsafe { self.raw().set_config(Some(p)) };
         Ok(())
@@ -838,7 +847,8 @@ impl Repository {
     /// [`index`](Self::index).
     pub fn set_index(&mut self, index: Index<'static>) -> Result<()> {
         let p = index.as_nonnull();
-        sole(p, "index")?;
+        // SAFETY: `index` holds a reference to the live index for the call.
+        unsafe { sole(p, "index") }?;
         // The safe API's lock of the index is held for the change of owner.
         index.locked(|_| {
             // SAFETY: as in `set_odb`; and no other thread reaches the
@@ -993,9 +1003,14 @@ pub(crate) fn set_extensions(exts: &[&[u8]]) {
 
 /// Whether `p`'s reference (held by the caller) is the only one and no
 /// repository owns the object; otherwise the error of the setters.
-fn sole<T>(p: NonNull<T>, what: &str) -> Result<()> {
-    // SAFETY: `p` is a live refcounted object (`git_refcount` at offset
-    // 0) of which the caller holds a reference.
+///
+/// # Safety
+///
+/// `p` is a live refcounted object (a `git_refcount` at offset 0) on which
+/// the caller holds a reference for the call.
+unsafe fn sole<T>(p: NonNull<T>, what: &str) -> Result<()> {
+    // SAFETY: the caller's guarantee: a live object whose count (at offset
+    // 0) we only read.
     if unsafe { crate::util::thread::GitRefcount::sole(crate::util::thread::refcount_of(p)) } {
         return Ok(());
     }

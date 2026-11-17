@@ -45,40 +45,6 @@ pub use crate::signature::ffi::{
     git_signature_free, git_signature_new, git_signature_now,
 };
 
-/// `git_tag_target_id` of a tag object.
-///
-/// # Safety
-///
-/// `tag` is a live tag object.
-pub unsafe fn git_tag_target_id(tag: *const git_object) -> *const Oid {
-    // SAFETY: per the contract (a tag object is a `git_tag`).
-    unsafe { crate::tag::ffi::git_tag_target_id(tag.cast()) }
-}
-
-/// `git_commit_lookup` (object_api.c).
-///
-/// # Safety
-///
-/// As the export's.
-pub unsafe fn git_commit_lookup(
-    out: *mut *mut git_commit,
-    repo: *mut git_repository,
-    id: Option<&Oid>,
-) -> c_int {
-    // SAFETY: per the contract.
-    unsafe { crate::object_api::ffi::git_commit_lookup(out.cast(), repo, id) }
-}
-
-/// `git_commit_free` (object_api.c).
-///
-/// # Safety
-///
-/// As the export's.
-pub unsafe fn git_commit_free(commit: *mut git_commit) {
-    // SAFETY: per the contract.
-    unsafe { crate::object_api::ffi::git_commit_free(commit.cast()) }
-}
-
 // Safe wrappers of the above (PORTING.md §4.6).
 
 use core::ffi::CStr;
@@ -294,9 +260,15 @@ pub struct SigBox(NonNull<git_signature>);
 
 impl SigBox {
     /// Adopt `out` from a C constructor's result.
-    fn adopt(r: c_int, out: *mut git_signature) -> Result<SigBox> {
+    ///
+    /// # Safety
+    ///
+    /// `out` is NULL or a signature (from `git_signature_*`) that the call
+    /// returning `r` handed over to the caller, who gives it up.
+    unsafe fn adopt(r: c_int, out: *mut git_signature) -> Result<SigBox> {
         if r < 0 {
-            // SAFETY: NULL or a signature the failed call left us.
+            // SAFETY: NULL or a signature the failed call left us (the
+            // contract), freed once.
             unsafe { git_signature_free(out) };
             ErrorCode::check(r)?;
         }
@@ -306,37 +278,38 @@ impl SigBox {
     /// `git_signature_now(name, email)`.
     pub fn now(name: &CStr, email: &CStr) -> Result<SigBox> {
         let mut out = core::ptr::null_mut();
-        // SAFETY: NUL-terminated strings; `out` writable.
+        // SAFETY: NUL-terminated strings (`&CStr`) and our writable local.
         let r = unsafe { git_signature_now(&raw mut out, name.into(), email.into()) };
-        Self::adopt(r, out)
+        // SAFETY: what `git_signature_now` left in `out`, ours.
+        unsafe { Self::adopt(r, out) }
     }
 
     /// `git_signature_new(name, email, time, offset)`.
     pub fn new(name: &CStr, email: &CStr, time: i64, offset: c_int) -> Result<SigBox> {
         let mut out = core::ptr::null_mut();
-        // SAFETY: as above.
+        // SAFETY: NUL-terminated strings (`&CStr`) and our writable local.
         let r = unsafe { git_signature_new(&raw mut out, name.into(), email.into(), time, offset) };
-        Self::adopt(r, out)
+        // SAFETY: what `git_signature_new` left in `out`, ours.
+        unsafe { Self::adopt(r, out) }
     }
 
     /// `git_signature_default(repo)`.
     pub fn default_for(repo: RepoPtr) -> Result<SigBox> {
         let mut out = core::ptr::null_mut();
-        // SAFETY: a live repository; `out` writable.
+        // SAFETY: a live repository (`RepoPtr`'s invariant) and our
+        // writable local.
         let r = unsafe { git_signature_default(&raw mut out, repo.as_ptr()) };
-        Self::adopt(r, out)
+        // SAFETY: what `git_signature_default` left in `out`, ours.
+        unsafe { Self::adopt(r, out) }
     }
 
     /// `git_signature_dup(sig)`.
-    ///
-    /// # Safety
-    ///
-    /// `sig` is a valid signature.
-    pub unsafe fn dup(sig: *const git_signature) -> Result<SigBox> {
+    pub fn dup(sig: SigRef<'_>) -> Result<SigBox> {
         let mut out = core::ptr::null_mut();
-        // SAFETY: per the contract.
-        let r = unsafe { git_signature_dup(Out::from(&mut out), sig) };
-        Self::adopt(r, out)
+        // SAFETY: a valid signature for the call (`SigRef`) and our local.
+        let r = unsafe { git_signature_dup(Out::from(&mut out), sig.as_ptr()) };
+        // SAFETY: what `git_signature_dup` left in `out`, ours.
+        unsafe { Self::adopt(r, out) }
     }
 
     /// Adopt a signature.
@@ -410,8 +383,8 @@ impl ObjBox {
         if self.kind() != crate::object::GIT_OBJECT_TAG {
             return None;
         }
-        // SAFETY: a live tag object.
-        let p = unsafe { git_tag_target_id(self.0.as_ptr()) };
+        // SAFETY: our live object, of kind tag (checked): a `git_tag`.
+        let p = unsafe { crate::tag::ffi::git_tag_target_id(self.0.as_ptr().cast()) };
         // SAFETY: NULL or the tag's id, alive with it.
         unsafe { p.as_ref() }.copied()
     }
@@ -460,9 +433,16 @@ pub struct CommitBox(NonNull<git_commit>);
 impl CommitBox {
     /// `git_commit_lookup`.
     pub fn lookup(repo: RepoPtr, id: &Oid) -> Result<CommitBox> {
-        let mut out = core::ptr::null_mut();
-        // SAFETY: a live repository; `out` writable.
-        ErrorCode::check(unsafe { git_commit_lookup(&raw mut out, repo.as_ptr(), Some(id)) })?;
+        let mut out: *mut git_commit = core::ptr::null_mut();
+        // SAFETY: a live repository (`RepoPtr`'s invariant), a valid id and
+        // our writable local.
+        ErrorCode::check(unsafe {
+            crate::object_api::ffi::git_commit_lookup(
+                (&raw mut out).cast(),
+                repo.as_ptr(),
+                Some(id),
+            )
+        })?;
         NonNull::new(out).map(CommitBox).ok_or(ErrorCode::GENERIC)
     }
 
@@ -502,7 +482,7 @@ impl CommitBox {
 
 impl Drop for CommitBox {
     fn drop(&mut self) {
-        // SAFETY: a commit we own.
-        unsafe { git_commit_free(self.0.as_ptr()) };
+        // SAFETY: a commit whose reference we own, released once.
+        unsafe { crate::object_api::ffi::git_commit_free(self.0.as_ptr().cast()) };
     }
 }
