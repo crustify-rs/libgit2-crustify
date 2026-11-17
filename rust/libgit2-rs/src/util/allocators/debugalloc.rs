@@ -19,11 +19,9 @@ pub const ALLOCATOR: GitAllocator = GitAllocator {
 
 const HDR: usize = size_of::<usize>();
 
-unsafe extern "C" fn debugalloc_malloc(
-    len: usize,
-    _file: *const c_char,
-    _line: c_int,
-) -> *mut c_void {
+/// `len` bytes after a header that records `len` (safe: any size is
+/// allowed, and the file is not read).
+extern "C" fn debugalloc_malloc(len: usize, _file: *const c_char, _line: c_int) -> *mut c_void {
     let Some(total) = len.checked_add(HDR) else {
         return core::ptr::null_mut();
     };
@@ -41,6 +39,13 @@ unsafe extern "C" fn debugalloc_malloc(
     ptr.wrapping_add(HDR).cast()
 }
 
+/// A new block with the first `min(len, old len)` bytes, the old one
+/// poisoned and freed.
+///
+/// # Safety
+///
+/// `ptr` is NULL or a live allocation of this allocator (`HDR` bytes into a
+/// `malloc` block that starts with its length), which the call frees.
 unsafe extern "C" fn debugalloc_realloc(
     ptr: *mut c_void,
     len: usize,
@@ -53,7 +58,7 @@ unsafe extern "C" fn debugalloc_realloc(
     }
     if len == 0 {
         // SAFETY: a non-null `ptr` comes from this allocator, `HDR` bytes
-        // into its block (the allocator's contract).
+        // into its live `malloc` block (this fn's contract), freed once.
         unsafe { libc::free(ptr.wrapping_sub(HDR).cast()) };
         return core::ptr::null_mut();
     }
@@ -66,11 +71,12 @@ unsafe extern "C" fn debugalloc_realloc(
         return core::ptr::null_mut();
     }
     if !ptr.is_null() {
-        // `ptr` comes from this allocator (its contract): its block starts
-        // `HDR` bytes before it, with its length, and holds that many bytes
-        // after it. `newptr` is a fresh block of `len + HDR` bytes.
+        // `ptr` comes from this allocator (this fn's contract): its block
+        // starts `HDR` bytes before it, with its length, and holds that many
+        // bytes after it. `newptr` is a fresh block of `len + HDR` bytes.
         let block = ptr.wrapping_sub(HDR);
-        // SAFETY: the block's header.
+        // SAFETY: the block's first `HDR` bytes, its initialized header,
+        // read unaligned as it was written.
         let original_len = unsafe { block.cast::<usize>().read_unaligned() };
         // SAFETY: `min(len, original_len)` bytes are readable at `ptr` and
         // writable after the new block's header; the blocks are distinct.
@@ -88,12 +94,17 @@ unsafe extern "C" fn debugalloc_realloc(
     newptr.wrapping_add(HDR).cast()
 }
 
+/// Free a block of this allocator.
+///
+/// # Safety
+///
+/// `ptr` is NULL or a live allocation of this allocator, not used again.
 unsafe extern "C" fn debugalloc_free(ptr: *mut c_void) {
     if ptr.is_null() {
         return;
     }
     // SAFETY: a non-null `ptr` comes from this allocator, `HDR` bytes into
-    // its block.
+    // its live `malloc` block, not used again (this fn's contract).
     unsafe { libc::free(ptr.cast::<u8>().wrapping_sub(HDR).cast()) }
 }
 
