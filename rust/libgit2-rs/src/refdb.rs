@@ -667,15 +667,11 @@ impl RefdbPtr {
     }
 
     /// `git_reflog_write` through this database's backend.
-    ///
-    /// # Safety
-    ///
-    /// `log` is a live reflog, not used elsewhere during the call.
-    pub unsafe fn reflog_write(self, log: *mut GitReflog) -> Result<()> {
+    pub fn reflog_write(self, log: crate::reflog::ReflogMut<'_>) -> Result<()> {
         let (b, f) = self.slot(|b| b.reflog_write)?;
-        // SAFETY: `b`'s slot (see `slot`), with the caller's live reflog,
-        // which nothing else uses during the call (the contract).
-        ErrorCode::check(unsafe { f(b, log) }).map(drop)
+        // SAFETY: `b`'s slot (see `slot`), with a valid reflog that nothing
+        // else uses during the call (`ReflogMut`).
+        ErrorCode::check(unsafe { f(b, log.as_ptr()) }).map(drop)
     }
 
     /// `backend->reflog_rename`.

@@ -40,7 +40,7 @@ use crate::refdb::{
 };
 use crate::reflog::{self as rl, GitReflog};
 pub use crate::refs::ReferenceType;
-use crate::refs::deps::{RepoPtr, git_signature};
+use crate::refs::deps::{RepoPtr, SigRef, git_signature};
 use crate::refs::{
     self, GIT_REFERENCE_DIRECT, GIT_REFERENCE_SYMBOLIC, GitReference, RefBox, RefIter, RefView,
 };
@@ -762,14 +762,9 @@ impl Iterator for ReferenceNames<'_> {
 // Reflogs
 // ---------------------------------------------------------------------------
 
-/// The committer of the C signature at `sig` (NULL: none).
-fn committer_of(sig: *const git_signature) -> Option<Signature> {
-    if sig.is_null() {
-        return None;
-    }
-    // SAFETY: a valid signature (an entry's committer, alive with the
-    // entry).
-    Some(unsafe { Signature::dup_raw(sig) }.expect("out of memory duplicating a signature"))
+/// A copy of a C signature (`None`: none).
+fn committer_of(sig: Option<SigRef<'_>>) -> Option<Signature> {
+    sig.map(|s| s.to_owned().expect("out of memory duplicating a signature"))
 }
 
 /// The reflog of a reference (`git_reflog`), freed on drop. Index 0 is
@@ -782,35 +777,23 @@ pub struct Reflog<'repo> {
 /// One entry of a [`Reflog`].
 #[derive(Clone, Copy)]
 pub struct ReflogEntry<'a> {
-    ptr: NonNull<rl::GitReflogEntry>,
-    _log: PhantomData<&'a Reflog<'a>>,
+    entry: rl::EntryRef<'a>,
 }
 
 impl<'a> ReflogEntry<'a> {
-    fn get(&self) -> &'a rl::GitReflogEntry {
-        // SAFETY: an entry of a reflog borrowed for `'a`, which changes
-        // only through `&mut Reflog`.
-        unsafe { self.ptr.as_ref() }
-    }
-
     /// The previous value (`git_reflog_entry_id_old`).
     pub fn id_old(&self) -> Oid {
-        self.get().oid_old
+        self.entry.get().oid_old
     }
 
     /// The new value (`git_reflog_entry_id_new`).
     pub fn id_new(&self) -> Oid {
-        self.get().oid_cur
+        self.entry.get().oid_cur
     }
 
     /// The message, if any (`git_reflog_entry_message`).
     pub fn message(&self) -> Option<&'a [u8]> {
-        let m = self.get().msg;
-        if m.is_null() {
-            return None;
-        }
-        // SAFETY: the entry's NUL-terminated message, alive for `'a`.
-        Some(unsafe { CStr::from_ptr(m) }.to_bytes())
+        self.entry.msg().map(CStr::to_bytes)
     }
 
     /// The message, if there is one and it is UTF-8.
@@ -820,10 +803,7 @@ impl<'a> ReflogEntry<'a> {
 
     /// Who made the change (`git_reflog_entry_committer`).
     pub fn committer(&self) -> Option<SignatureRef<'a>> {
-        let p = self.get().committer;
-        // SAFETY: NULL or the entry's signature, whose strings live (and are
-        // not written) as long as the reflog the entry borrows.
-        unsafe { p.as_ref() }.map(|s| unsafe { SignatureRef::from_raw(s) })
+        self.entry.committer().map(SigRef::to_ref)
     }
 }
 
@@ -843,7 +823,8 @@ impl<'repo> Reflog<'repo> {
     pub fn read(repo: &'repo Repository, name: impl AsRef<[u8]>) -> Result<Reflog<'repo>> {
         let n = cname(name.as_ref())?;
         let log = rich(RefdbPtr::of_repo(repo.ptr()).and_then(|db| db.reflog_read(&n)))?;
-        // SAFETY: the backend's fresh reflog, ours.
+        // SAFETY: the backend's fresh, valid reflog (`git__allocator`),
+        // handed over to us alone.
         let inner = unsafe { rl::Reflog::from_raw(log.as_ptr()) }
             .ok_or_else(|| Error::from(ErrorCode::GENERIC))?;
         Ok(Reflog {
@@ -859,8 +840,7 @@ impl<'repo> Reflog<'repo> {
 
     /// The number of entries (`git_reflog_entrycount`).
     pub fn len(&self) -> usize {
-        // SAFETY: our live reflog.
-        unsafe { (*self.inner.as_ptr()).entries.len() }
+        self.inner.as_ref().len()
     }
 
     /// Whether there are none.
@@ -870,12 +850,8 @@ impl<'repo> Reflog<'repo> {
 
     /// The entry at `idx` (0: the newest; `git_reflog_entry_byindex`).
     pub fn get(&self, idx: usize) -> Option<ReflogEntry<'_>> {
-        // SAFETY: our live reflog.
-        let e = unsafe { rl::entry_byindex(self.inner.as_ptr(), idx) };
-        NonNull::new(e).map(|ptr| ReflogEntry {
-            ptr,
-            _log: PhantomData,
-        })
+        let entry = self.inner.as_ref().entry_byindex(idx)?;
+        Some(ReflogEntry { entry })
     }
 
     /// The entries, newest first.
@@ -894,34 +870,30 @@ impl<'repo> Reflog<'repo> {
     ) -> Result<()> {
         let msg = cmsg(message)?;
         let committer = committer.into().to_signature()?;
-        // SAFETY: our reflog, exclusively borrowed; a valid signature.
-        rich(unsafe {
-            rl::append(
-                self.inner.as_ptr(),
-                id,
-                committer.as_raw(),
-                msg.as_ref().map(|m| m.to_bytes()),
-            )
-        })
+        let who = SigRef::from(&committer);
+        rich(
+            self.inner
+                .as_mut()
+                .append(id, who, msg.as_ref().map(|m| m.to_bytes())),
+        )
     }
 
     /// `git_reflog_drop`: remove entry `idx`; with `rewrite_previous`, keep
     /// the chain of old ids consistent.
     pub fn remove(&mut self, idx: usize, rewrite_previous: bool) -> Result<()> {
-        // SAFETY: as above.
-        rich(unsafe { rl::drop_entry(self.inner.as_ptr(), idx, rewrite_previous) })
+        rich(self.inner.as_mut().drop_entry(idx, rewrite_previous))
     }
 
     /// `git_reflog_write`.
     pub fn write(&mut self) -> Result<()> {
-        // SAFETY: our live reflog.
-        let db = unsafe { (*self.inner.as_ptr()).db };
+        let db = self.inner.as_ref().db();
         let db =
             NonNull::new(db).ok_or_else(|| Error::from(errors::assert_arg_failed("reflog->db")))?;
-        // SAFETY: the reflog's database, counted by it.
+        // SAFETY: the reflog holds a count on its database, which keeps it
+        // live for the call; its backend and repository are the
+        // repository's that `'repo` borrows.
         let db = unsafe { RefdbPtr::new(db) };
-        // SAFETY: our reflog.
-        rich(unsafe { db.reflog_write(self.inner.as_ptr()) })
+        rich(db.reflog_write(self.inner.as_mut()))
     }
 
     /// `git_reflog_rename`.
@@ -1414,16 +1386,15 @@ ffibox::impl_cvtable! {
                 Ok(l) => l,
                 Err(e) => return e.raw(),
             };
+            let mut log = log;
             for rec in &records {
-                // SAFETY: our reflog; a valid signature.
-                if let Err(e) = unsafe { rl::append(log.as_ptr(), &rec.new, rec.committer.as_raw(), rec.message.as_deref()) } {
+                let mut l = log.as_mut();
+                let who = SigRef::from(&rec.committer);
+                if let Err(e) = l.append(&rec.new, who, rec.message.as_deref()) {
                     return e.raw();
                 }
                 // `append` chains the old id; keep the record's.
-                // SAFETY: our reflog.
-                let e = unsafe { rl::entry_byindex(log.as_ptr(), 0) };
-                // SAFETY: the entry just appended, of our reflog.
-                unsafe { (*e).oid_old = rec.old };
+                l.set_entry_old(0, rec.old);
             }
             // SAFETY: `out` is writable.
             unsafe { *out = log.into_raw().as_ptr() };
@@ -1434,18 +1405,22 @@ ffibox::impl_cvtable! {
         on panic: panicked(),
         on busy: busy(),
         |s: &RustBackend<B>| {
-            // SAFETY: a live reflog for the call.
-            let (name, entries) = (unsafe { rl::name_of(log) }, unsafe { rl::entries_of(log) });
+            let Some(log) = NonNull::new(log) else {
+                let _ = errors::assert_arg_failed("reflog");
+                return -1;
+            };
+            // SAFETY: a valid reflog (from any backend, or `transaction.c`'s
+            // pool), unwritten during the call (the slot's contract).
+            let log = unsafe { rl::ReflogRef::from_ptr(log) };
+            let name = log.name();
             let mut records = Vec::new();
-            for e in entries {
-                // SAFETY: a live entry of the reflog.
-                let e = unsafe { &*e };
-                // SAFETY: NULL or the entry's message.
-                let message = unsafe { opt_bytes(e.msg) }.map(<[u8]>::to_vec);
+            for entry in log.entries() {
+                let e = entry.get();
+                let message = entry.msg().map(|m| m.to_bytes().to_vec());
                 records.push(ReflogRecord {
                     old: e.oid_old,
                     new: e.oid_cur,
-                    committer: match committer_of(e.committer) {
+                    committer: match committer_of(entry.committer()) {
                         Some(c) => c,
                         None => Signature::empty().expect("out of memory"),
                     },

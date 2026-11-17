@@ -40,8 +40,8 @@ use crate::refdb::{
     GIT_REFDB_BACKEND_VERSION, RefIteratorTable, RefdbBackendTable, RefdbPtr, git_refdb_backend,
     git_reference_iterator,
 };
-use crate::reflog::{self, GitReflog};
-use crate::refs::deps::{self as p, RepoPtr, configmap, git_repository, git_signature};
+use crate::reflog::{self, GitReflog, ReflogRef};
+use crate::refs::deps::{self as p, RepoPtr, SigRef, configmap, git_repository, git_signature};
 use crate::refs::{
     self, GIT_HEAD_REF, GIT_PACKEDREFS_FILE, GIT_PACKEDREFS_FILE_MODE, GIT_PACKEDREFS_HEADER,
     GIT_REFERENCE_DIRECT, GIT_REFERENCE_SYMBOLIC, GIT_REFS_DIR, GIT_REFS_FILE_MODE,
@@ -931,15 +931,22 @@ impl FsInner {
     fn maybe_append_head(
         &self,
         r: RefView<'_>,
-        who: *const git_signature,
+        who: Option<SigRef<'_>>,
         message: Option<&CStr>,
     ) -> Result<()> {
         let db = self.repo.refdb()?;
-        // SAFETY: the count `git_repository_refdb` gave us.
+        // SAFETY: `db` is the repository's live database with the count
+        // `git_repository_refdb` just took for us, which `counted` drops.
         let counted = unsafe { ffibox::CShared::from_raw(db.cast::<refdb::GitRefdb>()) }
             .ok_or(ErrorCode::GENERIC)?;
-        // SAFETY: we hold a count on the live database.
-        let dbp = unsafe { RefdbPtr::new(NonNull::from(&*counted)) };
+        // The pointer with the allocation's provenance (not one derived
+        // from `&GitRefdb`: references made through the handle keep it and
+        // may drop the last count, freeing through it).
+        let db = NonNull::new(ffibox::CShared::as_ptr(&counted)).ok_or(ErrorCode::GENERIC)?;
+        // SAFETY: we hold a count on the live database (`counted`, alive
+        // to the end of this call, longer than every use of the handle);
+        // its backend and repository are ours (`self`) and live.
+        let dbp = unsafe { RefdbPtr::new(db) };
         if !dbp.should_write_head_reflog(r)? {
             return Ok(());
         }
@@ -958,7 +965,7 @@ impl FsInner {
         r: RefView<'_>,
         old: Option<&Oid>,
         new: Option<&Oid>,
-        who: *const git_signature,
+        who: Option<SigRef<'_>>,
         message: Option<&CStr>,
     ) -> Result<()> {
         let is_symbolic = r.raw_kind() == GIT_REFERENCE_SYMBOLIC;
@@ -990,6 +997,9 @@ impl FsInner {
             }
         };
         let mut buf = GitStr::new();
+        // C formats a NULL signature (`git_signature__writebuf` crashes):
+        // the panic becomes an error at the slot's barrier.
+        let who = who.expect("reflog entry without a signature");
         reflog::serialize_entry(&mut buf, &old_id, &new_id, who, message.map(CStr::to_bytes))?;
         let path = self.reflog_path(r.name())?;
         match futils::mkpath2file(path.as_bytes(), 0o777) {
@@ -1030,7 +1040,7 @@ impl FsInner {
         update_reflog: bool,
         old_id: Option<&Oid>,
         old_target: Option<&[u8]>,
-        who: *const git_signature,
+        who: Option<SigRef<'_>>,
         message: Option<&CStr>,
     ) -> Result<()> {
         let mut file = file;
@@ -1065,7 +1075,7 @@ impl FsInner {
         &self,
         r: RefView<'_>,
         force: bool,
-        who: *const git_signature,
+        who: Option<SigRef<'_>>,
         message: Option<&CStr>,
         old_id: Option<&Oid>,
         old_target: Option<&[u8]>,
@@ -1213,7 +1223,7 @@ impl FsInner {
         old_name: &[u8],
         new_name: &[u8],
         force: bool,
-        who: *const git_signature,
+        who: Option<SigRef<'_>>,
         message: Option<&CStr>,
     ) -> Result<RefBox> {
         self.reference_path_available(new_name, Some(old_name), force)?;
@@ -1504,26 +1514,19 @@ impl FsInner {
     }
 
     /// `refdb_reflog_fs__write`.
-    ///
-    /// # Safety
-    ///
-    /// `log` is a live reflog (from any backend, or `transaction.c`'s
-    /// pool), not changed during the call.
-    unsafe fn reflog_write(&self, log: *mut GitReflog) -> Result<()> {
-        // SAFETY: per the contract.
-        let name = unsafe { reflog::name_of(log) };
+    fn reflog_write(&self, log: ReflogRef<'_>) -> Result<()> {
+        let name = log.name();
         let Ok(mut file) = self.lock_reflog(name.to_bytes()) else {
             return Err(ErrorCode::GENERIC);
         };
         let mut buf = GitStr::new();
-        // SAFETY: per the contract.
-        for e in unsafe { reflog::entries_of(log) } {
-            // SAFETY: the reflog's entries are live entries.
-            let e = unsafe { &*e };
-            // SAFETY: an entry's message is NULL or a string.
-            let msg = unsafe { crate::util::export::cstr(e.msg) }.map(CStr::to_bytes);
-            if reflog::serialize_entry(&mut buf, &e.oid_old, &e.oid_cur, e.committer, msg).is_err()
-            {
+        for e in log.entries() {
+            let msg = e.msg().map(CStr::to_bytes);
+            let f = e.get();
+            // C formats a NULL committer (a crash): the panic becomes an
+            // error at the slot's barrier.
+            let who = e.committer().expect("reflog entry without a committer");
+            if reflog::serialize_entry(&mut buf, &f.oid_old, &f.oid_cur, who, msg).is_err() {
                 // C jumps to its cleanup with `error` still 0.
                 return Ok(());
             }
@@ -2038,10 +2041,13 @@ ffibox::impl_cvtable! {
             let v = unsafe { refarg(r) };
             // SAFETY: NULL or a string.
             let msg = unsafe { opt(message) };
-            // SAFETY: NULL or a valid oid.
+            // SAFETY: NULL or a valid oid (the slot's contract).
             let old = unsafe { oidarg(old_id) };
-            // SAFETY: NULL or a string.
+            // SAFETY: NULL or a string (the slot's contract).
             let old_t = unsafe { opt(old_target) };
+            // SAFETY: NULL or a valid signature for the call (the slot's
+            // contract).
+            let who = unsafe { SigRef::from_raw(who) };
             st(s.0.write(v, force != 0, who, msg, old, old_t.map(CStr::to_bytes)))
         },
     }
@@ -2059,6 +2065,9 @@ ffibox::impl_cvtable! {
         |s: &FsBackend| {
             // SAFETY: the names are strings, `message` NULL or one.
             let (o, n, msg) = (unsafe { name(old_name) }, unsafe { name(new_name) }, unsafe { opt(message) });
+            // SAFETY: NULL or a valid signature for the call (the slot's
+            // contract).
+            let who = unsafe { SigRef::from_raw(who) };
             let r = s.0.rename(o.to_bytes(), n.to_bytes(), force != 0, who, msg);
             match r {
                 Ok(r) => {
@@ -2137,12 +2146,13 @@ ffibox::impl_cvtable! {
         on panic: panicked(),
         on busy: busy(),
         |s: &FsBackend| {
-            if log.is_null() {
+            let Some(log) = NonNull::new(log) else {
                 let _ = errors::assert_arg_failed("reflog");
                 return -1;
-            }
-            // SAFETY: a live reflog for the call.
-            st(unsafe { s.0.reflog_write(log) })
+            };
+            // SAFETY: a valid reflog (from any backend, or `transaction.c`'s
+            // pool), unwritten during the call (the slot's contract).
+            st(s.0.reflog_write(unsafe { ReflogRef::from_ptr(log) }))
         },
     }
     fn reflog_rename(@backend, old_name: *const c_char, new_name: *const c_char) -> c_int {
@@ -2209,6 +2219,9 @@ ffibox::impl_cvtable! {
                 // SAFETY: `r` is a live reference; `message` NULL or a
                 // string.
                 let (v, msg) = (unsafe { refarg(r) }, unsafe { opt(message) });
+                // SAFETY: NULL or a valid signature for the call (the
+                // slot's contract).
+                let sig = unsafe { SigRef::from_raw(sig) };
                 s.0.write_tail(v, lock, update_reflog != 0, None, None, sig, msg)
             } else {
                 drop(lock);

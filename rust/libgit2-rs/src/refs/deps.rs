@@ -220,9 +220,10 @@ pub fn fsync_gitdir() -> bool {
     crate::repository::fsync_gitdir()
 }
 
-/// A valid `git_signature` borrowed for `'a`: its `name` and `email` are
-/// NUL-terminated strings, and nothing writes or frees the signature or
-/// its strings during `'a`.
+/// A valid `git_signature` borrowed for `'a`: aligned, its `name` and
+/// `email` NULL or NUL-terminated strings (C's are never NULL; the Rust
+/// readers take NULL as empty), and nothing writes or frees the signature
+/// or its strings during `'a`.
 ///
 /// `GitSignature`'s fields are public raw pointers, so a `&GitSignature`
 /// alone does not promise valid strings; this handle does, by its
@@ -239,9 +240,9 @@ impl<'a> SigRef<'a> {
     ///
     /// # Safety
     ///
-    /// `p` is NULL, or points to a `git_signature` whose `name` and `email`
-    /// are NUL-terminated strings, and which (with its strings) nothing
-    /// writes or frees during `'a`.
+    /// `p` is NULL, or points to an aligned `git_signature` whose `name`
+    /// and `email` are NULL or NUL-terminated strings, and which (with its
+    /// strings) nothing writes or frees during `'a`.
     pub unsafe fn from_raw(p: *const git_signature) -> Option<SigRef<'a>> {
         NonNull::new(p.cast_mut()).map(|ptr| SigRef {
             ptr,
@@ -254,9 +255,36 @@ impl<'a> SigRef<'a> {
         self.ptr.as_ptr()
     }
 
+    /// The safe view of the signature, for `'a`.
+    pub fn to_ref(self) -> crate::signature::SignatureRef<'a> {
+        // SAFETY: a valid, aligned signature, unwritten and not freed for
+        // `'a` (the type's invariant).
+        let s = unsafe { self.ptr.as_ref() };
+        // SAFETY: its strings are NULL or NUL-terminated, live and
+        // unwritten for `'a` (as above).
+        unsafe { crate::signature::SignatureRef::from_raw(s) }
+    }
+
+    /// A copy (`git_signature_dup`).
+    pub fn to_owned(self) -> Result<crate::signature::Signature> {
+        // SAFETY: a valid signature for the call (the type's invariant).
+        unsafe { crate::signature::Signature::dup_raw(self.as_ptr()) }
+    }
+
     /// The pointer of an optional signature (NULL for `None`).
     pub fn opt_ptr(s: Option<SigRef<'_>>) -> *const git_signature {
         s.map_or(core::ptr::null(), SigRef::as_ptr)
+    }
+}
+
+impl<'a> From<&'a crate::signature::Signature> for SigRef<'a> {
+    /// The C view of an owned signature: valid by `Signature`'s invariant
+    /// (owned, non-NULL strings, written by nothing while borrowed).
+    fn from(s: &'a crate::signature::Signature) -> SigRef<'a> {
+        SigRef {
+            ptr: NonNull::new(s.as_raw().cast_mut()).expect("a reference is not NULL"),
+            _life: core::marker::PhantomData,
+        }
     }
 }
 
