@@ -295,6 +295,14 @@ pub fn readbuffer_fd_full(buf: &mut GitStr, fd: c_int) -> Result<()> {
         // references; `read_raw` writes at most `BLOCKSIZE` of them. The
         // NUL it may overwrite is restored below before the string is read.
         let read_size = unsafe { posix::read_raw(fd, p, BLOCKSIZE) };
+        if read_size < 0 {
+            // C's check: without it, -1 became a length of `total - 1`
+            // (`usize::MAX` for the first block), and the string's size
+            // went past its buffer.
+            let _ = git_error_set!(ErrorClass::OS, "failed to read descriptor");
+            buf.dispose();
+            return Err(ErrorCode::GENERIC);
+        }
         let n = total + read_size as usize;
         // SAFETY: owned; its first `n` bytes are the earlier blocks and what
         // `read` just wrote, and `n <= alloc_len <= capacity` (a full block

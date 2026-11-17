@@ -218,6 +218,21 @@ fn readbuffer_and_writebuffer() {
     unsafe { posix::close(fd) }.unwrap();
     assert_eq!(b.as_bytes(), &data[..]);
 
+    // A failing read (a directory: EISDIR) is C's error, and the string is
+    // left empty (it was a length of `usize::MAX` before the check).
+    let fd = futils::open_ro(&t.c("")).unwrap();
+    assert_eq!(
+        futils::readbuffer_fd_full(&mut b, fd),
+        Err(ErrorCode::GENERIC)
+    );
+    assert_eq!(
+        last().1.split(':').next().unwrap(),
+        "failed to read descriptor"
+    );
+    assert_eq!((b.len(), b.capacity()), (0, 0));
+    // SAFETY: a descriptor this code opened, closed once.
+    unsafe { posix::close(fd) }.unwrap();
+
     let fd = futils::open_ro(&t.c("big")).unwrap();
     assert!(futils::readbuffer_fd(&mut b, fd, 40000).is_err());
     assert_eq!(
