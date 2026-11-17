@@ -97,7 +97,9 @@ impl Arena {
             }
             _ => self.alloc_page(size)?,
         };
-        // SAFETY: `size` bytes at `p` belong to this block alone.
+        // SAFETY: `p` starts `size` bytes within a page's allocation (the
+        // room `avail` counted, or a fresh page of at least `size`), which
+        // no other block was given.
         unsafe { p.as_ptr().write_bytes(0, size) };
         Ok(p)
     }
@@ -151,7 +153,10 @@ struct KeyRef {
 
 impl KeyRef {
     fn bytes(&self) -> &[u8] {
-        // SAFETY: the type's invariant: `len` live, unwritten bytes.
+        // SAFETY: the type's invariant (kept by its only constructor,
+        // `Core::upsert`): `len` initialized bytes at `ptr`, in a block of
+        // the arena, allocated and unwritten while the key is in the map;
+        // `u8` needs no alignment, and the block's size bounds `len`.
         unsafe { core::slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
     }
 }
@@ -287,14 +292,16 @@ impl Core {
     ///
     /// The items' comparison function is sound to call on the items.
     unsafe fn sort(&mut self) {
-        // SAFETY: forwarded.
+        // SAFETY: the vector's comparison is this cache's, which the caller
+        // guarantees sound on the items (`GitVector::sort`'s condition).
         unsafe { self.items.sort() };
     }
 
     /// `git_sortedcache_lookup_index` (after the items are sorted).
     fn index_of(&self, key: &[u8]) -> core::result::Result<usize, usize> {
         self.items.bsearch_by(|item| {
-            // SAFETY: the items are blocks of this arena.
+            // SAFETY: every item of the vector is a block of this core's
+            // arena from `upsert` (nothing else inserts into it).
             let k = unsafe { self.key_of(item) };
             crate::util::util::strcmp(key, k.to_bytes())
         })
@@ -305,12 +312,15 @@ impl Core {
     fn take(&mut self, pos: usize) -> Option<NonNull<u8>> {
         let item = NonNull::new(self.items.get(pos)?.cast::<u8>())?;
         let _ = self.items.remove(pos);
-        // SAFETY: a block of this arena, whose key stays allocated (the
-        // block is not freed here).
-        let key = unsafe { self.key_of(item.as_ptr().cast()) };
+        // SAFETY: `item` was an item of this core: a block of its arena
+        // from `upsert`, whose key stays allocated (the block is not freed
+        // here).
+        let key = unsafe { self.key_of(item.as_ptr().cast()) }.to_bytes();
+        // (A `KeyRef` of the arena's bytes, so that `key` does not borrow
+        // `self` across the removal.)
         let kref = KeyRef {
-            ptr: NonNull::from(key.to_bytes()).cast(),
-            len: key.to_bytes().len(),
+            ptr: NonNull::from(key).cast(),
+            len: key.len(),
         };
         self.map.remove(kref.bytes());
         Some(item)
@@ -339,13 +349,21 @@ pub struct Shared {
     gate: std::sync::RwLock<()>,
 }
 
-// SAFETY: `core` and `stamp` are only reached under the rwlock (or with
-// exclusive use), per the C contract and the guards of the safe API; the
-// payload and callbacks are the caller's, which C shares across threads
-// as the C did (the refdb's cache is used from several threads).
+// SAFETY: field by field. `lock` (a pthread rwlock in an `UnsafeCell`),
+// `count` (atomic), `gate` (`std`'s lock), `path` and the plain
+// configuration (`item_path_offset`, `item_cmp`, `free_item`, never written
+// after `new`) are safe to share. `core` and `stamp` are `UnsafeCell`s
+// reached only under the rwlock: shared (`core()`) under a read lock,
+// exclusive (`core_mut()`, the stamp) under the write lock, per the C
+// contract and the guards of the safe API. The pointers in the core (arena
+// pages, items, keys) point into the core's own `git__allocator` blocks,
+// which carry no thread affinity. `free_item_payload` is only passed to
+// the callbacks, which C shares across threads as the C did (the refdb's
+// cache is used from several threads).
 unsafe impl Sync for Shared {}
-// SAFETY: as above; the arena's memory is `git__allocator`'s, freed from
-// any thread.
+// SAFETY: as for `Sync`: nothing is tied to the creating thread; the
+// arena's memory is `git__allocator`'s, freed from any thread, and the
+// lock is not moved (it stays inside the `Arc`).
 unsafe impl Send for Shared {}
 
 impl Shared {
@@ -386,9 +404,10 @@ impl Shared {
     ///
     /// The caller holds a read or the write lock (or has exclusive use),
     /// and nothing changes the core while the reference lives.
-    #[allow(clippy::mut_from_ref)]
     unsafe fn core(&self) -> &Core {
-        // SAFETY: the caller's contract.
+        // SAFETY: the cell's contents are initialized and live with `self`;
+        // the caller guarantees that nothing writes them (no `&mut Core`)
+        // while the reference lives.
         unsafe { &*self.core.get() }
     }
 
@@ -398,9 +417,11 @@ impl Shared {
     ///
     /// The caller holds the write lock (or has exclusive use), and no
     /// other reference to the core lives meanwhile.
-    #[allow(clippy::mut_from_ref)]
+    #[allow(clippy::mut_from_ref)] // the `UnsafeCell` accessor
     unsafe fn core_mut(&self) -> &mut Core {
-        // SAFETY: the caller's contract.
+        // SAFETY: the cell's contents are initialized and live with `self`;
+        // the caller guarantees that no other reference to them lives while
+        // this one does.
         unsafe { &mut *self.core.get() }
     }
 
@@ -448,9 +469,12 @@ impl Shared {
     /// the items.
     unsafe fn wunlock(&self) {
         {
-            // SAFETY: the write lock is held; the reference ends here.
+            // SAFETY: the calling thread holds the write lock (this fn's
+            // contract), so no other reference to the core lives; this one
+            // ends here.
             let core = unsafe { self.core_mut() };
-            // SAFETY: forwarded.
+            // SAFETY: the comparison is sound on the items (this fn's
+            // contract).
             unsafe { core.sort() };
         }
         // SAFETY: held by this thread.
@@ -496,7 +520,9 @@ impl Shared {
                 // the callback runs.
                 let item = unsafe { self.core() }.items.get(i);
                 let Some(item) = item else { break };
-                // SAFETY: the caller vouches for the callback.
+                // SAFETY: the caller guarantees `free_item` sound with the
+                // payload and each item (this fn's contract); no reference
+                // into the core lives across the call.
                 unsafe { free_item(self.free_item_payload, item) };
                 i += 1;
             }
@@ -514,7 +540,8 @@ impl Shared {
     ///
     /// The write lock is held (or exclusive use).
     unsafe fn upsert(&self, key: &[u8]) -> Result<(NonNull<u8>, bool)> {
-        // SAFETY: the caller's contract.
+        // SAFETY: the write lock is held or the use exclusive (this fn's
+        // contract): no other reference to the core lives.
         let core = unsafe { self.core_mut() };
         let r = core.upsert(key);
         self.sync_count(core);
@@ -528,7 +555,9 @@ impl Shared {
     /// The write lock is held (or exclusive use); `free_item` is sound.
     unsafe fn remove(&self, pos: usize) -> Result<()> {
         let item = {
-            // SAFETY: the caller's contract; the reference ends here.
+            // SAFETY: the write lock is held or the use exclusive (this fn's
+            // contract): no other reference to the core lives; this one
+            // ends here, before the callback.
             let core = unsafe { self.core_mut() };
             let item = core.take(pos);
             self.sync_count(core);
@@ -539,7 +568,8 @@ impl Shared {
             return Err(ErrorCode::NOT_FOUND);
         };
         if let Some(free_item) = self.free_item {
-            // SAFETY: the caller vouches for the callback.
+            // SAFETY: `free_item` is sound with the payload and the item
+            // (this fn's contract); no reference into the core lives.
             unsafe { free_item(self.free_item_payload, item.as_ptr().cast()) };
         }
         Ok(())
@@ -555,7 +585,8 @@ impl Shared {
     /// sort on the paths that do not return `Ok(true)`).
     unsafe fn lockandload(&self, buf: Option<&mut GitStr>) -> Result<bool> {
         self.wlock()?;
-        // SAFETY: the write lock is held; forwarded.
+        // SAFETY: this thread took the write lock just above; the
+        // comparison is sound on the items (this fn's contract).
         unsafe { self.load_or_unlock(buf) }
     }
 
@@ -566,10 +597,12 @@ impl Shared {
     ///
     /// As `lockandload`, and the calling thread holds the write lock.
     unsafe fn load_or_unlock(&self, buf: Option<&mut GitStr>) -> Result<bool> {
-        // SAFETY: forwarded.
+        // SAFETY: the calling thread holds the write lock (this fn's
+        // contract).
         let r = unsafe { self.load_locked(buf) };
         if !matches!(r, Ok(true)) {
-            // SAFETY: the lock is held; forwarded.
+            // SAFETY: the write lock is still held by this thread, and the
+            // comparison is sound on the items (this fn's contract).
             unsafe { self.wunlock() };
         }
         r
@@ -579,7 +612,9 @@ impl Shared {
     ///
     /// The write lock is held.
     unsafe fn load_locked(&self, buf: Option<&mut GitStr>) -> Result<bool> {
-        // SAFETY: the write lock is held; the reference ends with the call.
+        // SAFETY: the write lock is held (this fn's contract), under which
+        // alone the stamp is reached: no other reference to it lives; this
+        // one ends with the call, which runs no callback.
         let stamp = unsafe { &mut *self.stamp.get() };
         let r = futils::filestamp_check(Some(stamp), &self.path);
         if r <= 0 {
@@ -599,7 +634,8 @@ impl Shared {
     ///
     /// The write lock is held.
     unsafe fn updated(&self) {
-        // SAFETY: the write lock is held.
+        // SAFETY: the write lock is held (this fn's contract), under which
+        // alone the stamp is reached: no other reference to it lives.
         let stamp = unsafe { &mut *self.stamp.get() };
         futils::filestamp_check(Some(stamp), &self.path);
     }
@@ -740,9 +776,16 @@ const fn key_offset<T>() -> usize {
 }
 
 /// The comparison of two typed items: their keys, bytewise.
+///
+/// # Safety
+///
+/// `a` and `b` are items of a `SortedCache<T>` (blocks from its `upsert`,
+/// with a NUL-terminated key at `key_offset::<T>()`), as the cache's
+/// vector passes them, live for the call.
 unsafe extern "C" fn typed_cmp<T>(a: *const c_void, b: *const c_void) -> c_int {
-    // SAFETY: called by the vector on two items of a `SortedCache<T>`, each
-    // a block with its key at `key_offset::<T>()`.
+    // SAFETY: `a` is an item of a `SortedCache<T>` (this fn's contract): its
+    // key at `key_offset::<T>()` is NUL-terminated, allocated and unwritten
+    // for the call.
     let ka = unsafe { CStr::from_ptr(a.cast::<c_char>().wrapping_add(key_offset::<T>())) };
     // SAFETY: as above.
     let kb = unsafe { CStr::from_ptr(b.cast::<c_char>().wrapping_add(key_offset::<T>())) };
@@ -750,6 +793,11 @@ unsafe extern "C" fn typed_cmp<T>(a: *const c_void, b: *const c_void) -> c_int {
 }
 
 /// The `free_item` of a typed cache: drop the `T`.
+///
+/// # Safety
+///
+/// `item` is an item of a `SortedCache<T>` that is leaving the cache, not
+/// dropped before, and not used by anyone after.
 unsafe extern "C" fn typed_drop<T>(_payload: *mut c_void, item: *mut c_void) {
     // SAFETY: every item of a `SortedCache<T>` in its vector holds an
     // initialized `T` at offset 0 (written right after the upsert), dropped
@@ -908,11 +956,13 @@ macro_rules! lookups {
         /// The item for `key` (`git_sortedcache_lookup`).
         pub fn get(&self, key: &[u8]) -> Option<&T> {
             let key = crate::util::net::c_prefix(key);
-            // SAFETY: the guard holds a lock; the reference is bound to it.
+            // SAFETY: the guard holds a lock, so no `&mut Core` lives; the
+            // reference ends here.
             let item = unsafe { self.cache.shared.core() }.lookup(key)?;
-            // SAFETY: an item of this cache holds an initialized `T`, which
-            // no one writes while this lock (and the borrow of the guard)
-            // lives.
+            // SAFETY: an item of this cache holds an initialized `T`
+            // (written right after its upsert), 8-aligned (`ALIGN_OK`),
+            // which no one writes while this lock (and the borrow of the
+            // guard) lives: `&mut T` needs `&mut` of the write guard.
             Some(unsafe { &*item.as_ptr().cast::<T>() })
         }
 
@@ -933,12 +983,17 @@ macro_rules! lookups {
             // read lock, and the write guard has exclusive use; the
             // comparison is `typed_cmp::<T>`.
             let item = unsafe { self.cache.shared.entry(pos) }?;
-            // SAFETY: an item of this cache (see `get`), its key alive as
-            // long as the lock.
-            unsafe {
-                let core = self.cache.shared.core();
-                Some((core.key_of(item).to_bytes(), &*item.cast::<T>()))
-            }
+            // SAFETY: the guard holds a lock, so no `&mut Core` lives while
+            // this reference is used.
+            let core = unsafe { self.cache.shared.core() };
+            // SAFETY: `item` is an item of this cache's vector, a block of
+            // its arena; the key stays allocated and unwritten while the
+            // lock (and the borrow of the guard) lives.
+            let key = unsafe { core.key_of(item) }.to_bytes();
+            // SAFETY: as in `get`: an initialized `T`, 8-aligned
+            // (`ALIGN_OK`), that nothing writes while the borrow of the
+            // guard lives.
+            Some((key, unsafe { &*item.cast::<T>() }))
         }
 
         /// The position of `key` in key order (`git_sortedcache_lookup_index`).
@@ -1048,20 +1103,20 @@ impl<T> Drop for WriteGuard<'_, T> {
 /// functions marked as needing a lock must be called with it held by the
 /// calling thread, as `sortedcache.h` documents; `item_cmp` and `free_item`
 /// must be sound on the items, and must not use the cache.
+///
+/// The exports take the cache as `Option<&Shared>` (NULL, which C
+/// dereferences unchecked, is an invalid argument): a shared reference
+/// fits, since everything other threads or the callbacks may change is
+/// behind `UnsafeCell`s (the core, the stamp, the locks) or atomic (the
+/// count), and the cache stays allocated for the call (the caller's
+/// reference). `git_sortedcache_free`, which may free it, and
+/// `git_sortedcache_incref`, which needs `Arc::into_raw`'s pointer, keep
+/// the raw pointer.
 pub mod ffi {
     use super::*;
+    use crate::git_arg;
     use crate::util::cabi::{CStrArg, Out};
     use crate::util::export::barrier;
-
-    /// The shared cache behind a C pointer.
-    ///
-    /// # Safety
-    ///
-    /// `sc` is a live cache (see the module).
-    unsafe fn shared<'a>(sc: *const Shared) -> &'a Shared {
-        // SAFETY: the caller's contract: an `Arc`'s live contents.
-        unsafe { &*sc }
-    }
 
     /// `git_sortedcache_new`.
     ///
@@ -1107,14 +1162,13 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_sortedcache_copy(
         mut out: Out<'_, *const Shared>,
-        src: *const Shared,
+        src: Option<&Shared>,
         lock: bool,
         copy_item: Option<CopyItemFn>,
         payload: *mut c_void,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: a live cache.
-            let s = unsafe { shared(src) };
+            let s = git_arg!(src, "src", -1);
             // The configuration lives outside the lock-protected core: no
             // reference into the core is formed before the lock is held.
             let (cmp, offset) = (s.item_cmp, s.item_path_offset);
@@ -1135,15 +1189,19 @@ pub mod ffi {
             let mut error = 0;
             let mut i = 0;
             loop {
-                // SAFETY: `src` is read-locked; the reference ends here.
-                let src_item = unsafe { s.core() }.items.get(i);
-                let Some(src_item) = src_item else { break };
-                i += 1;
-                // SAFETY: `src` is read-locked.
+                // SAFETY: `src` is read-locked (here or by the caller: this
+                // export's contract), so no `&mut Core` of it lives; the
+                // reference is not used past the key.
                 let src_core = unsafe { s.core() };
-                // SAFETY: an item of `src`; its key lives under the lock.
+                let Some(src_item) = src_core.items.get(i) else {
+                    break;
+                };
+                i += 1;
+                // SAFETY: an item of `src`'s vector, a block of its arena;
+                // the key stays allocated and unwritten under the lock.
                 let key = unsafe { src_core.key_of(src_item) }.to_bytes();
-                // SAFETY: `tgt` is ours alone.
+                // SAFETY: `tgt` was just made here and not shared: the use
+                // is exclusive.
                 let tgt_item = match unsafe { tgt.upsert(key) } {
                     Ok((t, _)) => t,
                     Err(e) => {
@@ -1152,12 +1210,15 @@ pub mod ffi {
                     }
                 };
                 let r = match copy_item {
-                    // SAFETY: the caller vouches for `copy_item`.
+                    // SAFETY: `copy_item` is sound on `src`'s items and fresh
+                    // ones, with `payload` (this export's contract).
                     Some(f) => unsafe { f(payload, tgt_item.as_ptr().cast(), src_item) },
                     None => {
                         // `sortedcache_copy_item`: the bytes before the key.
-                        // SAFETY: both blocks have `offset` bytes before
-                        // their keys; distinct blocks.
+                        // SAFETY: both are blocks of `offset + keylen + 1`
+                        // bytes or more (`upsert`), in distinct arenas, so
+                        // their first `offset` bytes do not overlap; `u8`
+                        // needs no alignment.
                         unsafe {
                             core::ptr::copy_nonoverlapping(
                                 src_item.cast::<u8>(),
@@ -1175,7 +1236,7 @@ pub mod ffi {
             }
 
             if lock {
-                // SAFETY: taken above on this thread.
+                // SAFETY: the read lock was taken above by this thread.
                 unsafe { s.runlock() };
             }
             if error != 0 {
@@ -1186,9 +1247,11 @@ pub mod ffi {
             }
             // C leaves the copy unsorted until it is first read or
             // unlocked; sorting now gives the same order (rust/DIVERGENCES.md).
-            // SAFETY: `tgt` is ours alone.
+            // SAFETY: `tgt` was made by this call and is not shared yet: the
+            // use is exclusive.
             let core = unsafe { tgt.core_mut() };
-            // SAFETY: the comparison is `src`'s, sound on the items.
+            // SAFETY: the comparison is `src`'s, sound on its items and on
+            // the copies (the module's contract, `copy_item`'s).
             unsafe { core.sort() };
             out.write(Arc::into_raw(tgt));
             0
@@ -1206,7 +1269,9 @@ pub mod ffi {
     pub unsafe extern "C" fn git_sortedcache_free(sc: *const Shared) {
         barrier(|| {
             if !sc.is_null() {
-                // SAFETY: a reference from `Arc::into_raw`, given up.
+                // SAFETY: `sc` is a live cache whose reference (one strong
+                // count of the `Arc::into_raw` pointer) the caller gives up,
+                // with no lock held (this export's contract).
                 unsafe { Arc::decrement_strong_count(sc) };
             }
         })
@@ -1219,7 +1284,8 @@ pub mod ffi {
     /// `sc` is a live cache.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_sortedcache_incref(sc: *const Shared) {
-        // SAFETY: a live `Arc` pointer.
+        // SAFETY: `sc` is a live cache (this export's contract): a pointer
+        // from `Arc::into_raw` whose strong count is at least 1.
         barrier(|| unsafe { Arc::increment_strong_count(sc) })
     }
 
@@ -1229,9 +1295,8 @@ pub mod ffi {
     ///
     /// `sc` is a live cache.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_sortedcache_path(sc: *const Shared) -> *const c_char {
-        // SAFETY: a live cache.
-        barrier(|| unsafe { shared(sc) }.path().as_ptr())
+    pub unsafe extern "C" fn git_sortedcache_path(sc: Option<&Shared>) -> *const c_char {
+        barrier(|| git_arg!(sc, "sc", core::ptr::null()).path().as_ptr())
     }
 
     /// `git_sortedcache_wlock`.
@@ -1240,9 +1305,8 @@ pub mod ffi {
     ///
     /// `sc` is a live cache, not locked by this thread.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_sortedcache_wlock(sc: *const Shared) -> c_int {
-        // SAFETY: a live cache.
-        barrier(|| crate::util::export::status(unsafe { shared(sc) }.wlock()))
+    pub unsafe extern "C" fn git_sortedcache_wlock(sc: Option<&Shared>) -> c_int {
+        barrier(|| crate::util::export::status(git_arg!(sc, "sc", -1).wlock()))
     }
 
     /// `git_sortedcache_wunlock`: sort the items, release the write lock.
@@ -1251,11 +1315,11 @@ pub mod ffi {
     ///
     /// `sc` is a live cache write-locked by this thread.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_sortedcache_wunlock(sc: *const Shared) {
+    pub unsafe extern "C" fn git_sortedcache_wunlock(sc: Option<&Shared>) {
         barrier(|| {
-            // SAFETY: a live cache.
-            let s = unsafe { shared(sc) };
-            // SAFETY: the caller's contract (the lock, the callbacks).
+            let s = git_arg!(sc, "sc", ());
+            // SAFETY: the calling thread holds the write lock, and
+            // `item_cmp` is sound on the items (this export's contract).
             unsafe { s.wunlock() }
         })
     }
@@ -1266,9 +1330,8 @@ pub mod ffi {
     ///
     /// `sc` is a live cache not write-locked by this thread.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_sortedcache_rlock(sc: *const Shared) -> c_int {
-        // SAFETY: a live cache.
-        barrier(|| crate::util::export::status(unsafe { shared(sc) }.rlock()))
+    pub unsafe extern "C" fn git_sortedcache_rlock(sc: Option<&Shared>) -> c_int {
+        barrier(|| crate::util::export::status(git_arg!(sc, "sc", -1).rlock()))
     }
 
     /// `git_sortedcache_runlock`.
@@ -1277,11 +1340,11 @@ pub mod ffi {
     ///
     /// `sc` is a live cache read-locked by this thread.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_sortedcache_runlock(sc: *const Shared) {
+    pub unsafe extern "C" fn git_sortedcache_runlock(sc: Option<&Shared>) {
         barrier(|| {
-            // SAFETY: a live cache.
-            let s = unsafe { shared(sc) };
-            // SAFETY: the caller's contract (the lock, the callbacks).
+            let s = git_arg!(sc, "sc", ());
+            // SAFETY: the calling thread holds a read lock (this export's
+            // contract).
             unsafe { s.runlock() }
         })
     }
@@ -1292,18 +1355,16 @@ pub mod ffi {
     /// # Safety
     ///
     /// `sc` is a live cache not locked by this thread; `buf` is NULL or a
-    /// valid `git_str`.
+    /// valid `git_str` that nothing else accesses during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_sortedcache_lockandload(
-        sc: *const Shared,
-        buf: *mut GitStr,
+        sc: Option<&Shared>,
+        buf: Option<&mut GitStr>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: NULL or a valid `git_str` in exclusive use.
-            let buf = unsafe { buf.as_mut() };
-            // SAFETY: a live cache.
-            let s = unsafe { shared(sc) };
-            // SAFETY: the comparison is the caller's, sound on the items.
+            let s = git_arg!(sc, "sc", -1);
+            // SAFETY: `item_cmp` is sound on the items (the module's
+            // contract, which C's callers keep).
             match unsafe { s.lockandload(buf) } {
                 Ok(true) => 1,
                 Ok(false) => 0,
@@ -1318,11 +1379,11 @@ pub mod ffi {
     ///
     /// `sc` is a live cache write-locked by this thread.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_sortedcache_updated(sc: *const Shared) {
+    pub unsafe extern "C" fn git_sortedcache_updated(sc: Option<&Shared>) {
         barrier(|| {
-            // SAFETY: a live cache.
-            let s = unsafe { shared(sc) };
-            // SAFETY: the caller's contract (the lock, the callbacks).
+            let s = git_arg!(sc, "sc", ());
+            // SAFETY: the calling thread holds the write lock (this export's
+            // contract).
             unsafe { s.updated() }
         })
     }
@@ -1334,17 +1395,19 @@ pub mod ffi {
     /// `sc` is a live cache; write-locked by this thread unless `wlock`
     /// (then not locked by it).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_sortedcache_clear(sc: *const Shared, wlock: bool) -> c_int {
+    pub unsafe extern "C" fn git_sortedcache_clear(sc: Option<&Shared>, wlock: bool) -> c_int {
         barrier(|| {
-            // SAFETY: a live cache.
-            let s = unsafe { shared(sc) };
+            let s = git_arg!(sc, "sc", -1);
             if wlock && s.wlock().is_err() {
                 return -1;
             }
-            // SAFETY: the write lock is held (taken here or by the caller).
+            // SAFETY: this thread holds the write lock (taken just above,
+            // or by the caller: this export's contract), and `free_item` is
+            // sound on the items (the module's contract).
             unsafe { s.clear_items() };
             if wlock {
-                // SAFETY: taken above.
+                // SAFETY: taken above by this thread; `item_cmp` is sound
+                // (the module's contract; the vector is empty anyway).
                 unsafe { s.wunlock() };
             }
             0
@@ -1360,14 +1423,14 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_sortedcache_upsert(
         mut out: Out<'_, *mut c_void>,
-        sc: *const Shared,
+        sc: Option<&Shared>,
         key: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             let key = key.to_bytes();
-            // SAFETY: a live cache.
-            let s = unsafe { shared(sc) };
-            // SAFETY: the write lock is held.
+            let s = git_arg!(sc, "sc", -1);
+            // SAFETY: the calling thread holds the write lock (this export's
+            // contract).
             let r = unsafe { s.upsert(key) };
             let (item, code) = match r {
                 Ok((item, _)) => (item.as_ptr().cast(), 0),
@@ -1384,11 +1447,12 @@ pub mod ffi {
     ///
     /// `sc` is a live cache write-locked by this thread.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_sortedcache_remove(sc: *const Shared, pos: usize) -> c_int {
+    pub unsafe extern "C" fn git_sortedcache_remove(sc: Option<&Shared>, pos: usize) -> c_int {
         barrier(|| {
-            // SAFETY: a live cache.
-            let s = unsafe { shared(sc) };
-            // SAFETY: the caller's contract (the write lock, the callback).
+            let s = git_arg!(sc, "sc", -1);
+            // SAFETY: the calling thread holds the write lock (this export's
+            // contract), and `free_item` is sound on the items (the
+            // module's).
             crate::util::export::status(unsafe { s.remove(pos) })
         })
     }
@@ -1401,14 +1465,14 @@ pub mod ffi {
     /// string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_sortedcache_lookup(
-        sc: *const Shared,
+        sc: Option<&Shared>,
         key: CStrArg<'_>,
     ) -> *mut c_void {
         barrier(|| {
-            // SAFETY: a live cache.
-            let s = unsafe { shared(sc) };
+            let s = git_arg!(sc, "sc", core::ptr::null_mut());
             let key = key.to_bytes();
-            // SAFETY: a lock is held.
+            // SAFETY: the calling thread holds a lock (this export's
+            // contract), so no `&mut Core` lives; the reference ends here.
             match unsafe { s.core() }.lookup(key) {
                 Some(p) => p.as_ptr().cast(),
                 None => core::ptr::null_mut(),
@@ -1422,9 +1486,8 @@ pub mod ffi {
     ///
     /// `sc` is a live cache.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_sortedcache_entrycount(sc: *const Shared) -> usize {
-        // SAFETY: a live cache.
-        barrier(|| unsafe { shared(sc) }.entrycount())
+    pub unsafe extern "C" fn git_sortedcache_entrycount(sc: Option<&Shared>) -> usize {
+        barrier(|| git_arg!(sc, "sc", 0).entrycount())
     }
 
     /// `git_sortedcache_entry`: the item at `pos` in sorted order, or NULL.
@@ -1434,11 +1497,12 @@ pub mod ffi {
     /// `sc` is a live cache locked by this thread (write-locked, or in
     /// exclusive use, if items were upserted since the last unlock).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_sortedcache_entry(sc: *const Shared, pos: usize) -> *mut c_void {
+    pub unsafe extern "C" fn git_sortedcache_entry(sc: Option<&Shared>, pos: usize) -> *mut c_void {
         barrier(|| {
-            // SAFETY: a live cache.
-            let s = unsafe { shared(sc) };
-            // SAFETY: the caller's contract (the lock, the callbacks).
+            let s = git_arg!(sc, "sc", core::ptr::null_mut());
+            // SAFETY: the calling thread holds a lock, the write lock if
+            // items were upserted since the last unlock (this export's
+            // contract); `item_cmp` is sound on the items (the module's).
             unsafe { s.entry(pos) }.unwrap_or(core::ptr::null_mut())
         })
     }
@@ -1454,14 +1518,14 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_sortedcache_lookup_index(
         mut out: Out<'_, usize>,
-        sc: *const Shared,
+        sc: Option<&Shared>,
         key: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: a live cache.
-            let s = unsafe { shared(sc) };
+            let s = git_arg!(sc, "sc", -1);
             let key = key.to_bytes();
-            // SAFETY: the caller's contract.
+            // SAFETY: as in `git_sortedcache_entry` (this export's
+            // contract is the same).
             let (r, pos) = unsafe { s.lookup_index(key) };
             if r != Err(ErrorCode::GENERIC) {
                 out.write(pos);
