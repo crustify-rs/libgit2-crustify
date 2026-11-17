@@ -1087,6 +1087,45 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::multiple_unsafe_ops_per_block)] // one SAFETY for the sequence of calls
+    fn exports_on_an_unopened_filebuf() {
+        // The exports as C calls them, without a filesystem: NULL, and a
+        // `GIT_FILEBUF_INIT` filebuf (Option<&mut GitFilebuf> arguments).
+        let _g = test_support::init();
+        let mut f = GitFilebuf::new();
+        let mut reserved = core::ptr::NonNull::<c_void>::dangling().as_ptr();
+        let (mut mtime, mut size) = (0, 7usize);
+        // SAFETY: `f` is a valid filebuf used only by these calls; the
+        // out-parameters are writable locals; `b"x"` is readable.
+        unsafe {
+            assert_eq!(ffi::git_filebuf_flush(None), -1);
+            assert!(ffi::git_filebuf_flush(Some(&mut f)) < 0);
+            assert_eq!(ffi::git_filebuf_write(None, b"x".as_ptr().cast(), 1), -1);
+            assert_eq!(
+                ffi::git_filebuf_reserve(Some(&mut f), (&mut reserved).into(), 1),
+                -1
+            );
+            assert!(reserved.is_null());
+            // The failed reservation poisoned the buffer: writes fail
+            // without calling the (NULL) write function.
+            assert_eq!(
+                ffi::git_filebuf_write(Some(&mut f), b"x".as_ptr().cast(), 1),
+                -1
+            );
+            assert_eq!(ffi::git_filebuf_commit(None), -1);
+            assert_eq!(errors::last_message().unwrap(), b"invalid argument: 'file'");
+            assert_eq!(
+                ffi::git_filebuf_stats((&mut mtime).into(), (&mut size).into(), None),
+                -1
+            );
+            assert_eq!(size, 7);
+            ffi::git_filebuf_cleanup(None);
+            ffi::git_filebuf_cleanup(Some(&mut f));
+        }
+        assert_eq!(f.fd(), -1);
+    }
+
+    #[test]
     fn formatting_failure_is_out_of_memory() {
         let _g = test_support::init();
         let mut f = GitFilebuf::new();

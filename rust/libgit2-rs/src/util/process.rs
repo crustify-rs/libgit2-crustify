@@ -1392,6 +1392,20 @@ mod tests {
     }
 
     #[test]
+    fn environ_is_lent_to_the_closure() {
+        // The entries are `NAME=value` slices of C's strings, without
+        // their NUL, valid while the closure runs.
+        let n = with_environ(|entries| {
+            for e in entries {
+                assert!(!e.contains(&0));
+            }
+            entries.len()
+        });
+        let m = with_environ(|entries| entries.iter().filter(|e| e.contains(&b'=')).count());
+        assert_eq!(n, m);
+    }
+
+    #[test]
     fn args_and_shell_wrapping() {
         let _g = test_support::init();
         let a = setup_args(&[b"/bin/echo", b"a b"], false).unwrap();
