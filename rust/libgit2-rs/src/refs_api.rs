@@ -1505,9 +1505,9 @@ ffibox::impl_cvtable! {
                         name: v.name(),
                         value: value_of(v),
                         update_reflog: update_reflog != 0,
-                        // SAFETY: NULL or a live signature for the call.
-                        committer: unsafe { sig.as_ref() }
-                            .map(|g| unsafe { SignatureRef::from_raw(g) }),
+                        // SAFETY: NULL or a valid signature for the call
+                        // (the slot's contract).
+                        committer: unsafe { SigRef::from_raw(sig) }.map(SigRef::to_ref),
                         // SAFETY: NULL or a string.
                         message: unsafe { opt_bytes(message) },
                     }
