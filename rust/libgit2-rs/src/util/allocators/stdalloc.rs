@@ -13,27 +13,36 @@ pub const ALLOCATOR: GitAllocator = GitAllocator {
     gfree: Some(stdalloc_free),
 };
 
-unsafe extern "C" fn stdalloc_malloc(
-    len: usize,
-    _file: *const c_char,
-    _line: c_int,
-) -> *mut c_void {
+/// `malloc` (safe: any size is allowed, and the file is not read).
+extern "C" fn stdalloc_malloc(len: usize, _file: *const c_char, _line: c_int) -> *mut c_void {
     // SAFETY: `malloc` may be called with any size.
     unsafe { libc::malloc(len) }
 }
 
+/// `realloc`.
+///
+/// # Safety
+///
+/// `ptr` is NULL or a live allocation of this allocator (C's `malloc`),
+/// which the call may free.
 unsafe extern "C" fn stdalloc_realloc(
     ptr: *mut c_void,
     size: usize,
     _file: *const c_char,
     _line: c_int,
 ) -> *mut c_void {
-    // SAFETY: the allocator's contract: `ptr` is NULL or from this allocator.
+    // SAFETY: `ptr` is NULL or a live `malloc` block (this fn's contract).
     unsafe { libc::realloc(ptr, size) }
 }
 
+/// `free`.
+///
+/// # Safety
+///
+/// `ptr` is NULL or a live allocation of this allocator, not used again.
 unsafe extern "C" fn stdalloc_free(ptr: *mut c_void) {
-    // SAFETY: the allocator's contract: `ptr` is NULL or from this allocator.
+    // SAFETY: `ptr` is NULL or a live `malloc` block, not used again (this
+    // fn's contract).
     unsafe { libc::free(ptr) }
 }
 

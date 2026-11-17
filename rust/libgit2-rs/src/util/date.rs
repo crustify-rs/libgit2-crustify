@@ -1176,6 +1176,15 @@ pub mod ffi {
     /// `out` and `out_offset` are writable; `date` is NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_date_offset_parse(
+        out: Out<'_, i64>,
+        out_offset: Out<'_, c_int>,
+        date: CStrArg<'_>,
+    ) -> c_int {
+        offset_parse(out, out_offset, date)
+    }
+
+    /// `git_date_offset_parse` once the arguments are typed.
+    fn offset_parse(
         mut out: Out<'_, i64>,
         mut out_offset: Out<'_, c_int>,
         date: CStrArg<'_>,
@@ -1201,8 +1210,7 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_date_parse(out: Out<'_, i64>, date: CStrArg<'_>) -> c_int {
         let mut offset: c_int = 0;
-        // SAFETY: forwarded to the caller; `offset` is a local.
-        unsafe { git_date_offset_parse(out, Out::from(&mut offset), date) }
+        offset_parse(out, Out::from(&mut offset), date)
     }
 
     /// `git_date_rfc2822_fmt`.

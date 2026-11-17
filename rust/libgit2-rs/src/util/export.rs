@@ -6,15 +6,22 @@
 //!
 //! ```ignore
 //! #[unsafe(no_mangle)]
-//! pub unsafe extern "C" fn git_foo_bar(out: *mut c_int, name: *const c_char) -> c_int {
+//! pub unsafe extern "C" fn git_foo_bar(
+//!     mut out: Out<'_, c_int>,
+//!     foo: Option<&GitFoo>,
+//!     name: CStrArg<'_>,
+//! ) -> c_int {
 //!     barrier(|| {
 //!         git_assert_arg!(!out.is_null(), "out", -1);
-//!         // SAFETY: the caller passes a NUL-terminated `name` (this export's contract).
-//!         let name = unsafe { cstr(name) };
-//!         status(foo::bar(name).map(|v| unsafe { out.write(v) }))
+//!         let foo = git_arg!(foo, "foo", -1);
+//!         status(foo.bar(name.to_bytes()).map(|v| out.write(v)))
 //!     })
 //! }
 //! ```
+//!
+//! The argument types are [`cabi`](super::cabi)'s; the helpers below are
+//! for what they do not cover (`(ptr, len)` byte ranges, strings that may
+//! alias what the call writes).
 
 use core::ffi::{CStr, c_char, c_int, c_void};
 
@@ -136,17 +143,16 @@ pub fn status_int(r: Result<c_int>) -> c_int {
 ///
 /// # Safety
 ///
-/// When `len > 0`, `ptr` must be valid for reads of `len` bytes for `'a`,
-/// and nothing may write them during `'a`.
+/// When `len > 0` and `ptr` is not NULL, `ptr` must be valid for reads of
+/// `len` initialized bytes for `'a`, and nothing may write them during
+/// `'a`.
 #[inline(always)]
 pub unsafe fn bytes<'a>(ptr: *const c_char, len: usize) -> &'a [u8] {
-    if len == 0 || ptr.is_null() {
-        return &[];
-    }
-    assert!(len <= isize::MAX as usize, "length beyond isize::MAX");
-    // SAFETY: the caller guarantees `len` readable, unwritten bytes at the
-    // non-null `ptr` for `'a`; `u8` has alignment 1.
-    unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), len) }
+    // SAFETY: when `len > 0` and `ptr` is not NULL, `ptr` is readable for
+    // `len` initialized bytes, unwritten for `'a` (this fn's contract); `u8`
+    // needs no alignment. `slice` maps NULL/0 to empty and panics beyond
+    // `isize::MAX`, as documented above.
+    unsafe { super::cabi::slice(ptr.cast::<u8>(), len) }
 }
 
 /// The NUL-terminated string at `ptr`, or `None` for NULL.
@@ -160,8 +166,8 @@ pub unsafe fn cstr<'a>(ptr: *const c_char) -> Option<&'a CStr> {
     if ptr.is_null() {
         None
     } else {
-        // SAFETY: the caller guarantees a live, unwritten NUL-terminated
-        // string at the non-null `ptr` for `'a`.
+        // SAFETY: `ptr` is non-null (checked), so a NUL-terminated string
+        // readable and unwritten for `'a` (this fn's contract).
         Some(unsafe { CStr::from_ptr(ptr) })
     }
 }
@@ -173,7 +179,8 @@ pub unsafe fn cstr<'a>(ptr: *const c_char) -> Option<&'a CStr> {
 /// As [`cstr`].
 #[inline(always)]
 pub unsafe fn cstr_bytes<'a>(ptr: *const c_char) -> &'a [u8] {
-    // SAFETY: forwarded to the caller.
+    // SAFETY: a non-null `ptr` is a NUL-terminated string, readable and
+    // unwritten for `'a` (this fn's contract, `cstr`'s).
     match unsafe { cstr(ptr) } {
         Some(s) => s.to_bytes(),
         None => &[],
@@ -189,7 +196,8 @@ pub unsafe fn cstr_bytes<'a>(ptr: *const c_char) -> &'a [u8] {
 #[inline(always)]
 pub unsafe fn write_opt<T>(out: *mut T, value: T) {
     if !out.is_null() {
-        // SAFETY: the caller guarantees a valid, aligned, non-null `out`.
+        // SAFETY: `out` is non-null (checked), so aligned and valid for a
+        // write of `T` (this fn's contract).
         unsafe { out.write(value) };
     }
 }

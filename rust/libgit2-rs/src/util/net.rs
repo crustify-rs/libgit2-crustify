@@ -16,7 +16,7 @@
 //! host, a pattern match without a port, a redirect to a location without a
 //! scheme…), the Rust gives a defined answer instead: see `rust/DEFECTS.md`.
 
-use core::ffi::{c_char, c_int, c_uint};
+use core::ffi::{c_int, c_uint};
 use core::mem;
 
 use crate::util::alloc::{self, GitCStr};
@@ -103,25 +103,28 @@ fn dup(s: &[u8]) -> Result<GitCStr> {
     unsafe { GitCStr::from_raw(alloc::substrdup(s)) }.ok_or_else(errors::oom)
 }
 
-/// Zero the bytes of an owned string in place (`git__memzero`).
-fn zero_cstr(s: &mut GitCStr) {
+/// The bytes of an owned string (without its NUL), for writing in place.
+/// Writing a NUL into them only shortens the string.
+fn cstr_bytes_mut(s: &mut GitCStr) -> &mut [u8] {
     let len = s.len();
     let p = s.as_ptr().cast_mut().cast::<u8>();
-    // SAFETY: `s` exclusively owns the `len + 1` bytes at `p` (we hold
-    // `&mut` to it, and no view of them is alive), so they may be written;
-    // the NUL at `len` is kept, so the string stays NUL-terminated.
-    memzero(unsafe { core::slice::from_raw_parts_mut(p, len) });
+    // SAFETY: `s` owns its allocation (from `git__allocator`, writable) of
+    // `len + 1` initialized bytes at `p`, and the `&mut` borrow of `s`,
+    // which the slice's lifetime is, makes this the only access; the NUL
+    // at `len` is outside the slice, so the string stays NUL-terminated.
+    unsafe { core::slice::from_raw_parts_mut(p, len) }
+}
+
+/// Zero the bytes of an owned string in place (`git__memzero`).
+fn zero_cstr(s: &mut GitCStr) {
+    memzero(cstr_bytes_mut(s));
 }
 
 /// Shorten an owned string in place to `n` bytes (`s[n] = '\0'`); nothing
 /// when `n` is not within it.
 fn truncate_cstr(s: &mut GitCStr, n: usize) {
-    if n < s.len() {
-        let p = s.as_ptr().cast_mut();
-        // SAFETY: `n < strlen`, so `p + n` is within the allocation that `s`
-        // exclusively owns (we hold `&mut` to it); a NUL earlier keeps it a
-        // NUL-terminated string.
-        unsafe { p.wrapping_add(n).write(0) };
+    if let Some(b) = cstr_bytes_mut(s).get_mut(n) {
+        *b = 0;
     }
 }
 
@@ -454,11 +457,7 @@ fn parse_finalize(url: &mut GitNetUrl, parser: &Parser<'_>) -> Result<()> {
 }
 
 fn lowercase_cstr(s: &mut GitCStr) {
-    let len = s.len();
-    let p = s.as_ptr().cast_mut().cast::<u8>();
-    // SAFETY: as in `zero_cstr`: `s` exclusively owns these `len` bytes,
-    // and lowercasing never writes a NUL.
-    unsafe { core::slice::from_raw_parts_mut(p, len) }.make_ascii_lowercase();
+    cstr_bytes_mut(s).make_ascii_lowercase();
 }
 
 /// `git_net_url_parse`: parse `given` into `url`, which must be empty (the
@@ -1362,29 +1361,19 @@ pub mod ffi {
     use super::*;
     use crate::git_arg;
     use crate::util::cabi::CStrArg;
-    use crate::util::export::{barrier, cstr_bytes, status};
+    use crate::util::export::{barrier, status};
+    use core::mem::MaybeUninit;
 
-    /// The export prologue of the parsers: clear `url` (C's `memset`) and
-    /// run `f` on it.
-    ///
-    /// # Safety
-    ///
-    /// `url` is valid for writes of a `git_net_url` and not otherwise in
-    /// use; `given` is a NUL-terminated string not within `*url`.
-    unsafe fn parse_with(
-        url: *mut GitNetUrl,
-        given: *const c_char,
+    /// The export prologue of the parsers: clear `url` (C's `memset`: its
+    /// old contents are overwritten unread) and run `f` on it.
+    fn parse_with(
+        url: Option<&mut MaybeUninit<GitNetUrl>>,
+        given: CStrArg<'_>,
         f: fn(&mut GitNetUrl, &[u8]) -> Result<()>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes a writable `git_net_url`; its old
-            // contents are overwritten unread, as `memset` does.
-            unsafe { url.write(GitNetUrl::new()) };
-            // SAFETY: just initialized; the caller gives us exclusive use.
-            let url = unsafe { &mut *url };
-            // SAFETY: a NUL-terminated string, not written during the call.
-            let given = unsafe { cstr_bytes(given) };
-            status(f(url, given))
+            let url = git_arg!(url, "url", -1).write(GitNetUrl::new());
+            status(f(url, given.to_bytes()))
         })
     }
 
@@ -1447,12 +1436,15 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `url` is writable (its contents are overwritten unread); `str` is
-    /// a NUL-terminated string.
+    /// `url` is writable (its contents are overwritten unread) and nothing
+    /// else accesses it during the call; `str` is NULL or a NUL-terminated
+    /// string, not within `*url` and unwritten during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_net_url_parse(url: *mut GitNetUrl, str: *const c_char) -> c_int {
-        // SAFETY: forwarded.
-        unsafe { parse_with(url, str, parse) }
+    pub unsafe extern "C" fn git_net_url_parse(
+        url: Option<&mut MaybeUninit<GitNetUrl>>,
+        str: CStrArg<'_>,
+    ) -> c_int {
+        parse_with(url, str, parse)
     }
 
     /// `git_net_url_parse_scp`.
@@ -1462,11 +1454,10 @@ pub mod ffi {
     /// As [`git_net_url_parse`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_net_url_parse_scp(
-        url: *mut GitNetUrl,
-        str: *const c_char,
+        url: Option<&mut MaybeUninit<GitNetUrl>>,
+        str: CStrArg<'_>,
     ) -> c_int {
-        // SAFETY: forwarded.
-        unsafe { parse_with(url, str, parse_scp) }
+        parse_with(url, str, parse_scp)
     }
 
     /// `git_net_url_parse_standard_or_scp`.
@@ -1476,12 +1467,11 @@ pub mod ffi {
     /// As [`git_net_url_parse`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_net_url_parse_standard_or_scp(
-        url: *mut GitNetUrl,
-        str: *const c_char,
+        url: Option<&mut MaybeUninit<GitNetUrl>>,
+        str: CStrArg<'_>,
     ) -> c_int {
-        // SAFETY: forwarded. (The C cleared `url` only in the parser it
-        // chose; both clear it.)
-        unsafe { parse_with(url, str, parse_standard_or_scp) }
+        // (The C cleared `url` only in the parser it chose; both clear it.)
+        parse_with(url, str, parse_standard_or_scp)
     }
 
     /// `git_net_url_parse_http`.
@@ -1491,11 +1481,10 @@ pub mod ffi {
     /// As [`git_net_url_parse`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_net_url_parse_http(
-        url: *mut GitNetUrl,
-        str: *const c_char,
+        url: Option<&mut MaybeUninit<GitNetUrl>>,
+        str: CStrArg<'_>,
     ) -> c_int {
-        // SAFETY: forwarded.
-        unsafe { parse_with(url, str, parse_http) }
+        parse_with(url, str, parse_http)
     }
 
     /// `git_net_url_joinpath`.
@@ -1531,23 +1520,25 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `url` is NULL or an initialized URL; `redirect_location` is NULL or
-    /// a NUL-terminated string, as is `service_suffix`; neither points into
-    /// `url`'s strings.
+    /// `url` is NULL or an initialized URL that nothing else accesses
+    /// during the call; `redirect_location` is NULL or a NUL-terminated
+    /// string, as is `service_suffix`; neither points into `url`'s strings
+    /// (which the call frees), and nothing writes them during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_net_url_apply_redirect(
-        url: *mut GitNetUrl,
-        redirect_location: *const c_char,
+        url: Option<&mut GitNetUrl>,
+        redirect_location: CStrArg<'_>,
         allow_offsite: bool,
         service_suffix: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            git_assert!(!url.is_null(), "url", -1);
-            git_assert!(!redirect_location.is_null(), "redirect_location", -1);
-            // SAFETY: the caller's contract (checked non-null above).
-            let url = unsafe { &mut *url };
-            // SAFETY: a NUL-terminated string not within `url`.
-            let loc = unsafe { cstr_bytes(redirect_location) };
+            let Some(url) = url else {
+                return errors::assert_failed("url").raw();
+            };
+            let Some(loc) = redirect_location.get() else {
+                return errors::assert_failed("redirect_location").raw();
+            };
+            let loc = loc.to_bytes();
             let suffix = if service_suffix.is_null() {
                 None
             } else {

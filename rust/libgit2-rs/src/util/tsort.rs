@@ -379,7 +379,9 @@ pub mod ffi {
         if size == 0 || dst.is_null() {
             return &mut [];
         }
-        // SAFETY: the caller passes `size` pointers, not accessed elsewhere.
+        // SAFETY: `dst` is non-null (checked), aligned and holds `size`
+        // initialized pointers that nothing else accesses for `'a` (this
+        // fn's contract); being an allocation, at most `isize::MAX` bytes.
         unsafe { core::slice::from_raw_parts_mut(dst, size) }
     }
 
@@ -398,9 +400,11 @@ pub mod ffi {
         payload: *mut c_void,
     ) {
         barrier(|| {
-            // SAFETY: forwarded to the caller's contract.
+            // SAFETY: `dst` holds `size` pointers that nothing else accesses
+            // during the call (this export's contract).
             let v = unsafe { slice(dst, size) };
-            // SAFETY: the caller vouches for `cmp` on the elements.
+            // SAFETY: `tsort` calls the closure with two elements, on which
+            // (with `payload`) `cmp` is sound (this export's contract).
             tsort(v, |a, b| unsafe { cmp(a, b, payload) })
         })
     }
@@ -413,9 +417,10 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git__tsort(dst: *mut *mut c_void, size: usize, cmp: SortCmp) {
         barrier(|| {
-            // SAFETY: forwarded to the caller's contract.
+            // SAFETY: as in `git__tsort_r`.
             let v = unsafe { slice(dst, size) };
-            // SAFETY: the caller vouches for `cmp` on the elements.
+            // SAFETY: `tsort` calls the closure with two elements, on which
+            // `cmp` is sound (this export's contract).
             tsort(v, |a, b| unsafe { cmp(a, b) })
         })
     }

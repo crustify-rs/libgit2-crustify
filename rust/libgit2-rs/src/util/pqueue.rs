@@ -224,7 +224,8 @@ impl GitPqueue {
         match self.0.cmp_fn() {
             None => self.insert_impl::<NoCmp>(item, None),
             Some(f) => {
-                // SAFETY: the caller's contract.
+                // SAFETY: `insert_impl` calls the closure on `item` and the
+                // elements, on which `f` is sound (this fn's contract).
                 let mut c = |a: *mut c_void, b: *mut c_void| unsafe { f(a, b) };
                 self.insert_impl(item, Some(&mut c))
             }
@@ -242,7 +243,8 @@ impl GitPqueue {
         match self.0.cmp_fn() {
             None => self.pop_impl::<NoCmp>(None),
             Some(f) => {
-                // SAFETY: the caller's contract.
+                // SAFETY: `pop_impl` calls the closure on the elements, on
+                // which `f` is sound (this fn's contract).
                 let mut c = |a: *mut c_void, b: *mut c_void| unsafe { f(a, b) };
                 self.pop_impl(Some(&mut c))
             }
@@ -281,6 +283,7 @@ pub mod ffi {
     use core::ffi::{c_int, c_void};
 
     use super::*;
+    use crate::util::cabi::Out;
     use crate::util::export::{barrier, status};
 
     /// `git_pqueue_init`: overwrite `*pq` with an empty queue.
@@ -291,7 +294,7 @@ pub mod ffi {
     /// initialized).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_pqueue_init(
-        pq: *mut GitPqueue,
+        mut pq: Out<'_, GitPqueue>,
         flags: u32,
         init_size: usize,
         cmp: Option<VectorCmp>,
@@ -299,56 +302,43 @@ pub mod ffi {
         barrier(|| {
             // `git_vector_init`'s check.
             crate::git_assert_arg!(!pq.is_null(), "v", -1);
-            // SAFETY: the caller's contract, `pq` non-null.
-            unsafe { pqueue_init(pq, flags, init_size, cmp) }
+            // The old contents are neither read nor dropped (as C's
+            // `git_vector_init`).
+            match GitPqueue::new(flags, init_size, cmp) {
+                Ok(q) => {
+                    pq.write(q);
+                    0
+                }
+                Err(e) => {
+                    // C's `git_vector_init` leaves the vector empty, with
+                    // its comparison and sorted, on failure.
+                    let mut v = GitVector::new();
+                    v.set_cmp(cmp);
+                    v.set_sorted(true);
+                    pq.write(GitPqueue(v));
+                    status(Err(e))
+                }
+            }
         })
-    }
-
-    /// The body of [`git_pqueue_init`], `pq` non-null.
-    ///
-    /// # Safety
-    ///
-    /// As [`git_pqueue_init`], `pq` writable.
-    unsafe fn pqueue_init(
-        pq: *mut GitPqueue,
-        flags: u32,
-        init_size: usize,
-        cmp: Option<VectorCmp>,
-    ) -> c_int {
-        match GitPqueue::new(flags, init_size, cmp) {
-            Ok(q) => {
-                // SAFETY: writable; the old contents are not read or
-                // dropped (as C's `git_vector_init`).
-                unsafe { pq.write(q) };
-                0
-            }
-            Err(e) => {
-                // C's `git_vector_init` leaves the vector empty, with its
-                // comparison and sorted, on failure.
-                let mut v = GitVector::new();
-                v.set_cmp(cmp);
-                v.set_sorted(true);
-                // SAFETY: writable.
-                unsafe { pq.write(GitPqueue(v)) };
-                status(Err(e))
-            }
-        }
     }
 
     /// `git_pqueue_insert`.
     ///
     /// # Safety
     ///
-    /// `pq` is a valid queue, not used concurrently; its comparison
-    /// function is sound to call on `item` and its elements.
+    /// `pq` is a valid queue that nothing else accesses during the call
+    /// (its comparison function included: as for `git_vector`, it must not
+    /// reach the queue); the comparison is sound to call on `item` and the
+    /// elements.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_pqueue_insert(pq: *mut GitPqueue, item: *mut c_void) -> c_int {
+    pub unsafe extern "C" fn git_pqueue_insert(
+        pq: Option<&mut GitPqueue>,
+        item: *mut c_void,
+    ) -> c_int {
         barrier(|| {
-            // SAFETY: a valid queue, exclusively ours (the caller's
-            // contract).
-            let pq = unsafe { &mut *pq };
-            // SAFETY: the comparison is sound on the elements and does not
-            // reach the queue (C's contract for comparison functions).
+            let pq = crate::git_arg!(pq, "pq", -1);
+            // SAFETY: the comparison is sound on `item` and the elements
+            // (this export's contract).
             status(unsafe { pq.insert(item) })
         })
     }
@@ -359,11 +349,11 @@ pub mod ffi {
     ///
     /// As [`git_pqueue_insert`].
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_pqueue_pop(pq: *mut GitPqueue) -> *mut c_void {
+    pub unsafe extern "C" fn git_pqueue_pop(pq: Option<&mut GitPqueue>) -> *mut c_void {
         barrier(|| {
-            // SAFETY: a valid queue, exclusively ours.
-            let pq = unsafe { &mut *pq };
-            // SAFETY: as in `git_pqueue_insert`.
+            let pq = crate::git_arg!(pq, "pq", ptr::null_mut());
+            // SAFETY: the comparison is sound on the elements (this export's
+            // contract).
             unsafe { pq.pop() }
         })
     }

@@ -182,9 +182,11 @@ impl GitPool {
     pub fn clear(&mut self) {
         let mut scan = self.pages;
         while !scan.is_null() {
-            // SAFETY: a page of this pool (the invariant), freed once below.
+            // SAFETY: `scan` is a live page of this pool (the invariant),
+            // freed only below.
             let next = unsafe { (*scan).next };
-            // SAFETY: a page from `git__allocator`, not used again.
+            // SAFETY: a page this pool owns, from `git__allocator`, not used
+            // again (`pages` is reset below).
             unsafe { alloc::free(scan.cast()) };
             scan = next;
         }
@@ -235,7 +237,8 @@ impl GitPool {
             })
         };
         self.pages = page;
-        // SAFETY: the data of a non-null allocation.
+        // SAFETY: `PAGE_HEADER` bytes into the non-null allocation `page`:
+        // not null.
         Ok(unsafe { NonNull::new_unchecked(page_data(page)) })
     }
 
@@ -243,17 +246,16 @@ impl GitPool {
     #[inline]
     fn alloc(&mut self, size: usize) -> Result<NonNull<u8>> {
         let page = self.pages;
-        // SAFETY: NULL or the pool's front page.
-        let fits = unsafe { page.as_ref() }.is_some_and(|p| p.avail >= size);
-        if !fits {
+        // SAFETY: `pages` is NULL or the pool's front page (the invariant),
+        // a live header that only this pool reaches, through `&mut self`.
+        let Some(p) = (unsafe { page.as_mut() }).filter(|p| p.avail >= size) else {
             return self.alloc_page(size);
-        }
-        // SAFETY: the front page, exclusively ours through `&mut self`.
-        let p = unsafe { &mut *page };
+        };
         // `size - avail` is within its data (`avail <= size`).
         let ptr = page_data(page).wrapping_add(p.size - p.avail);
         p.avail -= size;
-        // SAFETY: within a non-null allocation.
+        // SAFETY: an address within the page's allocation, which is not at
+        // address 0: not null.
         Ok(unsafe { NonNull::new_unchecked(ptr) })
     }
 
@@ -332,7 +334,7 @@ impl GitPool {
         let mut scan = self.pages;
         while !scan.is_null() {
             ct = ct.wrapping_add(1);
-            // SAFETY: a page of this pool.
+            // SAFETY: `scan` is a live page of this pool (the invariant).
             scan = unsafe { (*scan).next };
         }
         ct
@@ -343,7 +345,8 @@ impl GitPool {
         let p = p as usize;
         let mut scan = self.pages;
         while !scan.is_null() {
-            // SAFETY: a page of this pool.
+            // SAFETY: `scan` is a live page of this pool (the invariant),
+            // not written while `&self` lives.
             let page = unsafe { &*scan };
             let start = page_data(scan) as usize;
             if start <= p && p < start + page.size {
@@ -362,7 +365,7 @@ impl GitPool {
 /// The exports of `pool.c`.
 pub mod ffi {
     use crate::git_arg;
-    use crate::util::cabi::CStrArg;
+    use crate::util::cabi::{CStrArg, Out};
     use core::ffi::{c_char, c_int, c_void};
     use core::ptr;
 
@@ -386,17 +389,16 @@ pub mod ffi {
     ///
     /// `pool` is NULL or writable (it need not be initialized).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_pool_init(pool: *mut GitPool, item_size: usize) -> c_int {
+    pub unsafe extern "C" fn git_pool_init(mut pool: Out<'_, GitPool>, item_size: usize) -> c_int {
         barrier(|| {
             git_assert_arg!(!pool.is_null(), "pool", -1);
             git_assert_arg!(item_size >= 1, "item_size >= 1", -1);
-            let p = GitPool {
+            // The old contents are not read or dropped (C's `memset`).
+            pool.write(GitPool {
                 pages: ptr::null_mut(),
                 item_size,
                 page_size: system_page_size(),
-            };
-            // SAFETY: writable; the old contents are not read or dropped.
-            unsafe { pool.write(p) };
+            });
             0
         })
     }
@@ -405,11 +407,10 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `pool` is a valid pool, not used concurrently.
+    /// `pool` is a valid pool that nothing else accesses during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_pool_clear(pool: *mut GitPool) {
-        // SAFETY: the caller's contract.
-        barrier(|| unsafe { (*pool).clear() })
+    pub unsafe extern "C" fn git_pool_clear(pool: Option<&mut GitPool>) {
+        barrier(|| git_arg!(pool, "pool", ()).clear())
     }
 
     /// `git_pool_swap`.
@@ -421,7 +422,8 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_pool_swap(a: *mut GitPool, b: *mut GitPool) {
         if a != b {
-            // SAFETY: two distinct valid pools.
+            // SAFETY: two distinct, valid, aligned pools (this export's
+            // contract): distinct `git_pool`s do not overlap.
             unsafe { ptr::swap_nonoverlapping(a, b, 1) };
         }
     }
@@ -489,9 +491,11 @@ pub mod ffi {
                 let _ = errors::oom();
                 return ptr::null_mut();
             }
-            // SAFETY: `n` readable bytes, which the allocation below does
-            // not write (it hands out memory that is not `str`'s).
-            let s = unsafe { core::slice::from_raw_parts(str.cast::<u8>(), n) };
+            // SAFETY: `str` is non-null (checked) and readable for `n <=
+            // isize::MAX` bytes (checked; this export's contract), which the
+            // allocation below does not write: it hands out the pool's
+            // unused memory, which `str` is not in.
+            let s = unsafe { crate::util::export::bytes(str, n) };
             pool.strndup_bytes(s)
                 .map_or(ptr::null_mut(), NonNull::as_ptr)
         })
@@ -507,6 +511,11 @@ pub mod ffi {
         pool: Option<&mut GitPool>,
         str: CStrArg<'_>,
     ) -> *mut c_char {
+        strdup(pool, str)
+    }
+
+    /// `git_pool_strdup` once the arguments are typed.
+    fn strdup(pool: Option<&mut GitPool>, str: CStrArg<'_>) -> *mut c_char {
         barrier(|| {
             let pool = git_arg!(pool, "pool", ptr::null_mut());
             let str = git_arg!(str.get(), "str", ptr::null_mut());
@@ -534,8 +543,7 @@ pub mod ffi {
         if str.is_null() {
             return ptr::null_mut();
         }
-        // SAFETY: forwarded.
-        unsafe { git_pool_strdup(pool, str) }
+        strdup(pool, str)
     }
 
     /// `git_pool_strcat`: a NULL string is empty.
@@ -566,22 +574,24 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `pool` is a valid pool.
+    /// `pool` is a valid pool, not written during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_pool__open_pages(pool: *mut GitPool) -> u32 {
-        // SAFETY: a valid pool.
-        unsafe { (*pool).open_pages() }
+    pub unsafe extern "C" fn git_pool__open_pages(pool: Option<&GitPool>) -> u32 {
+        git_arg!(pool, "pool", 0).open_pages()
     }
 
     /// `git_pool__ptr_in_pool`.
     ///
     /// # Safety
     ///
-    /// `pool` is a valid pool.
+    /// `pool` is a valid pool, not written during the call; `ptr` is only
+    /// compared.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_pool__ptr_in_pool(pool: *mut GitPool, ptr: *mut c_void) -> bool {
-        // SAFETY: a valid pool.
-        unsafe { (*pool).ptr_in_pool(ptr) }
+    pub unsafe extern "C" fn git_pool__ptr_in_pool(
+        pool: Option<&GitPool>,
+        ptr: *mut c_void,
+    ) -> bool {
+        git_arg!(pool, "pool", false).ptr_in_pool(ptr)
     }
 }
 

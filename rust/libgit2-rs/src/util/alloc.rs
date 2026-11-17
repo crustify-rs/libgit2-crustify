@@ -244,7 +244,8 @@ pub unsafe fn reallocarray(ptr: *mut c_void, nelem: usize, elsize: usize) -> *mu
         errors::set_oom();
         return core::ptr::null_mut();
     };
-    // SAFETY: forwarded.
+    // SAFETY: `ptr` is NULL or a live allocation of the current global
+    // allocator, which the call may free (this fn's contract, `realloc`'s).
     unsafe { realloc(ptr, size) }
 }
 
@@ -330,8 +331,9 @@ pub struct GitAllocFamily;
 unsafe impl CLenDrop for GitAllocFamily {
     #[inline]
     unsafe fn c_drop_len(&self, ptr: *mut u8, _byte_len: usize) {
-        // SAFETY: the caller passes a live allocation of this family that it
-        // owns, freed once.
+        // SAFETY: the caller passes a live allocation of this family (the
+        // global allocator) that it owns and does not use again (the
+        // trait's contract), as `free` requires.
         unsafe { free(ptr.cast()) }
     }
 }
@@ -375,6 +377,7 @@ pub type GitCStr = CStrBox<GitAlloc>;
 /// The exports of `alloc.c`.
 pub mod ffi {
     use super::*;
+    use crate::util::cabi::CStrArg;
     use crate::util::export::{barrier, bytes};
 
     /// `git__calloc`.
@@ -398,7 +401,8 @@ pub mod ffi {
         nelem: usize,
         elsize: usize,
     ) -> *mut c_void {
-        // SAFETY: forwarded.
+        // SAFETY: `ptr` is NULL or a live allocation of the global allocator
+        // (this export's contract), as `reallocarray` requires.
         barrier(|| unsafe { reallocarray(ptr, nelem, elsize) })
     }
 
@@ -416,11 +420,11 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `str` is a NUL-terminated string.
+    /// `str` is a NUL-terminated string (NULL, which C passes to `strlen`,
+    /// is an invalid argument).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__strdup(str: *const c_char) -> *mut c_char {
-        // SAFETY: the caller passes a NUL-terminated string.
-        barrier(|| strdup(unsafe { CStr::from_ptr(str) }))
+    pub unsafe extern "C" fn git__strdup(str: CStrArg<'_>) -> *mut c_char {
+        barrier(|| strdup(crate::git_arg!(str.get(), "str", ptr::null_mut())))
     }
 
     /// `git__strndup`: copy at most `n` bytes, stopping at a NUL.
@@ -476,12 +480,11 @@ pub mod ffi {
     /// `allocator` is NULL or a valid `git_allocator`, under
     /// [`set_allocator`]'s contract.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_allocator_setup(allocator: *mut GitAllocator) -> c_int {
+    pub unsafe extern "C" fn git_allocator_setup(allocator: Option<&GitAllocator>) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes NULL or a valid allocator.
-            let a = unsafe { allocator.as_ref() };
-            // SAFETY: the caller vouches for its functions.
-            unsafe { set_allocator(a) };
+            // SAFETY: the functions of `allocator` meet `set_allocator`'s
+            // contract (this export's).
+            unsafe { set_allocator(allocator) };
             0
         })
     }

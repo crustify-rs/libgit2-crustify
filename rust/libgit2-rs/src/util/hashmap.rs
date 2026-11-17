@@ -130,17 +130,22 @@ struct View<'a, K, V> {
 ///
 /// # Safety
 ///
-/// When `n > 0` and `T` is not zero-sized, `p` is valid for `n` `T`s for
+/// When `n > 0` and `T` is not zero-sized, `p` is an aligned allocation of
+/// at least `n` `T`s (initialized or not), valid for reads and writes for
 /// `'a`, and nothing else accesses them meanwhile.
 #[inline(always)]
 unsafe fn slots_mut<'a, T>(p: *mut T, n: usize) -> &'a mut [MaybeUninit<T>] {
     if n == 0 {
         &mut []
     } else if size_of::<T>() == 0 {
-        // SAFETY: zero-sized elements need no memory.
+        // SAFETY: zero-sized elements need no memory: a dangling, aligned
+        // pointer is valid for any `n` of them.
         unsafe { core::slice::from_raw_parts_mut(NonNull::dangling().as_ptr(), n) }
     } else {
-        // SAFETY: the caller's contract.
+        // SAFETY: `p` is aligned and valid for `n` `T`s for `'a`, accessed
+        // by nothing else (this fn's contract); `MaybeUninit` admits
+        // uninitialized slots; an allocation's size is at most
+        // `isize::MAX`.
         unsafe { core::slice::from_raw_parts_mut(p.cast(), n) }
     }
 }
@@ -155,10 +160,10 @@ unsafe fn slots<'a, T>(p: *const T, n: usize) -> &'a [MaybeUninit<T>] {
     if n == 0 {
         &[]
     } else if size_of::<T>() == 0 {
-        // SAFETY: zero-sized elements need no memory.
+        // SAFETY: as in `slots_mut`.
         unsafe { core::slice::from_raw_parts(NonNull::dangling().as_ptr(), n) }
     } else {
-        // SAFETY: the caller's contract.
+        // SAFETY: as in `slots_mut`, with only reads meanwhile.
         unsafe { core::slice::from_raw_parts(p.cast(), n) }
     }
 }
@@ -192,10 +197,13 @@ pub struct GitHashMap<K, V, X = ()> {
 /// `GIT_HASHSET_STRUCT(name, K)`.
 pub type GitHashSet<K, X = ()> = GitHashMap<K, (), X>;
 
-// SAFETY: the map owns its keys and values and its arrays, which
-// `git__allocator` frees from any thread.
+// SAFETY: the raw pointers are the map's own arrays (flags, keys, values),
+// from `git__allocator`, which frees from any thread; through them the map
+// owns its `K`s and `V`s, which move (and drop) with it, as `extra` does:
+// hence `K, V, X: Send`.
 unsafe impl<K: Send, V: Send, X: Send> Send for GitHashMap<K, V, X> {}
-// SAFETY: shared access only reads.
+// SAFETY: `&GitHashMap` only reads the arrays and hands out `&K`, `&V` and
+// `&X` (every write takes `&mut self`): hence `K, V, X: Sync`.
 unsafe impl<K: Sync, V: Sync, X: Sync> Sync for GitHashMap<K, V, X> {}
 
 impl<K, V, X: Default> Default for GitHashMap<K, V, X> {
@@ -875,20 +883,22 @@ pub fn str_hash(s: &[u8]) -> u32 {
 #[derive(Clone, Copy)]
 pub struct CStrKey<'a>(NonNull<c_char>, PhantomData<&'a CStr>);
 
-// SAFETY: a shared reference to an immutable string.
+// SAFETY: the one field is a thin `&'a CStr` (the constructors' contract:
+// a NUL-terminated string live and unwritten for `'a`), which is `Send`:
+// it is only read, from any thread.
 unsafe impl Send for CStrKey<'_> {}
-// SAFETY: as above.
+// SAFETY: as for `Send`: `&CStr` is `Sync`.
 unsafe impl Sync for CStrKey<'_> {}
 
 impl<'a> CStrKey<'a> {
     /// The key for `s`.
     #[inline]
     pub const fn new(s: &'a CStr) -> CStrKey<'a> {
-        // SAFETY: a reference's pointer is not null.
-        CStrKey(
-            unsafe { NonNull::new_unchecked(s.as_ptr().cast_mut()) },
-            PhantomData,
-        )
+        // A reference's pointer is never null.
+        let Some(p) = NonNull::new(s.as_ptr().cast_mut()) else {
+            unreachable!()
+        };
+        CStrKey(p, PhantomData)
     }
 
     /// The key for a C string pointer.
@@ -1019,6 +1029,13 @@ macro_rules! git_hashmap_exports {
     ) => {
         const _: () = {
             type M = $map;
+            /// The map's key for a C key.
+            ///
+            /// # Safety
+            ///
+            /// `k` meets the contract of the map's key type (for `CStrKey`,
+            /// a NUL-terminated string live and unwritten for as long as the
+            /// result is used).
             #[inline(always)]
             unsafe fn key_of(k: $k) -> <M as $crate::util::hashmap::MapTypes>::Key {
                 const {
@@ -1027,12 +1044,20 @@ macro_rules! git_hashmap_exports {
                     )
                 };
                 // SAFETY: the key types are layout-identical (the macro's
-                // contract), and the caller's key meets the Rust key's.
+                // contract; the sizes are asserted above), and the caller
+                // guarantees that `k` meets the map key type's contract
+                // (this fn's).
                 unsafe { ::core::mem::transmute_copy(&k) }
             }
+            /// The C key of a map key. Safe: every value of the map's key
+            /// type is a valid `$k` (the macro's contract: layout-identical
+            /// types, the map's key a `#[repr(transparent)]` pointer, `$k`
+            /// a raw pointer), and nothing is dereferenced.
             #[inline(always)]
             fn key_to(k: &<M as $crate::util::hashmap::MapTypes>::Key) -> $k {
-                // SAFETY: as above, the other way.
+                // SAFETY: `$k` and the key type have the same size (asserted
+                // in `key_of`) and layout, and any bits of the key are a
+                // valid `$k` (the macro's contract).
                 unsafe { ::core::mem::transmute_copy(k) }
             }
 
@@ -1040,24 +1065,26 @@ macro_rules! git_hashmap_exports {
             ///
             /// # Safety
             ///
-            /// `h` is a valid map, not written concurrently.
+            /// `h` is NULL or a valid map, not written during the call.
             #[unsafe(no_mangle)]
-            pub unsafe extern "C" fn $size(h: *mut M) -> u32 {
-                // SAFETY: a valid map.
-                unsafe { (*h).len() as u32 }
+            pub unsafe extern "C" fn $size(h: Option<&M>) -> u32 {
+                h.map_or(0, |h| h.len() as u32)
             }
 
             /// `name##_contains`.
             ///
             /// # Safety
             ///
-            /// `h` is a valid map, not written concurrently; `key` is valid
-            /// for the key type.
+            /// `h` is a valid map, not written during the call; `key` is
+            /// valid for the map's key type (for `CStrKey`, a string live
+            /// and unwritten for the call).
             #[unsafe(no_mangle)]
-            pub unsafe extern "C" fn $contains(h: *mut M, key: $k) -> bool {
+            pub unsafe extern "C" fn $contains(h: Option<&M>, key: $k) -> bool {
                 $crate::util::export::barrier(|| {
-                    // SAFETY: the caller's contract.
-                    unsafe { (*h).contains(&key_of(key)) }
+                    let h = $crate::git_arg!(h, "h", false);
+                    // SAFETY: `key` meets the map's key type's contract for
+                    // the call (this export's contract).
+                    h.contains(&unsafe { key_of(key) })
                 })
             }
 
@@ -1065,12 +1092,14 @@ macro_rules! git_hashmap_exports {
             ///
             /// # Safety
             ///
-            /// `h` is a valid map, exclusively ours; `key` as for `contains`.
+            /// `h` is a valid map that nothing else accesses during the
+            /// call; `key` as for `contains`.
             #[unsafe(no_mangle)]
-            pub unsafe extern "C" fn $remove(h: *mut M, key: $k) -> ::core::ffi::c_int {
+            pub unsafe extern "C" fn $remove(h: Option<&mut M>, key: $k) -> ::core::ffi::c_int {
                 $crate::util::export::barrier(|| {
-                    // SAFETY: the caller's contract.
-                    match unsafe { (*h).remove(&key_of(key)) } {
+                    let h = $crate::git_arg!(h, "h", -1);
+                    // SAFETY: as in `contains`.
+                    match h.remove(&unsafe { key_of(key) }) {
                         Some(_) => 0,
                         None => $crate::util::errors::ErrorCode::NOT_FOUND.raw(),
                     }
@@ -1081,11 +1110,11 @@ macro_rules! git_hashmap_exports {
             ///
             /// # Safety
             ///
-            /// `h` is NULL or a valid map, exclusively ours.
+            /// `h` is NULL or a valid map that nothing else accesses during
+            /// the call.
             #[unsafe(no_mangle)]
-            pub unsafe extern "C" fn $clear(h: *mut M) {
-                // SAFETY: NULL or a valid map.
-                if let Some(h) = unsafe { h.as_mut() } {
+            pub unsafe extern "C" fn $clear(h: Option<&mut M>) {
+                if let Some(h) = h {
                     h.clear();
                 }
             }
@@ -1094,26 +1123,30 @@ macro_rules! git_hashmap_exports {
             ///
             /// # Safety
             ///
-            /// `h` is a valid map, exclusively ours.
+            /// `h` is a valid map that nothing else accesses during the
+            /// call.
             #[unsafe(no_mangle)]
-            pub unsafe extern "C" fn $dispose(h: *mut M) {
-                // SAFETY: a valid map.
-                unsafe { (*h).dispose() }
+            pub unsafe extern "C" fn $dispose(h: Option<&mut M>) {
+                $crate::git_arg!(h, "h", ()).dispose()
             }
 
             /// `name##_get`.
             ///
             /// # Safety
             ///
-            /// As `contains`; `out` is writable.
+            /// As `contains`; `out` is NULL or writable.
             #[unsafe(no_mangle)]
-            pub unsafe extern "C" fn $get(out: *mut $v, h: *mut M, key: $k) -> ::core::ffi::c_int {
+            pub unsafe extern "C" fn $get(
+                mut out: $crate::util::cabi::Out<'_, $v>,
+                h: Option<&M>,
+                key: $k,
+            ) -> ::core::ffi::c_int {
                 $crate::util::export::barrier(|| {
-                    // SAFETY: the caller's contract.
-                    match unsafe { (*h).get(&key_of(key)) } {
+                    let h = $crate::git_arg!(h, "h", -1);
+                    // SAFETY: as in `contains`.
+                    match h.get(&unsafe { key_of(key) }) {
                         Some(v) => {
-                            // SAFETY: `out` is writable.
-                            unsafe { out.write(*v) };
+                            out.write(*v);
                             0
                         }
                         None => $crate::util::errors::ErrorCode::NOT_FOUND.raw(),
@@ -1125,13 +1158,20 @@ macro_rules! git_hashmap_exports {
             ///
             /// # Safety
             ///
-            /// `h` is a valid map, exclusively ours; `key` is valid for the
-            /// key type for as long as it is in the map.
+            /// `h` is a valid map that nothing else accesses during the
+            /// call; `key` is valid for the map's key type for as long as
+            /// it is in the map.
             #[unsafe(no_mangle)]
-            pub unsafe extern "C" fn $put(h: *mut M, key: $k, val: $v) -> ::core::ffi::c_int {
+            pub unsafe extern "C" fn $put(
+                h: Option<&mut M>,
+                key: $k,
+                val: $v,
+            ) -> ::core::ffi::c_int {
                 $crate::util::export::barrier(|| {
-                    // SAFETY: the caller's contract.
-                    match unsafe { (*h).put(key_of(key), val) } {
+                    let h = $crate::git_arg!(h, "h", -1);
+                    // SAFETY: `key` meets the map's key type's contract for
+                    // as long as it is in the map (this export's contract).
+                    match h.put(unsafe { key_of(key) }, val) {
                         Ok(_) => 0,
                         Err(e) => e.raw(),
                     }
@@ -1142,25 +1182,22 @@ macro_rules! git_hashmap_exports {
             ///
             /// # Safety
             ///
-            /// `iter` is writable; `h` a valid map; `key` and `val` NULL or
-            /// writable.
+            /// `iter` is a valid `git_hashmap_iter_t`; `h` a valid map, not
+            /// written during the call; `key` and `val` NULL or writable.
             #[unsafe(no_mangle)]
             pub unsafe extern "C" fn $iterate(
-                iter: *mut u32,
-                key: *mut $k,
-                val: *mut $v,
-                h: *mut M,
+                iter: Option<&mut u32>,
+                mut key: $crate::util::cabi::Out<'_, $k>,
+                mut val: $crate::util::cabi::Out<'_, $v>,
+                h: Option<&M>,
             ) -> ::core::ffi::c_int {
                 $crate::util::export::barrier(|| {
-                    // SAFETY: the caller's contract.
-                    let (iter, h) = unsafe { (&mut *iter, &*h) };
+                    let iter = $crate::git_arg!(iter, "iter", -1);
+                    let h = $crate::git_arg!(h, "h", -1);
                     match h.iterate(iter) {
                         Some((k, v)) => {
-                            // SAFETY: NULL or writable.
-                            unsafe {
-                                $crate::util::export::write_opt(key, key_to(k));
-                                $crate::util::export::write_opt(val, *v);
-                            }
+                            key.write(key_to(k));
+                            val.write(*v);
                             0
                         }
                         None => $crate::util::errors::ErrorCode::ITER_OVER.raw(),
@@ -1172,26 +1209,26 @@ macro_rules! git_hashmap_exports {
             ///
             /// # Safety
             ///
-            /// `h` is a valid map; `cb` is sound to call with its entries
-            /// and does not write the map.
+            /// `h` is a valid map, not written during the call (by `cb`
+            /// either); `cb` is sound to call with its entries.
             #[unsafe(no_mangle)]
             pub unsafe extern "C" fn $foreach(
-                h: *mut M,
+                h: Option<&M>,
                 cb: unsafe extern "C" fn($k, $v) -> ::core::ffi::c_int,
             ) -> ::core::ffi::c_int {
                 $crate::util::export::barrier(|| {
+                    let h = $crate::git_arg!(h, "h", -1);
                     let mut it = 0u32;
-                    loop {
-                        // SAFETY: a valid map; the entry is copied out
-                        // before the callback runs.
-                        let e = unsafe { (*h).iterate(&mut it).map(|(k, v)| (key_to(k), *v)) };
-                        let Some((k, v)) = e else { return 0 };
-                        // SAFETY: the caller's contract.
-                        let r = unsafe { cb(k, v) };
+                    while let Some((k, v)) = h.iterate(&mut it) {
+                        // SAFETY: `cb` is sound to call with the map's
+                        // entries (this export's contract); the map is only
+                        // read meanwhile.
+                        let r = unsafe { cb(key_to(k), *v) };
                         if r != 0 {
                             return r;
                         }
                     }
+                    0
                 })
             }
         };
@@ -1460,6 +1497,22 @@ mod exports_macro_tests {
             assert_eq!(u1test_strmap_size(m), 0);
             u1test_strmap_dispose(m);
             assert_eq!((*m).buckets(), 0);
+            // NULL maps, which C dereferences: invalid arguments.
+            assert_eq!(u1test_strmap_size(ptr::null_mut()), 0);
+            assert!(!u1test_strmap_contains(ptr::null_mut(), c"a".as_ptr()));
+            assert_eq!(
+                u1test_strmap_get(&mut v, ptr::null_mut(), c"a".as_ptr()),
+                -1
+            );
+            assert_eq!(
+                crate::util::errors::last_message().as_deref(),
+                Some(&b"invalid argument: 'h'"[..])
+            );
+            assert_eq!(
+                u1test_strmap_iterate(ptr::null_mut(), &mut k, &mut v, m),
+                -1
+            );
+            u1test_strmap_clear(ptr::null_mut());
         }
     }
 }

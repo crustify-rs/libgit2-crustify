@@ -347,7 +347,9 @@ impl GitVector {
     /// vector owns, and they are distinct.
     pub unsafe fn dispose_deep(&mut self) {
         for e in self.as_mut_slice() {
-            // SAFETY: the caller's contract: owned, distinct allocations.
+            // SAFETY: each element is NULL or a distinct `git__allocator`
+            // allocation the vector owns (this fn's contract), freed once
+            // here and replaced by NULL.
             unsafe { alloc::free(*e) };
             *e = ptr::null_mut();
         }
@@ -447,11 +449,15 @@ impl GitVector {
             git_assert!(false, "v->_cmp");
             unreachable!()
         };
-        // SAFETY: the caller vouches for `cmp` and `on_dup`.
+        // SAFETY: the closure is only called by `insert_sorted_by`, with the
+        // vector's elements and `element`, on which `cmp` is sound (this
+        // fn's contract).
         let cmp = |a: *mut c_void, b: *mut c_void| unsafe { cmp(a, b) };
         match on_dup {
             Some(f) => {
-                // SAFETY: as above.
+                // SAFETY: called by `insert_sorted_by` with a slot of the
+                // vector and `element`, on which `on_dup` is sound (this
+                // fn's contract).
                 let mut d = |old: &mut *mut c_void, new: *mut c_void| unsafe { f(old, new) };
                 self.insert_sorted_by(element, cmp, Some(&mut d))
             }
@@ -592,7 +598,8 @@ impl GitVector {
             return;
         }
         if self.length > 1 {
-            // SAFETY: the caller vouches for `cmp` on the elements.
+            // SAFETY: `tsort` calls the closure with two elements, on which
+            // `cmp` is sound (this fn's contract).
             tsort(self.as_mut_slice(), |a, b| unsafe { cmp(a, b) });
         }
         self.set_sorted(true);
@@ -628,9 +635,11 @@ impl GitVector {
         if self.cmp.is_none() {
             return Err(ErrorCode::GENERIC);
         }
-        // SAFETY: forwarded.
+        // SAFETY: the comparison is sound on any two elements (this fn's
+        // contract).
         unsafe { self.sort() };
-        // SAFETY: the caller vouches for `key_lookup`.
+        // SAFETY: `bsearch` calls the closure with elements, on which (and
+        // `key`) `key_lookup` is sound (this fn's contract).
         let r = bsearch(self.as_slice(), |e| unsafe { key_lookup(key, *e) });
         let (p, ret) = match r {
             Ok(p) => (p, Ok(())),
@@ -653,7 +662,8 @@ impl GitVector {
             git_assert!(false, "key_lookup");
             unreachable!()
         };
-        // SAFETY: forwarded.
+        // SAFETY: `cmp` is the vector's comparison, sound on two elements
+        // and on `key` with an element (this fn's contract, `bsearch2`'s).
         unsafe { self.bsearch2(pos, cmp, key) }
     }
 
@@ -665,7 +675,8 @@ impl GitVector {
     /// `key_lookup` is sound to call with `key` and any element.
     pub unsafe fn search2(&self, key_lookup: VectorCmp, key: *const c_void) -> Result<usize> {
         git_assert_arg!(!key.is_null(), "key");
-        // SAFETY: the caller vouches for `key_lookup`.
+        // SAFETY: the closure gets elements, on which (and `key`)
+        // `key_lookup` is sound (this fn's contract).
         self.iter()
             .position(|e| unsafe { key_lookup(key, e) } == 0)
             .ok_or(ErrorCode::NOT_FOUND)
@@ -680,7 +691,9 @@ impl GitVector {
     /// any element.
     pub unsafe fn search(&self, entry: *const c_void) -> Result<usize> {
         let f = self.cmp.unwrap_or(strict_comparison);
-        // SAFETY: forwarded (`strict_comparison` reads no memory).
+        // SAFETY: `f` is the vector's comparison, sound with `entry` and any
+        // element (this fn's contract), or `strict_comparison`, which reads
+        // no memory.
         unsafe { self.search2(f, entry) }
     }
 
@@ -696,17 +709,20 @@ impl GitVector {
         if self.length <= 1 {
             return;
         }
-        // SAFETY: forwarded.
+        // SAFETY: the comparison is sound on any two elements (this fn's
+        // contract).
         unsafe { self.sort() };
         let cmp = self.cmp.unwrap_or(strict_comparison);
         let s = self.as_mut_slice();
         let mut i = 0;
         let mut j = 1;
         while j < s.len() {
-            // SAFETY: the caller vouches for `cmp` and `free_cb`.
+            // SAFETY: `cmp` is the vector's comparison, sound on two
+            // elements (this fn's contract), or `strict_comparison`.
             if unsafe { cmp(s[i], s[j]) } == 0 {
                 if let Some(f) = free_cb {
-                    // SAFETY: as above.
+                    // SAFETY: `s[i]` is a dropped element, on which `free_cb`
+                    // is sound (this fn's contract).
                     unsafe { f(s[i]) };
                 }
                 s[i] = s[j];
@@ -732,7 +748,8 @@ impl GitVector {
         }
         let Some(cmp) = self.cmp else { return 0 };
         let s = self.as_slice();
-        // SAFETY: the caller vouches for `cmp`.
+        // SAFETY: the closure calls `cmp` on two elements, on which it is
+        // sound (this fn's contract).
         if s.windows(2).any(|w| unsafe { cmp(w[0], w[1]) } > 0) {
             -1
         } else {
@@ -746,6 +763,13 @@ impl GitVector {
 /// Every `git_vector *` argument is a valid `git_vector` that no other
 /// thread accesses during the call, and its comparison function (and every
 /// callback passed) is sound to call with its elements and the keys passed.
+/// The exports take it as `Option<&mut GitVector>` (`Option<&GitVector>`
+/// where only read): out-parameters must not point into it. NULL, which C
+/// dereferences unchecked except where it asserts `v`, is an invalid
+/// argument. `git_vector_swap` (whose two vectors may be the same),
+/// `git_vector_dup`'s source (which `v` may alias) and
+/// `git_vector_remove_matching` (whose callback reads the vector) keep raw
+/// pointers.
 ///
 /// Stricter than C: the comparison function, `on_dup` and the free callback
 /// of `git_vector_uniq` must not access the vector or its array (the Rust
@@ -757,15 +781,6 @@ pub mod ffi {
     use crate::git_arg;
     use crate::util::cabi::Out;
     use crate::util::export::{barrier, status};
-
-    /// # Safety
-    ///
-    /// `v` is a valid `git_vector`, not otherwise accessed for `'a`.
-    #[inline(always)]
-    unsafe fn v<'a>(v: *mut GitVector) -> &'a mut GitVector {
-        // SAFETY: the caller's contract.
-        unsafe { &mut *v }
-    }
 
     /// `git_vector_init`.
     ///
@@ -799,11 +814,10 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_dispose(vec: *mut GitVector) {
+    pub unsafe extern "C" fn git_vector_dispose(vec: Option<&mut GitVector>) {
         barrier(|| {
-            if !vec.is_null() {
-                // SAFETY: the module's contract.
-                unsafe { v(vec) }.dispose()
+            if let Some(vv) = vec {
+                vv.dispose()
             }
         })
     }
@@ -815,13 +829,12 @@ pub mod ffi {
     /// See the [module](self); the elements are distinct `git__malloc`
     /// allocations (or NULL).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_dispose_deep(vec: *mut GitVector) {
+    pub unsafe extern "C" fn git_vector_dispose_deep(vec: Option<&mut GitVector>) {
         barrier(|| {
-            if !vec.is_null() {
-                // SAFETY: the module's contract: a valid, unaliased vector.
-                let vv = unsafe { v(vec) };
+            if let Some(vv) = vec {
                 // SAFETY: the elements are distinct `git__malloc`
-                // allocations or NULL (this export's contract).
+                // allocations or NULL, owned by the vector (this export's
+                // contract).
                 unsafe { vv.dispose_deep() }
             }
         })
@@ -833,9 +846,8 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_clear(vec: *mut GitVector) {
-        // SAFETY: the module's contract.
-        barrier(|| unsafe { v(vec) }.clear())
+    pub unsafe extern "C" fn git_vector_clear(vec: Option<&mut GitVector>) {
+        barrier(|| git_arg!(vec, "v", ()).clear())
     }
 
     /// `git_vector_dup`.
@@ -852,7 +864,9 @@ pub mod ffi {
         barrier(|| {
             git_assert_arg!(!vec.is_null(), "v", -1);
             git_assert_arg!(!src.is_null(), "src", -1);
-            // SAFETY: a valid source, only read.
+            // SAFETY: `src` is non-null (checked) and a valid vector that
+            // nothing writes until `vec` is written below (this export's
+            // contract); `s` is not used after that write.
             let s = unsafe { &*src };
             match s.dup(cmp) {
                 Ok(d) => {
@@ -882,7 +896,9 @@ pub mod ffi {
     /// Both are valid (they may be the same).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_swap(a: *mut GitVector, b: *mut GitVector) {
-        // SAFETY: valid vectors; `ptr::swap` allows them to be equal.
+        // SAFETY: both are valid, aligned vectors that nothing else
+        // accesses during the call (this export's contract); `ptr::swap`
+        // allows them to be equal.
         barrier(|| unsafe { ptr::swap(a, b) })
     }
 
@@ -892,9 +908,11 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_size_hint(vec: *mut GitVector, size_hint: usize) -> c_int {
-        // SAFETY: the module's contract.
-        barrier(|| status(unsafe { v(vec) }.size_hint(size_hint)))
+    pub unsafe extern "C" fn git_vector_size_hint(
+        vec: Option<&mut GitVector>,
+        size_hint: usize,
+    ) -> c_int {
+        barrier(|| status(git_arg!(vec, "v", -1).size_hint(size_hint)))
     }
 
     /// `git_vector_detach`.
@@ -906,11 +924,10 @@ pub mod ffi {
     pub unsafe extern "C" fn git_vector_detach(
         mut size: Out<'_, usize>,
         mut asize: Out<'_, usize>,
-        vec: *mut GitVector,
+        vec: Option<&mut GitVector>,
     ) -> *mut *mut c_void {
         barrier(|| {
-            // SAFETY: the module's contract: a valid, unaliased vector.
-            let (p, n, a) = unsafe { v(vec) }.detach();
+            let (p, n, a) = git_arg!(vec, "v", ptr::null_mut()).detach();
             size.write(n);
             asize.write(a);
             p
@@ -923,11 +940,11 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_sort(vec: *mut GitVector) {
+    pub unsafe extern "C" fn git_vector_sort(vec: Option<&mut GitVector>) {
         barrier(|| {
-            // SAFETY: the module's contract: a valid, unaliased vector.
-            let vv = unsafe { v(vec) };
-            // SAFETY: the module's contract covers the comparison function.
+            let vv = git_arg!(vec, "v", ());
+            // SAFETY: the comparison is sound on the elements (the module's
+            // contract).
             unsafe { vv.sort() }
         })
     }
@@ -944,9 +961,9 @@ pub mod ffi {
         entry: *const c_void,
     ) -> c_int {
         barrier(|| {
-            let vec = git_arg!(vec, "v", -1);
-            let vv = vec;
-            // SAFETY: the module's contract covers the comparison function.
+            let vv = git_arg!(vec, "v", -1);
+            // SAFETY: the vector's comparison is sound to call with `entry`
+            // and its elements (the module's contract).
             match unsafe { vv.search(entry) } {
                 Ok(i) => {
                     at_pos.write(i);
@@ -970,14 +987,14 @@ pub mod ffi {
         key: *const c_void,
     ) -> c_int {
         barrier(|| {
-            let vec = git_arg!(vec, "v", -1);
+            let vv = git_arg!(vec, "v", -1);
             git_assert_arg!(!key.is_null(), "key", -1);
             let Some(f) = key_lookup else {
                 git_assert!(false, "key_lookup", -1);
                 unreachable!()
             };
-            let vv = vec;
-            // SAFETY: the module's contract covers `key_lookup`.
+            // SAFETY: `key_lookup` is sound to call with `key` and the
+            // elements (the module's contract).
             match unsafe { vv.search2(f, key) } {
                 Ok(i) => {
                     at_pos.write(i);
@@ -995,24 +1012,21 @@ pub mod ffi {
     /// See the [module](self); `at_pos` is NULL or writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_bsearch2(
-        at_pos: *mut usize,
-        vec: *mut GitVector,
+        at_pos: Option<&mut usize>,
+        vec: Option<&mut GitVector>,
         key_lookup: Option<VectorCmp>,
         key: *const c_void,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!vec.is_null(), "v", -1);
+            let vv = git_arg!(vec, "v", -1);
             git_assert_arg!(!key.is_null(), "key", -1);
             let Some(f) = key_lookup else {
                 git_assert!(false, "key_lookup", -1);
                 unreachable!()
             };
-            // SAFETY: `at_pos` is NULL or writable, and distinct from the vector.
-            let pos = unsafe { at_pos.as_mut() };
-            // SAFETY: the module's contract: a valid, unaliased vector.
-            let vv = unsafe { v(vec) };
-            // SAFETY: the module's contract covers both functions.
-            status(unsafe { vv.bsearch2(pos, f, key) })
+            // SAFETY: the vector's comparison and `key_lookup` are sound to
+            // call with its elements and `key` (the module's contract).
+            status(unsafe { vv.bsearch2(at_pos, f, key) })
         })
     }
 
@@ -1022,20 +1036,17 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_insert(vec: *mut GitVector, element: *mut c_void) -> c_int {
-        if !vec.is_null() {
-            // SAFETY: the module's contract: a valid, unaliased vector.
-            let vv = unsafe { v(vec) };
-            // Hot path (no panic is possible): room in the array.
-            if vv.try_insert_fast(element) {
-                return 0;
-            }
+    pub unsafe extern "C" fn git_vector_insert(
+        mut vec: Option<&mut GitVector>,
+        element: *mut c_void,
+    ) -> c_int {
+        // Hot path (no panic is possible): room in the array.
+        if let Some(vv) = vec.as_deref_mut()
+            && vv.try_insert_fast(element)
+        {
+            return 0;
         }
-        barrier(|| {
-            git_assert_arg!(!vec.is_null(), "v", -1);
-            // SAFETY: the module's contract.
-            status(unsafe { v(vec) }.insert(element))
-        })
+        barrier(|| status(git_arg!(vec, "v", -1).insert(element)))
     }
 
     /// `git_vector_insert_sorted`.
@@ -1045,15 +1056,14 @@ pub mod ffi {
     /// See the [module](self).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_insert_sorted(
-        vec: *mut GitVector,
+        vec: Option<&mut GitVector>,
         element: *mut c_void,
         on_dup: Option<unsafe extern "C" fn(*mut *mut c_void, *mut c_void) -> c_int>,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!vec.is_null(), "v", -1);
-            // SAFETY: the module's contract: a valid, unaliased vector.
-            let vv = unsafe { v(vec) };
-            // SAFETY: the module's contract covers the comparison and `on_dup`.
+            let vv = git_arg!(vec, "v", -1);
+            // SAFETY: the comparison and `on_dup` are sound to call with the
+            // elements, `element` and a slot (the module's contract).
             status(unsafe { vv.insert_sorted(element, on_dup) })
         })
     }
@@ -1064,12 +1074,8 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_remove(vec: *mut GitVector, idx: usize) -> c_int {
-        barrier(|| {
-            git_assert_arg!(!vec.is_null(), "v", -1);
-            // SAFETY: the module's contract.
-            status(unsafe { v(vec) }.remove(idx))
-        })
+    pub unsafe extern "C" fn git_vector_remove(vec: Option<&mut GitVector>, idx: usize) -> c_int {
+        barrier(|| status(git_arg!(vec, "v", -1).remove(idx)))
     }
 
     /// `git_vector_pop`.
@@ -1078,9 +1084,8 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_pop(vec: *mut GitVector) {
-        // SAFETY: the module's contract.
-        barrier(|| unsafe { v(vec) }.pop())
+    pub unsafe extern "C" fn git_vector_pop(vec: Option<&mut GitVector>) {
+        barrier(|| git_arg!(vec, "v", ()).pop())
     }
 
     /// `git_vector_uniq`.
@@ -1090,13 +1095,13 @@ pub mod ffi {
     /// See the [module](self).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_uniq(
-        vec: *mut GitVector,
+        vec: Option<&mut GitVector>,
         git_free_cb: Option<unsafe extern "C" fn(*mut c_void)>,
     ) {
         barrier(|| {
-            // SAFETY: the module's contract: a valid, unaliased vector.
-            let vv = unsafe { v(vec) };
-            // SAFETY: the module's contract covers the comparison and `git_free_cb`.
+            let vv = git_arg!(vec, "v", ());
+            // SAFETY: the comparison is sound on the elements, and
+            // `git_free_cb` on each dropped one (the module's contract).
             unsafe { vv.uniq(git_free_cb) }
         })
     }
@@ -1149,9 +1154,11 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_resize_to(vec: *mut GitVector, new_length: usize) -> c_int {
-        // SAFETY: the module's contract.
-        barrier(|| status(unsafe { v(vec) }.resize_to(new_length)))
+    pub unsafe extern "C" fn git_vector_resize_to(
+        vec: Option<&mut GitVector>,
+        new_length: usize,
+    ) -> c_int {
+        barrier(|| status(git_arg!(vec, "v", -1).resize_to(new_length)))
     }
 
     /// `git_vector_insert_null`.
@@ -1161,12 +1168,11 @@ pub mod ffi {
     /// See the [module](self).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_insert_null(
-        vec: *mut GitVector,
+        vec: Option<&mut GitVector>,
         idx: usize,
         insert_len: usize,
     ) -> c_int {
-        // SAFETY: the module's contract.
-        barrier(|| status(unsafe { v(vec) }.insert_null(idx, insert_len)))
+        barrier(|| status(git_arg!(vec, "v", -1).insert_null(idx, insert_len)))
     }
 
     /// `git_vector_remove_range`.
@@ -1176,12 +1182,11 @@ pub mod ffi {
     /// See the [module](self).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_remove_range(
-        vec: *mut GitVector,
+        vec: Option<&mut GitVector>,
         idx: usize,
         remove_len: usize,
     ) -> c_int {
-        // SAFETY: the module's contract.
-        barrier(|| status(unsafe { v(vec) }.remove_range(idx, remove_len)))
+        barrier(|| status(git_arg!(vec, "v", -1).remove_range(idx, remove_len)))
     }
 
     /// `git_vector_set`.
@@ -1192,19 +1197,16 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_set(
         mut old: Out<'_, *mut c_void>,
-        vec: *mut GitVector,
+        vec: Option<&mut GitVector>,
         position: usize,
         value: *mut c_void,
     ) -> c_int {
-        barrier(|| {
-            // SAFETY: the module's contract.
-            match unsafe { v(vec) }.set(position, value) {
-                Ok(prev) => {
-                    old.write(prev);
-                    0
-                }
-                Err(e) => e.raw(),
+        barrier(|| match git_arg!(vec, "v", -1).set(position, value) {
+            Ok(prev) => {
+                old.write(prev);
+                0
             }
+            Err(e) => e.raw(),
         })
     }
 
@@ -1216,9 +1218,9 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_vector_verify_sorted(vec: Option<&GitVector>) -> c_int {
         barrier(|| {
-            let vec = git_arg!(vec, "vec", -1);
-            let vv = vec;
-            // SAFETY: the module's contract covers the comparison function.
+            let vv = git_arg!(vec, "vec", -1);
+            // SAFETY: the comparison is sound on the elements (the module's
+            // contract).
             unsafe { vv.verify_sorted() }
         })
     }
@@ -1229,9 +1231,8 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_vector_reverse(vec: *mut GitVector) {
-        // SAFETY: the module's contract.
-        barrier(|| unsafe { v(vec) }.reverse())
+    pub unsafe extern "C" fn git_vector_reverse(vec: Option<&mut GitVector>) {
+        barrier(|| git_arg!(vec, "v", ()).reverse())
     }
 }
 

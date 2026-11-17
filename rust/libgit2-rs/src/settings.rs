@@ -400,8 +400,11 @@ pub unsafe fn opts(key: c_int, args: &OptArgs) -> Result<()> {
         }
         SET_ALLOCATOR => {
             // SAFETY: `p1` is NULL or a valid `git_allocator *` for this
-            // key, which is what the export requires.
-            ErrorCode::check(unsafe { crate::util::alloc::ffi::git_allocator_setup(a.p1.cast()) })?;
+            // key, aligned and not written during the call.
+            let alloc = unsafe { a.p1.cast::<crate::util::alloc::GitAllocator>().as_ref() };
+            // SAFETY: its functions meet `git_allocator_setup`'s contract
+            // (the option's).
+            ErrorCode::check(unsafe { crate::util::alloc::ffi::git_allocator_setup(alloc) })?;
         }
         ENABLE_UNSAVED_INDEX_SAFETY => {
             crate::index::git_index__enforce_unsaved_safety.store(a.i != 0, r)
