@@ -2015,25 +2015,34 @@ impl GitPackfileStream {
     /// `buffer` is writable for `len` bytes and overlaps neither the stream
     /// nor the pack.
     pub unsafe fn read(obj: *mut GitPackfileStream, buffer: *mut u8, len: usize) -> isize {
-        // SAFETY: an open stream; fields are read and written as places.
+        // SAFETY: `obj` is an open stream, valid and aligned, that only
+        // this call uses (this fn's contract); its fields are read and
+        // written as places, with no reference to the whole stream, so the
+        // `&mut` to `mw` and the zlib stream's pointer below overlap none
+        // of these accesses.
         if unsafe { (*obj).done } != 0 {
             return 0;
         }
-        // SAFETY: as above.
+        // SAFETY: a field read in place, as for `done` just above.
         let p = unsafe { (*obj).p };
-        // SAFETY: `p` outlives the stream (`open_in`'s contract).
+        // SAFETY: `p` is the live pack `open_in` stored, which outlives the
+        // stream (`open_in`'s contract); `GitPackFile` is only read through
+        // `&` (interior mutability where it changes).
         let p = unsafe { &*p };
-        // SAFETY: as above: a field's place.
+        // SAFETY: a field's place, as for `done` above; no reference made.
         let mw = unsafe { &raw mut (*obj).mw };
-        // SAFETY: `mw` is this stream's cursor (NULL or a held window), used
-        // only here for the call.
+        // SAFETY: `mw` is valid, aligned and NULL or a window this stream's
+        // cursor holds (only `window_open` and `close` below store into
+        // it); nothing else reaches it while `cursor` lives, which ends
+        // with this call.
         let cursor = unsafe { Cursor::from_raw_mut(mw) };
-        // SAFETY: as above.
+        // SAFETY: a field read in place, as for `done` above.
         let curpos = unsafe { (*obj).curpos };
         let Some(input) = p.window_open(cursor, curpos) else {
             return ErrorCode::BUFS.raw() as isize;
         };
-        // SAFETY: an open stream.
+        // SAFETY: `obj` is an open stream used only by this call (this
+        // fn's contract), as `z` requires.
         let z = unsafe { Self::z(obj) };
         let window_len = input.len();
         z.set_input(input.as_ptr().cast(), window_len);
@@ -2047,12 +2056,13 @@ impl GitPackfileStream {
             return -1;
         }
         let eos = z.eos();
-        // SAFETY: an open stream, as above.
+        // SAFETY: a field written in place, as `done` is read at the top;
+        // `cursor` (the `&mut` to `mw`) is not used again.
         unsafe {
             (*obj).curpos = curpos + (window_len - z.in_len()) as i64;
         }
         if eos {
-            // SAFETY: as above.
+            // SAFETY: as the write just above, for `done`.
             unsafe { (*obj).done = 1 };
         }
         // If we wrote nothing but are not done, we need more data.

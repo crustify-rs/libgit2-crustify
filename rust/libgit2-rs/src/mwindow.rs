@@ -272,7 +272,7 @@ impl Ctl {
     /// `w` is a live window (one of a file's list, or held by a cursor).
     #[allow(clippy::mut_from_ref)]
     unsafe fn win(&mut self, w: *mut GitMwindow) -> &mut GitMwindow {
-        // SAFETY: a live window (the caller), whose fields are reached only
+        // SAFETY: a live window (this fn's contract), whose fields are reached only
         // with the global mutex held, which `self` proves; `&mut self`
         // makes the reference unique on this thread.
         unsafe { &mut *w }
