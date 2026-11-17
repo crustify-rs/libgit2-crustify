@@ -23,6 +23,7 @@
 //! the parents and the commit time, without allocating.
 
 use crate::util::cabi::CStrArg;
+use crate::util::cabi::Out;
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr;
 
@@ -960,7 +961,10 @@ unsafe fn validate_tree_and_parents(
     current_id: Option<Oid>,
     validate: bool,
 ) -> Result<()> {
-    // SAFETY: `repo` is live (contract).
+    // SAFETY: `repo` is live (contract), only read through `&` (its state
+    // is interior-mutable).
+    let repo = unsafe { repo.as_ref() };
+    // SAFETY: `repo` is live; the ids are readable.
     if validate && !unsafe { pend::git_object__is_valid(repo, Some(tree), OBJ_TREE) } {
         return Err(ErrorCode::GENERIC);
     }
@@ -1162,12 +1166,21 @@ pub(crate) unsafe fn create_internal(
 
         // SAFETY: `repo` is live (contract).
         let odb = unsafe { repo_odb(repo) }?;
+        // SAFETY: `odb` is the repository's live odb, only read through `&`
+        // (the odb module's docs).
+        let odb = unsafe { odb.as_ref() };
         // SAFETY: `odb` is the repository's; the tree id readable.
         ErrorCode::check(unsafe { crate::odb::ffi::git_odb__freshen(odb, Some(&args.tree)) })?;
         let bytes = buf.as_bytes();
         // SAFETY: `bytes` are readable for its length; `id` writable.
         ErrorCode::check(unsafe {
-            crate::odb::ffi::git_odb_write(id, odb, bytes.as_ptr().cast(), bytes.len(), OBJ_COMMIT)
+            crate::odb::ffi::git_odb_write(
+                Out::from(&mut *id),
+                odb,
+                bytes.as_ptr().cast(),
+                bytes.len(),
+                OBJ_COMMIT,
+            )
         })?;
 
         if !update_ref.is_null() {
@@ -1965,6 +1978,9 @@ pub mod ffi {
         barrier(|| {
             git_assert_arg!(!commit.is_null(), "commit", -1);
             git_assert_arg!(!parse_opts.is_null(), "opts", -1);
+            // SAFETY: a live odb object (contract), not written once shared
+            // but for its atomic count.
+            let odb_obj = unsafe { odb_obj.as_ref() };
             // SAFETY: a live odb object (contract).
             let p = unsafe { crate::odb::ffi::git_odb_object_data(odb_obj) }.cast::<c_char>();
             // SAFETY: as above.
@@ -2385,13 +2401,22 @@ pub mod ffi {
                 Err(e) => return e.raw(),
             };
             let mut obj = ptr::null_mut();
+            // SAFETY: the repository's live odb, only read through `&` (the
+            // odb module's docs).
+            let odb_ref = unsafe { odb.as_ref() };
+            // SAFETY: `commit_id` is NULL or readable (contract).
+            let commit_id = unsafe { commit_id.as_ref() };
             // SAFETY: `obj` writable; `commit_id` readable (contract).
-            let error = unsafe { crate::odb::ffi::git_odb_read(&raw mut obj, odb, commit_id) };
+            let error =
+                unsafe { crate::odb::ffi::git_odb_read(Out::from(&mut obj), odb_ref, commit_id) };
             if error < 0 {
                 return error;
             }
+            // SAFETY: the object just read, live until freed below, not
+            // written once shared but for its atomic count.
+            let obj_ref = unsafe { obj.as_ref() };
             // SAFETY: the object just read, live until freed below.
-            let r = if unsafe { crate::odb::ffi::git_odb_object_type(obj) } != OBJ_COMMIT {
+            let r = if unsafe { crate::odb::ffi::git_odb_object_type(obj_ref) } != OBJ_COMMIT {
                 let _ = git_error_set!(
                     ErrorClass::INVALID,
                     "the requested type does not match the type in the ODB"
@@ -2399,9 +2424,9 @@ pub mod ffi {
                 Err(ErrorCode::NOT_FOUND)
             } else {
                 // SAFETY: as above.
-                let p = unsafe { crate::odb::ffi::git_odb_object_data(obj) }.cast::<c_char>();
+                let p = unsafe { crate::odb::ffi::git_odb_object_data(obj_ref) }.cast::<c_char>();
                 // SAFETY: as above.
-                let n = unsafe { crate::odb::ffi::git_odb_object_size(obj) };
+                let n = unsafe { crate::odb::ffi::git_odb_object_size(obj_ref) };
                 let data = if p.is_null() {
                     &[][..]
                 } else {
@@ -2578,6 +2603,12 @@ pub mod ffi {
                 };
                 // SAFETY: `repo` is live (contract).
                 let odb = unsafe { repo_odb(repo) }?;
+                // SAFETY: the repository's live odb, only read through `&`
+                // (the odb module's docs).
+                let odb = unsafe { odb.as_ref() };
+                // SAFETY: `out` is writable (contract), and no reference to
+                // it is live.
+                let out = unsafe { Out::from_ptr(out) };
                 // SAFETY: readable bytes; `out` writable.
                 ErrorCode::check(unsafe {
                     crate::odb::ffi::git_odb_write(

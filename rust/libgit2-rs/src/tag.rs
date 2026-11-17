@@ -17,6 +17,7 @@
 //! and difftested against the C: `rust/difftest/obj_diff.c`).
 
 use crate::util::cabi::CStrArg;
+use crate::util::cabi::Out;
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::ptr::{self, NonNull};
 
@@ -280,8 +281,11 @@ pub(crate) unsafe fn parse_odb(
     // SAFETY: a live odb object (its `git_cached_obj` prefix); the size is
     // read only.
     let size = unsafe { (*c).size };
+    // SAFETY: `odb_obj` is NULL or a live odb object (as the call below requires), not written
+    // once shared but for its atomic count.
+    let odb_obj_ref = unsafe { odb_obj.as_ref() };
     // SAFETY: a live odb object.
-    let d = unsafe { p::git_odb_object_data(odb_obj) };
+    let d = unsafe { p::git_odb_object_data(odb_obj_ref) };
     // SAFETY: its buffer holds `size` bytes, unwritten, for its life.
     let data = unsafe { crate::util::export::bytes(d.cast(), size) };
     // SAFETY: a fresh tag.
@@ -332,7 +336,7 @@ pub unsafe fn target(tag: NonNull<GitTag>) -> Result<NonNull<GitObject>> {
     // (C dereferences a NULL repository: a tag parsed from raw data.)
     git_assert!(!t.object.repo.is_null(), "t->object.repo");
     // SAFETY: the tag's live repository.
-    unsafe { object::lookup(t.object.repo, &t.target, t.kind) }
+    object::lookup(unsafe { &*t.object.repo }, &t.target, t.kind)
 }
 
 // ---------------------------------------------------------------------------
@@ -412,10 +416,10 @@ pub unsafe fn write_annotation(
         );
         let _ = tag.putc(b'\n');
         tag.puts(message)?;
-        // SAFETY: a live repository.
-        let odb = unsafe { object::repo_odb_weak(repo)? };
-        // SAFETY: its live odb.
-        unsafe { crate::blob::odb_write(odb, tag.as_bytes(), GIT_OBJECT_TAG) }
+        // SAFETY: a live repository, only read through `&` (its state is
+        // interior-mutable).
+        let odb = object::repo_odb_weak(unsafe { &*repo })?;
+        crate::blob::odb_write(odb, tag.as_bytes(), GIT_OBJECT_TAG)
     })();
     r.map_err(|_| git_error_set!(ErrorClass::OBJECT, "failed to create tag annotation"))
 }
@@ -554,18 +558,18 @@ pub unsafe fn create_from_buffer(
     allow_ref_overwrite: bool,
 ) -> Result<()> {
     // SAFETY: a live repository.
-    let odb = unsafe { object::repo_odb_weak(repo) }.map_err(|_| ErrorCode::GENERIC)?;
+    let odb = object::repo_odb_weak(unsafe { &*repo }).map_err(|_| ErrorCode::GENERIC)?;
     // Validate the buffer (C leaks what it parsed when this fails:
     // rust/DEFECTS.md).
     // SAFETY: as above.
-    let oid_type = unsafe { object::repo_oid_type(repo) };
+    let oid_type = object::repo_oid_type(unsafe { &*repo });
     let (target, tag) = parse(buffer, oid_type).map_err(|_| ErrorCode::GENERIC)?;
     let mut refname = GitStr::new();
     let error = {
         // Validate the target.
         let mut target_obj = ptr::null_mut();
         // SAFETY: a live odb, a valid id, a writable out.
-        if unsafe { p::git_odb_read(&raw mut target_obj, odb, &raw const target) } < 0 {
+        if unsafe { p::git_odb_read(Out::from(&mut target_obj), Some(odb), Some(&target)) } < 0 {
             return Err(ErrorCode::GENERIC);
         }
         /// The odb object, freed on drop.
@@ -603,7 +607,12 @@ pub unsafe fn create_from_buffer(
     let mut stream = ptr::null_mut();
     // SAFETY: a live odb, a writable out.
     ErrorCode::check(unsafe {
-        p::git_odb_open_wstream(&raw mut stream, odb, buffer.len() as u64, GIT_OBJECT_TAG)
+        p::git_odb_open_wstream(
+            Out::from(&mut stream),
+            Some(odb),
+            buffer.len() as u64,
+            GIT_OBJECT_TAG,
+        )
     })?;
     // SAFETY: a live stream, readable data.
     let mut error =
@@ -1416,8 +1425,11 @@ pub mod ffi {
         tag_target: *mut *mut GitObject,
         tag: *const GitTag,
     ) -> c_int {
+        // SAFETY: `tag_target` is NULL or writable (as the call below requires), and no reference
+        // to it is live.
+        let tag_target_out = unsafe { Out::from_ptr(tag_target) };
         // SAFETY: forwarded.
-        unsafe { crate::object::ffi::git_object_peel(tag_target, tag.cast(), GIT_OBJECT_ANY) }
+        unsafe { crate::object::ffi::git_object_peel(tag_target_out, tag.cast(), GIT_OBJECT_ANY) }
     }
 
     /// `git_tag_name_is_valid`.

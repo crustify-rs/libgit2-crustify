@@ -304,6 +304,9 @@ unsafe fn parse(walk: *mut git_revwalk, node: *mut GitCommitListNode) -> Result<
     let repo: *mut pend::git_repository = unsafe { (*walk).prefix.repo };
     // SAFETY: a live walk's `odb` field.
     let odb: *mut pend::git_odb = unsafe { (*walk).prefix.odb };
+    // SAFETY: the walk's odb is NULL or live while the walk is, only read
+    // through `&` (the odb module's docs).
+    let odb = unsafe { odb.as_ref() };
     // SAFETY: as above.
     let id = unsafe { (*node).oid };
 
@@ -358,19 +361,23 @@ unsafe fn parse(walk: *mut git_revwalk, node: *mut GitCommitListNode) -> Result<
     let mut obj = ptr::null_mut();
     // SAFETY: the walk's odb; `obj` writable.
     ErrorCode::check_zero(unsafe {
-        crate::odb::ffi::git_odb_read(&raw mut obj, odb, &raw const id)
+        crate::odb::ffi::git_odb_read(Out::from(&mut obj), odb, Some(&id))
     })?;
+    // SAFETY: the object just read, live until freed below, not written
+    // once shared but for its atomic count.
+    let obj_ref = unsafe { obj.as_ref() };
     // SAFETY: the object just read, live until freed below.
-    let r = if unsafe { crate::odb::ffi::git_odb_object_type(obj) } != commit::OBJ_COMMIT {
+    let r = if unsafe { crate::odb::ffi::git_odb_object_type(obj_ref) } != commit::OBJ_COMMIT {
         Err(git_error_set!(
             ErrorClass::INVALID,
             "object is no commit object"
         ))
     } else {
         // SAFETY: as above.
-        let p = unsafe { crate::odb::ffi::git_odb_object_data(obj) }.cast::<core::ffi::c_char>();
+        let p =
+            unsafe { crate::odb::ffi::git_odb_object_data(obj_ref) }.cast::<core::ffi::c_char>();
         // SAFETY: as above.
-        let n = unsafe { crate::odb::ffi::git_odb_object_size(obj) };
+        let n = unsafe { crate::odb::ffi::git_odb_object_size(obj_ref) };
         let data = if p.is_null() {
             &[][..]
         } else {
@@ -379,7 +386,7 @@ unsafe fn parse(walk: *mut git_revwalk, node: *mut GitCommitListNode) -> Result<
             unsafe { crate::util::export::bytes(p, n) }
         };
         // SAFETY: the object is live.
-        let id = unsafe { crate::odb::ffi::git_odb_object_id(obj) };
+        let id = unsafe { crate::odb::ffi::git_odb_object_id(obj_ref) };
         // SAFETY: its id, live with it.
         let id = unsafe { &*id };
         // SAFETY: the caller's contract on the walk and node.

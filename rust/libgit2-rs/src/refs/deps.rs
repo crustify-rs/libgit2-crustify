@@ -65,8 +65,14 @@ pub unsafe fn git_commit_lookup(
     repo: *mut git_repository,
     id: Option<&Oid>,
 ) -> c_int {
+    // SAFETY: `out` is NULL or writable (as the call below requires), and no reference to it is
+    // live.
+    let out_out = unsafe { Out::from_ptr(out.cast()) };
+    // SAFETY: `repo` is NULL or a live repository (as the call below requires), only read through
+    // `&` (its state is interior-mutable).
+    let repo_ref = unsafe { repo.as_ref() };
     // SAFETY: per the contract.
-    unsafe { crate::object_api::ffi::git_commit_lookup(out.cast(), repo, id) }
+    unsafe { crate::object_api::ffi::git_commit_lookup(out_out, repo_ref, id) }
 }
 
 /// `git_commit_free` (object_api.c).
@@ -296,23 +302,32 @@ impl ObjBox {
     /// `git_object_lookup(repo, id, kind)`.
     pub fn lookup(repo: RepoPtr, id: &Oid, kind: c_int) -> Result<ObjBox> {
         let mut out = core::ptr::null_mut();
+        // SAFETY: `repo` is NULL or a live repository (as the call below requires), only read
+        // through `&` (its state is interior-mutable).
+        let repo_ref = unsafe { repo.as_ptr().as_ref() };
         // SAFETY: a live repository; `id` valid for the call; `out` writable.
         ErrorCode::check(unsafe {
-            git_object_lookup(&raw mut out, repo.as_ptr(), Some(id), kind)
+            git_object_lookup(Out::from(&mut out), repo_ref, Some(id), kind)
         })?;
         NonNull::new(out).map(ObjBox).ok_or(ErrorCode::GENERIC)
     }
 
     /// `git_object_type`.
     pub fn kind(&self) -> c_int {
+        // SAFETY: `self.0` is NULL or a live object (as the call below requires), whose header is
+        // not written once shared but for its atomic count.
+        let obj_ref = unsafe { self.0.as_ptr().as_ref() };
         // SAFETY: a live object.
-        unsafe { git_object_type(self.0.as_ptr()) }
+        unsafe { git_object_type(obj_ref) }
     }
 
     /// `git_object_id`.
     pub fn id(&self) -> Oid {
+        // SAFETY: `self.0` is NULL or a live object (as the call below requires), whose header is
+        // not written once shared but for its atomic count.
+        let obj_ref = unsafe { self.0.as_ptr().as_ref() };
         // SAFETY: a live object.
-        let id = unsafe { git_object_id(self.0.as_ptr()) };
+        let id = unsafe { git_object_id(obj_ref) };
         // SAFETY: the object's id, alive as long as it.
         unsafe { *id }
     }
@@ -332,7 +347,7 @@ impl ObjBox {
     pub fn peel(&self, kind: c_int) -> Result<ObjBox> {
         let mut out = core::ptr::null_mut();
         // SAFETY: a live object; `out` writable.
-        ErrorCode::check(unsafe { git_object_peel(&raw mut out, self.0.as_ptr(), kind) })?;
+        ErrorCode::check(unsafe { git_object_peel(Out::from(&mut out), self.0.as_ptr(), kind) })?;
         NonNull::new(out).map(ObjBox).ok_or(ErrorCode::GENERIC)
     }
 
@@ -361,8 +376,11 @@ impl Drop for ObjBox {
 
 /// `git_object__is_valid(repo, id, kind)`.
 pub fn object_is_valid(repo: RepoPtr, id: &Oid, kind: c_int) -> bool {
+    // SAFETY: `repo` is NULL or a live repository (as the call below requires), only read through
+    // `&` (its state is interior-mutable).
+    let repo_ref = unsafe { repo.as_ptr().as_ref() };
     // SAFETY: a live repository; `id` valid for the call.
-    unsafe { git_object__is_valid(repo.as_ptr(), Some(id), kind) }
+    unsafe { git_object__is_valid(repo_ref, Some(id), kind) }
 }
 
 /// An owned `git_commit` (looked up and freed through object_api.c,

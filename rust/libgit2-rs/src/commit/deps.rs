@@ -5,6 +5,7 @@
 
 #![allow(non_camel_case_types, non_snake_case)]
 
+use crate::util::cabi::Out;
 use core::ffi::{c_char, c_int, c_void};
 
 use crate::commit::{GitCommit, GitSignature};
@@ -46,8 +47,14 @@ pub unsafe fn git_commit_lookup(
     repo: *mut git_repository,
     id: Option<&Oid>,
 ) -> c_int {
+    // SAFETY: `out` is NULL or writable (as the call below requires), and no reference to it is
+    // live.
+    let out_out = unsafe { Out::from_ptr(out.cast()) };
+    // SAFETY: `repo` is NULL or a live repository (as the call below requires), only read through
+    // `&` (its state is interior-mutable).
+    let repo_ref = unsafe { repo.as_ref() };
     // SAFETY: the caller's contract.
-    unsafe { crate::object_api::ffi::git_commit_lookup(out.cast(), repo, id) }
+    unsafe { crate::object_api::ffi::git_commit_lookup(out_out, repo_ref, id) }
 }
 
 /// `git_commit_free`.
@@ -66,8 +73,11 @@ pub unsafe fn git_commit_free(commit: *mut GitCommit) {
 ///
 /// As the export's.
 pub unsafe fn git_commit_dup(out: *mut *mut GitCommit, source: *mut GitCommit) -> c_int {
+    // SAFETY: `out` is NULL or writable (as the call below requires), and no reference to it is
+    // live.
+    let out_out = unsafe { Out::from_ptr(out.cast()) };
     // SAFETY: forwarded (the caller's contract).
-    unsafe { crate::object_api::ffi::git_commit_dup(out.cast(), source.cast()) }
+    unsafe { crate::object_api::ffi::git_commit_dup(out_out, source.cast()) }
 }
 
 /// `git_tree_lookup`.
@@ -80,8 +90,14 @@ pub unsafe fn git_tree_lookup(
     repo: *mut git_repository,
     id: Option<&Oid>,
 ) -> c_int {
+    // SAFETY: `out` is NULL or writable (as the call below requires), and no reference to it is
+    // live.
+    let out_out = unsafe { Out::from_ptr(out.cast()) };
+    // SAFETY: `repo` is NULL or a live repository (as the call below requires), only read through
+    // `&` (its state is interior-mutable).
+    let repo_ref = unsafe { repo.as_ref() };
     // SAFETY: the caller's contract.
-    unsafe { crate::object_api::ffi::git_tree_lookup(out.cast(), repo, id) }
+    unsafe { crate::object_api::ffi::git_tree_lookup(out_out, repo_ref, id) }
 }
 
 /// `git_tree_free`.
@@ -100,8 +116,11 @@ pub unsafe fn git_tree_free(tree: *mut GitTree) {
 ///
 /// As the export's.
 pub unsafe fn git_tree_dup(out: *mut *mut GitTree, source: *mut GitTree) -> c_int {
+    // SAFETY: `out` is NULL or writable (as the call below requires), and no reference to it is
+    // live.
+    let out_out = unsafe { Out::from_ptr(out.cast()) };
     // SAFETY: forwarded (the caller's contract).
-    unsafe { crate::object_api::ffi::git_tree_dup(out.cast(), source.cast()) }
+    unsafe { crate::object_api::ffi::git_tree_dup(out_out, source.cast()) }
 }
 
 // Unused parameter types kept for the signatures above.
