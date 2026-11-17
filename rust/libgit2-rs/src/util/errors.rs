@@ -694,9 +694,10 @@ pub fn errno() -> c_int {
 /// Set `errno` (`git_error_system_set`).
 #[inline]
 pub fn set_errno(code: c_int) {
-    // SAFETY: as in `errno`.
+    // SAFETY: `__errno_location` has no preconditions.
     let p = unsafe { libc::__errno_location() };
-    // SAFETY: as in `errno`.
+    // SAFETY: it returns this thread's `errno`, valid and aligned for the
+    // thread's lifetime, which only this thread accesses.
     unsafe { *p = code };
 }
 
@@ -721,7 +722,9 @@ pub fn save() -> SavedError {
         Last::Static(e) => Saved::Static(e),
         Last::Own => {
             let m = s.message.borrow();
-            // SAFETY: as in `last`.
+            // SAFETY: `error` is this thread's (a thread-local) and only this
+            // module writes it, which it is not doing now: the read does not
+            // race or alias a write.
             let klass = unsafe { (*s.error.get()).klass };
             let bytes = &m[..m.len().saturating_sub(1)];
             let mut v = Vec::new();
@@ -902,7 +905,9 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `string` is NULL or a NUL-terminated string, readable for the call.
+    /// `string` is NULL or a NUL-terminated string, readable for the call;
+    /// it may be this thread's `git_error_last()->message` (so it stays a
+    /// raw pointer: the call writes that buffer).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_error_set_str(error_class: c_int, string: *const c_char) -> c_int {
         barrier(|| {
@@ -917,9 +922,10 @@ pub mod ffi {
                     // becomes empty. No reference to the buffer is formed.
                     st.set_with(error_class, |_| true);
                 } else {
-                    // SAFETY: the caller passes a NUL-terminated string,
-                    // which is not this thread's message buffer (checked),
-                    // so nothing writes it while it is borrowed.
+                    // SAFETY: `string` is non-null (checked) and
+                    // NUL-terminated (this export's contract), and not this
+                    // thread's message buffer (checked), so nothing writes
+                    // it while it is borrowed.
                     let s = unsafe { CStr::from_ptr(string) };
                     st.set_with(error_class, |m| try_extend(m, s.to_bytes()));
                 }
@@ -1031,7 +1037,9 @@ pub mod ffi {
             Last::None => Err(NO_ERROR.as_ptr()),
             Last::Static(e) => Err(e.as_ptr()),
             Last::Own => {
-                // SAFETY: as in `last`.
+                // SAFETY: `error` is this thread's (a thread-local) and only this
+                // module writes it, which it is not doing now: the read does
+                // not race or alias a write.
                 let klass = unsafe { (*s.error.get()).klass };
                 // The copy goes straight into `git__allocator`'s memory
                 // (fallible, as C's `git__strdup`); setting the OOM error
@@ -1084,7 +1092,9 @@ pub mod ffi {
             {
                 return 0;
             }
-            // SAFETY: `error` is a live `git_error` (the caller's contract).
+            // SAFETY: `error` is non-null (checked), not static (checked),
+            // so a live `git_error` from `git_error_save` (this export's
+            // contract): aligned and initialized.
             let GitError { message, klass } = unsafe { error.read() };
             if with_state(|s| s.owns_message_ptr(message)) == Some(true) {
                 // Not a saved copy (outside the contract): C would empty the
@@ -1092,7 +1102,8 @@ pub mod ffi {
                 with_state(|s| s.set_with(klass, |_| true));
             } else {
                 // SAFETY: a saved error's message is NULL or NUL-terminated,
-                // in its own allocation.
+                // in its own allocation (`save_c`), which nothing writes
+                // until it is freed below.
                 match unsafe { cstr(message) } {
                     Some(m) => set_bytes_raw(klass, m.to_bytes()),
                     None => {
@@ -1100,10 +1111,28 @@ pub mod ffi {
                     }
                 }
             }
-            // SAFETY: forwarded: `error` is freed once, here.
-            unsafe { git_error_free(error) };
+            // SAFETY: `error` is a live, non-static saved error, freed once
+            // here and not used after (this export's contract).
+            unsafe { free_saved(error) };
             0
         })
+    }
+
+    /// Free a saved error and its message.
+    ///
+    /// # Safety
+    ///
+    /// `error` is a value `git_error_save` returned (not a static error)
+    /// that was not yet restored or freed, and is not used after.
+    unsafe fn free_saved(error: *mut GitError) {
+        // SAFETY: a live `git_error` from `git_error_save` (this fn's
+        // contract): aligned and initialized.
+        let message = unsafe { (*error).message };
+        // SAFETY: `git_error_save` allocated the message with
+        // `git__allocator`; it is freed once.
+        unsafe { alloc::free(message.cast()) };
+        // SAFETY: and the struct, likewise, after its last read.
+        unsafe { alloc::free(error.cast()) };
     }
 
     /// `git_error_free`.
@@ -1118,13 +1147,10 @@ pub mod ffi {
             if error.is_null() || static_error(error).is_some() {
                 return;
             }
-            // SAFETY: a live `git_error` from `git_error_save`.
-            let message = unsafe { (*error).message };
-            // SAFETY: `git_error_save` allocated the message with
-            // `git__allocator`; it is freed once.
-            unsafe { alloc::free(message.cast()) };
-            // SAFETY: and the struct, freed once.
-            unsafe { alloc::free(error.cast()) };
+            // SAFETY: `error` is neither NULL nor static (checked), so a
+            // value of `git_error_save` not yet restored or freed, given up
+            // by the caller (this export's contract).
+            unsafe { free_saved(error) };
         })
     }
 }
