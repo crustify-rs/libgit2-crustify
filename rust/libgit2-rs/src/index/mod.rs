@@ -1767,7 +1767,13 @@ impl GitIndex {
 
     /// `git_index_conflict_get`.
     pub(crate) fn conflict_get(&mut self, path: &[u8]) -> Result<[Option<EntryRef<'_>>; 3]> {
-        let Some(pos) = self.find_path(path) else {
+        self.sort();
+        self.conflict_get_sorted(path)
+    }
+
+    /// [`conflict_get`](Self::conflict_get) of an index already sorted.
+    pub(crate) fn conflict_get_sorted(&self, path: &[u8]) -> Result<[Option<EntryRef<'_>>; 3]> {
+        let Some(pos) = self.find_path_sorted(path) else {
             let _ = git_error_set!(ErrorClass::INDEX, "index does not contain {}", Bytes(path));
             return Err(ErrorCode::NOT_FOUND);
         };

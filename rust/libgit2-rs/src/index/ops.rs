@@ -688,7 +688,7 @@ fn ondisk_checksum_size(t: OidType) -> usize {
 pub(crate) fn read_safely(ix: IndexPtr) -> Result<c_int> {
     // SAFETY: the module's rule: `dirty` calls no foreign code, and the
     // borrow ends with the statement.
-    let dirty = unsafe { ix.get() }.dirty();
+    let dirty = unsafe { ix.get_ref() }.dirty();
     if super::git_index__enforce_unsaved_safety.load(core::sync::atomic::Ordering::Relaxed) && dirty
     {
         let _ = git_error_set!(
@@ -1420,7 +1420,7 @@ fn apply_to_wd_diff(
         let path = delta.old_path;
         // SAFETY: the module's rule: `ignore_case` calls no foreign code, and the
         // borrow ends with the statement.
-        let casefold = unsafe { ix.get() }.ignore_case();
+        let casefold = unsafe { ix.get_ref() }.ignore_case();
         // We only want those which match the pathspecs
         let Some(matched) = ps.matches(path, casefold) else {
             return 0;

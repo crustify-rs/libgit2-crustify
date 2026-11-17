@@ -1070,9 +1070,11 @@ pub unsafe extern "C" fn git_index_conflict_get(
         let mut out = [ancestor_out, our_out, their_out];
         write_conflict(&mut out, [None; 3]);
         let p = path.to_bytes();
-        // SAFETY: no reference into the index is live, and `conflict_get`
-        // calls no foreign code: the borrow ends with the call.
-        match unsafe { ix.get() }.conflict_get(p) {
+        // SAFETY: the index is live, and other threads only read it (this
+        // export's contract: C's read paths); this export holds no other
+        // reference to it, and the borrow, shared but for a needed sort,
+        // ends before any foreign call.
+        match unsafe { ix.sorted() }.conflict_get_sorted(p) {
             Ok(sides) => {
                 write_conflict(&mut out, sides);
                 0
@@ -1276,11 +1278,18 @@ pub unsafe extern "C" fn git_index_conflict_next(
         let it = git_arg!(iterator, "iterator", -1);
         let mut out = [ancestor_out, our_out, their_out];
         write_conflict(&mut out, [None; 3]);
-        // SAFETY: the iterator's index is live (this export's contract), no
-        // reference into it is live, and `conflict_next` calls no foreign
-        // code: the borrow ends with the call.
-        let index = unsafe { it.index.get() };
-        match super::api::conflict_next(index, &mut it.cur) {
+        let cur = it.cur;
+        // SAFETY: the iterator's index is live (this export's contract) and
+        // used as the module documentation says; this export holds no other
+        // reference to it, and the borrow, shared but for a needed sort (as
+        // `api::conflict_next`), ends before any foreign call.
+        let index = unsafe {
+            it.index.prepared(
+                |i| cur >= i.entries.len() || i.entries.is_sorted(),
+                GitIndex::sort,
+            )
+        };
+        match super::api::conflict_next_sorted(index, &mut it.cur) {
             Some(sides) => {
                 write_conflict(&mut out, sides);
                 0

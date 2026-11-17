@@ -319,10 +319,21 @@ pub(crate) fn conflict_next<'a>(
     index: &'a mut GitIndex,
     cur: &mut usize,
 ) -> Option<[Option<EntryRef<'a>>; 3]> {
-    while *cur < index.entries.len() {
+    // (C sorts at each step, through `git_index_get_byindex`: once is the
+    // same, as nothing changes the index meanwhile)
+    if *cur < index.entries.len() {
         index.sort();
+    }
+    conflict_next_sorted(index, cur)
+}
+
+/// [`conflict_next`] of an index already sorted (or past its end).
+pub(crate) fn conflict_next_sorted<'a>(
+    index: &'a GitIndex,
+    cur: &mut usize,
+) -> Option<[Option<EntryRef<'a>>; 3]> {
+    while *cur < index.entries.len() {
         if index.entry_ref(*cur)?.stage() > 0 {
-            let index: &'a GitIndex = index;
             let (sides, len) = index.conflict_at(*cur);
             *cur += len;
             return Some(sides);
