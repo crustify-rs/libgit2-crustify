@@ -56,9 +56,11 @@ impl HashKey for &Oid {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct OidPtr(NonNull<Oid>);
 
-// SAFETY: a pointer to an immutable oid, read from any thread.
+// SAFETY: the one field points to an oid (plain bytes) that nothing writes
+// while the key is used (`new`'s contract), and that the key only reads:
+// shared, unwritten data may be read from any thread.
 unsafe impl Send for OidPtr {}
-// SAFETY: as above.
+// SAFETY: as for `Send`: `&OidPtr` only reads the oid.
 unsafe impl Sync for OidPtr {}
 
 impl OidPtr {
@@ -83,7 +85,8 @@ impl OidPtr {
     /// The oid.
     #[inline]
     pub fn get(&self) -> &Oid {
-        // SAFETY: the constructor's contract.
+        // SAFETY: `new`'s contract: the oid is valid, aligned and unwritten
+        // for as long as the key is used, which covers this borrow of it.
         unsafe { self.0.as_ref() }
     }
 }

@@ -45,9 +45,12 @@ pub type git_oidarray = GitOidArray;
 /// (`git_oidarray_dispose`).
 pub struct OidArray(GitOidArray);
 
-// SAFETY: it owns its `git__allocator` buffer of plain values.
+// SAFETY: the one field that is not `Send` is `ids`, a `git__allocator`
+// buffer of plain oids that the array owns alone (its constructors); it is
+// freed with `git__free`, from any thread.
 unsafe impl Send for OidArray {}
-// SAFETY: shared access only reads.
+// SAFETY: through `&OidArray` the buffer is only read (`as_slice`); every
+// write takes `&mut`.
 unsafe impl Sync for OidArray {}
 
 impl OidArray {
@@ -69,7 +72,8 @@ impl OidArray {
     pub fn into_array(self) -> GitArray<Oid> {
         let raw = self.into_raw();
         // SAFETY: the array's own `git__allocator` buffer of `count`
-        // initialized oids (NULL with 0).
+        // initialized oids (NULL with 0), whose ownership `into_raw` gave
+        // up: passed on once.
         unsafe { GitArray::from_raw_parts(raw.ids, raw.count, raw.count) }
     }
 
@@ -98,7 +102,10 @@ impl OidArray {
         if self.0.ids.is_null() || self.0.count == 0 {
             &[]
         } else {
-            // SAFETY: the invariant: `count` initialized oids, owned.
+            // SAFETY: the invariant: a non-null `ids` is a buffer of `count`
+            // initialized, aligned oids (one allocation, so at most
+            // `isize::MAX` bytes) that the array owns; `&self` keeps it from
+            // being written or freed meanwhile.
             unsafe { core::slice::from_raw_parts(self.0.ids, self.0.count) }
         }
     }
@@ -108,7 +115,8 @@ impl OidArray {
         if self.0.ids.is_null() || self.0.count == 0 {
             &mut []
         } else {
-            // SAFETY: as above, exclusively.
+            // SAFETY: as in `as_slice`; `&mut self` makes the buffer ours
+            // alone for the borrow.
             unsafe { core::slice::from_raw_parts_mut(self.0.ids, self.0.count) }
         }
     }
@@ -127,7 +135,8 @@ impl Default for OidArray {
 
 impl Drop for OidArray {
     fn drop(&mut self) {
-        // SAFETY: the array's own buffer (or NULL), freed once.
+        // SAFETY: the array's own `git__allocator` buffer (or NULL), freed
+        // once; nothing borrows it any more (`drop` has `&mut`).
         unsafe { alloc::free(self.0.ids.cast()) };
     }
 }
@@ -167,6 +176,7 @@ pub fn remove(arr: &mut GitArray<Oid>, id: &Oid) -> bool {
 /// The exports of `oidarray.c`.
 pub mod ffi {
     use crate::git_arg;
+    use crate::git_assert_arg;
     use crate::util::cabi::Out;
     use core::ffi::c_int;
 
@@ -178,29 +188,30 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `arr` is a valid `git_oidarray` whose `ids` is NULL or from
-    /// `git__allocator`, not used again.
+    /// `arr` is NULL (an invalid argument; C crashes) or a valid
+    /// `git_oidarray`, unwritten during the call, whose `ids` is NULL or
+    /// from `git__allocator`, not used again.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_oidarray_dispose(arr: *mut GitOidArray) {
-        // SAFETY: a valid `git_oidarray`.
-        let ids = unsafe { (*arr).ids };
-        // SAFETY: NULL or from `git__allocator`, not used again.
-        unsafe { alloc::free(ids.cast()) };
+    pub unsafe extern "C" fn git_oidarray_dispose(arr: Option<&GitOidArray>) {
+        let arr = git_arg!(arr, "arr", ());
+        // SAFETY: `ids` is NULL or from `git__allocator`, not used again
+        // (this export's contract); nothing references the buffer.
+        unsafe { alloc::free(arr.ids.cast()) };
     }
 
     /// `git_oidarray__from_array`.
     ///
     /// # Safety
     ///
-    /// `out` is writable; `array` is a valid `git_array_oid_t`, whose
-    /// buffer `out` now shares.
+    /// `out` is writable, not overlapping `array`; `array` is NULL (an
+    /// invalid argument; C crashes) or a valid `git_array_oid_t`, unwritten
+    /// during the call, whose buffer `out` now shares.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oidarray__from_array(
         mut out: Out<'_, GitOidArray>,
-        array: *const GitArray<Oid>,
+        array: Option<&GitArray<Oid>>,
     ) {
-        // SAFETY: a valid array, only read.
-        let a = unsafe { &*array };
+        let a = git_arg!(array, "array", ());
         let raw = GitOidArray {
             ids: a.as_ptr().cast_mut(),
             count: a.len(),
@@ -219,10 +230,10 @@ pub mod ffi {
         mut out: Out<'_, GitArray<Oid>>,
         array: Option<&GitOidArray>,
     ) {
-        let array = git_arg!(array, "array", ());
-        let a = array;
-        // SAFETY: the new array shares the buffer, as in C (C keeps track
-        // of which one frees it).
+        let a = git_arg!(array, "array", ());
+        // SAFETY: `a.ids` is NULL or a `git__allocator` buffer of `count`
+        // initialized oids (this export's contract); the new array shares
+        // it, as in C (C keeps track of which one frees it).
         let arr = unsafe { GitArray::from_raw_parts(a.ids, a.count, a.count) };
         out.write(arr);
     }
@@ -234,10 +245,12 @@ pub mod ffi {
     /// `arr` is a valid `git_oidarray`, not used concurrently.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oidarray__reverse(arr: Option<&GitOidArray>) {
-        let arr = git_arg!(arr, "arr", ());
-        let a = arr;
+        let a = git_arg!(arr, "arr", ());
         if a.count > 0 {
-            // SAFETY: as above, exclusively ours for the call.
+            // SAFETY: `a.ids` holds `count` initialized oids, one
+            // allocation (at most `isize::MAX` bytes), that nothing else
+            // accesses during the call (this export's contract); the
+            // `&GitOidArray` covers only the struct, not the buffer.
             unsafe { core::slice::from_raw_parts_mut(a.ids, a.count) }.reverse();
         }
     }
@@ -246,15 +259,18 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `arr` is a valid `git_array_oid_t`, not used concurrently; `id` a
-    /// valid oid (it may be in the array).
+    /// `arr` is NULL or a valid `git_array_oid_t` that nothing else uses
+    /// during the call; `id` a valid oid, unwritten during the call (it may
+    /// be an element of the array: then nothing is pushed, so the buffer
+    /// is only read).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_oidarray__add(arr: *mut GitArray<Oid>, id: Option<&Oid>) -> c_int {
+    pub unsafe extern "C" fn git_oidarray__add(
+        arr: Option<&mut GitArray<Oid>>,
+        id: Option<&Oid>,
+    ) -> c_int {
         barrier(|| {
             let id = git_arg!(id, "id", -1);
-            let id = *id;
-            // SAFETY: a valid array, exclusively ours.
-            status(add(unsafe { &mut *arr }, &id))
+            status(add(git_arg!(arr, "arr", -1), id))
         })
     }
 
@@ -262,17 +278,22 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// As [`git_oidarray__add`].
+    /// As [`git_oidarray__add`]. `id` stays a raw pointer, copied first:
+    /// it may be an element of the array, which the removal overwrites
+    /// (shifting the elements after it), and a write under a reference
+    /// argument (protected for the call) would be undefined behaviour.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oidarray__remove(
-        arr: *mut GitArray<Oid>,
-        id: Option<&Oid>,
+        arr: Option<&mut GitArray<Oid>>,
+        id: *const Oid,
     ) -> bool {
         barrier(|| {
-            let id = git_arg!(id, "id", false);
-            let id = *id;
-            // SAFETY: a valid array, exclusively ours.
-            remove(unsafe { &mut *arr }, &id)
+            git_assert_arg!(!id.is_null(), "id", false);
+            // SAFETY: `id` is non-null, so a valid, aligned oid (this
+            // export's contract), copied before the removal shifts the
+            // elements it may point at.
+            let id = unsafe { id.read() };
+            remove(git_arg!(arr, "arr", false), &id)
         })
     }
 }
@@ -313,11 +334,35 @@ mod tests {
         let raw = OidArray::from_array(back).into_raw();
         // SAFETY: as C would call it.
         unsafe {
-            let mut raw = raw;
             ffi::git_oidarray__reverse(Some(&raw));
             assert_eq!(*raw.ids, ids[0]);
-            ffi::git_oidarray_dispose(&mut raw);
+            ffi::git_oidarray_dispose(Some(&raw));
         }
         assert!(OidArray::new().is_empty());
+    }
+
+    /// The C passes an id that is an element of the array itself:
+    /// `remove` shifts the buffer over it (with `id` as a reference
+    /// argument, Miri reports the write under a protected borrow).
+    #[test]
+    fn add_and_remove_an_element_of_the_array() {
+        let _g = crate::util::test_support::init();
+        let ids: Vec<Oid> = (0..3u8)
+            .map(|i| Oid::parse_prefix(&[b'a' + i], OidType::Sha1).unwrap())
+            .collect();
+        let mut arr = GitArray::new();
+        for id in &ids {
+            add(&mut arr, id).unwrap();
+        }
+        // SAFETY: a valid array; the ids point into its own buffer.
+        unsafe {
+            let first = &*arr.as_slice().as_ptr();
+            // Already there: nothing is pushed.
+            assert_eq!(ffi::git_oidarray__add(Some(&mut arr), Some(first)), 0);
+            assert_eq!(arr.len(), 3);
+            let p = arr.as_slice().as_ptr();
+            assert!(ffi::git_oidarray__remove(Some(&mut arr), p));
+        }
+        assert_eq!(arr.as_slice(), &ids[1..]);
     }
 }
