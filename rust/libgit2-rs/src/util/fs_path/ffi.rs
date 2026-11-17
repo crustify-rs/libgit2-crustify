@@ -136,9 +136,9 @@ pub unsafe extern "C" fn git_fs_path_root(path: CStrArg<'_>) -> c_int {
     let Some(path) = RawCStr::from_arg(path) else {
         return -1;
     };
-    // Only the bytes C reads: at most the first five, never past the NUL
-    // (`root_with` reads so, as `CBytes::at` requires), so no `strlen`.
-    barrier(|| root_with(|i| path.at(i)))
+    // Only the bytes C reads: at most the first five, never past the NUL,
+    // so no `strlen`.
+    barrier(|| root_with(path))
 }
 
 /// `git_fs_path_to_dir`.

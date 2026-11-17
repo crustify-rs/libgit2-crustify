@@ -134,28 +134,43 @@ pub fn to_cstring(p: &[u8]) -> CString {
 
 /// A C string read byte by byte, as the C loops read it: `at(i)` for each
 /// `i` up to the first NUL, without measuring the string first.
+///
+/// The reads are `unsafe`: a [`RawCStr`] does not know its length, so the
+/// caller proves that it stays within the string. The safe readers of this
+/// module ([`root_with`], [`common_dirlen_with`], [`str_is_valid_with`])
+/// do, by stopping at the first NUL.
 pub(crate) trait CBytes: Copy {
-    /// The byte at `i` (0 at and past the end). Called only for `i` up to
-    /// the index of the first NUL.
-    fn at(self, i: usize) -> u8;
-    /// The bytes `start..end`, all read with [`at`](Self::at) before (so
-    /// none is the NUL).
-    fn seg<'a>(self, start: usize, end: usize) -> &'a [u8]
+    /// The byte at `i` (0 at and past the end of a slice).
+    ///
+    /// # Safety
+    ///
+    /// Every byte before `i` has been read with `at` and was not 0 (so `i`
+    /// is at most the index of the first NUL).
+    unsafe fn at(self, i: usize) -> u8;
+    /// The bytes `start..end`.
+    ///
+    /// # Safety
+    ///
+    /// `start <= end`, and every byte of `start..end` has been read with
+    /// [`at`](Self::at) and was not 0.
+    unsafe fn seg<'a>(self, start: usize, end: usize) -> &'a [u8]
     where
         Self: 'a;
 }
 
 impl CBytes for &[u8] {
     #[inline(always)]
-    fn at(self, i: usize) -> u8 {
+    unsafe fn at(self, i: usize) -> u8 {
         self::at(self, i)
     }
 
     #[inline(always)]
-    fn seg<'a>(self, start: usize, end: usize) -> &'a [u8]
+    unsafe fn seg<'a>(self, start: usize, end: usize) -> &'a [u8]
     where
         Self: 'a,
     {
+        // Bytes read with `at` (which reads 0 past the end) and not 0 are
+        // in bounds, so the indexing does not panic.
         &self[start..end]
     }
 }
@@ -191,14 +206,15 @@ impl<'a> RawCStr<'a> {
 
 impl<'b> CBytes for RawCStr<'b> {
     #[inline(always)]
-    fn at(self, i: usize) -> u8 {
-        // SAFETY: the string is readable up to its NUL (`new`'s contract),
-        // and `at` is asked only for bytes up to the NUL (the trait's).
+    unsafe fn at(self, i: usize) -> u8 {
+        // SAFETY: the string is readable up to and including its NUL
+        // (`new`'s contract), and the bytes before `i` are not the NUL
+        // (`at`'s contract), so `i` is within it.
         unsafe { self.0.as_ptr().wrapping_add(i).read() }
     }
 
     #[inline(always)]
-    fn seg<'a>(self, start: usize, end: usize) -> &'a [u8]
+    unsafe fn seg<'a>(self, start: usize, end: usize) -> &'a [u8]
     where
         Self: 'a,
     {
@@ -443,27 +459,40 @@ pub fn basename_offset(buffer: Option<&GitStr>) -> usize {
     }
 }
 
-/// `dos_drive_prefix_length` over a byte reader (`at(i)` is the C
-/// string's byte `i`; it is asked only for bytes up to and including the
-/// first NUL).
+/// `dos_drive_prefix_length` over a [`CBytes`]: it reads at most the
+/// first five bytes, and none past the first NUL.
 #[inline(always)]
-fn dos_drive_prefix_length(at: impl Fn(usize) -> u8) -> usize {
-    let c0 = at(0);
+fn dos_drive_prefix_length(path: impl CBytes) -> usize {
+    // SAFETY: byte 0: no byte before it.
+    let c0 = unsafe { path.at(0) };
     if c0 & 0x80 == 0 {
-        return if c0 != 0 && at(1) == b':' { 2 } else { 0 };
+        // SAFETY: byte 1 only after byte 0 was read and is not 0.
+        return if c0 != 0 && unsafe { path.at(1) } == b':' {
+            2
+        } else {
+            0
+        };
     }
     let mut i = 1;
-    while i < 4 && at(i) & 0x80 != 0 {
+    // SAFETY: bytes `0..i` were read and have the high bit set (not 0).
+    while i < 4 && unsafe { path.at(i) } & 0x80 != 0 {
         i += 1;
     }
-    if at(i) == b':' { i + 1 } else { 0 }
+    // SAFETY: as above: bytes `0..i` were read and are not 0.
+    if unsafe { path.at(i) } == b':' {
+        i + 1
+    } else {
+        0
+    }
 }
 
-/// [`root`] over a byte reader (as [`dos_drive_prefix_length`]'s).
+/// [`root`] over a [`CBytes`].
 #[inline(always)]
-pub(crate) fn root_with(at: impl Fn(usize) -> u8) -> c_int {
-    let offset = dos_drive_prefix_length(&at);
-    if at(offset) == b'/' {
+pub(crate) fn root_with(path: impl CBytes) -> c_int {
+    let offset = dos_drive_prefix_length(path);
+    // SAFETY: `offset` is 0, or one past a drive prefix whose bytes were
+    // read and are not 0.
+    if unsafe { path.at(offset) } == b'/' {
         offset as c_int
     } else {
         -1
@@ -476,7 +505,7 @@ pub(crate) fn root_with(at: impl Fn(usize) -> u8) -> c_int {
 /// `path` may extend past its C string.
 #[inline]
 pub fn root(path: &[u8]) -> c_int {
-    root_with(|i| self::at(path, i))
+    root_with(path)
 }
 
 #[inline]
@@ -827,11 +856,14 @@ pub(crate) fn common_dirlen_with(one: impl CBytes, two: impl CBytes) -> usize {
     let mut dirsep = 0;
     let mut i = 0;
     loop {
-        let p = one.at(i);
+        // SAFETY: bytes `0..i` of both were read and are not 0 (the loop
+        // stops at either's first 0).
+        let p = unsafe { one.at(i) };
         if p == 0 {
             break;
         }
-        let q = two.at(i);
+        // SAFETY: as above.
+        let q = unsafe { two.at(i) };
         if q == 0 {
             break;
         }
@@ -1685,7 +1717,9 @@ pub(crate) fn str_is_valid_with<P: CBytes>(
     let mut start = 0usize;
     let mut i = 0usize;
     while i < limit {
-        let c = path.at(i);
+        // SAFETY: bytes `0..i` were read and are not 0 (the loop stops at
+        // the first 0, `CLASS_NUL`).
+        let c = unsafe { path.at(i) };
         // One lookup per byte: the NUL, a rejected byte, a slash, or none
         // of these (`validate_char` under `flags`, as a table).
         let class = table[c as usize];
@@ -1703,7 +1737,9 @@ pub(crate) fn str_is_valid_with<P: CBytes>(
             return false;
         }
         if class == CLASS_SLASH {
-            let comp = path.seg(start, i);
+            // SAFETY: `start <= i`, and bytes `start..i` were read above
+            // and are not 0.
+            let comp = unsafe { path.seg(start, i) };
             if !validate_component(comp, flags) {
                 return false;
             }
@@ -1719,7 +1755,9 @@ pub(crate) fn str_is_valid_with<P: CBytes>(
     if limit != usize::MAX && i != limit {
         return false;
     }
-    let comp = path.seg(start, i);
+    // SAFETY: `start <= i`, and bytes `start..i` were read in the loop
+    // and are not 0.
+    let comp = unsafe { path.seg(start, i) };
     if !validate_component(comp, flags) {
         return false;
     }
