@@ -420,25 +420,25 @@ fn parents_from_graft(parents: &mut GitArray<Oid>, graft: &GitArray<Oid>) -> Res
     Ok(())
 }
 
-/// The graft of `id` in the repository's grafts, then its shallow grafts.
+/// The graft of `id` in the repository's grafts, then its shallow grafts
+/// (`None` without a repository).
 ///
 /// # Safety
 ///
-/// `repo` is a live repository whose grafts nobody changes during the call.
+/// Nothing changes the repository's grafts during the call (C's rule: a
+/// graft refresh runs on the repository's own calls), and the result is
+/// used only while they are unchanged.
 pub(crate) unsafe fn find_graft(
-    repo: *mut git_repository,
+    repo: Option<&git_repository>,
     id: &Oid,
 ) -> Option<*mut GitCommitGraft> {
-    if repo.is_null() {
-        return None;
-    }
-    // SAFETY: `repo` is live (contract); `GitRepository` is `Sync`.
-    let r = unsafe { &*repo };
+    let r = repo?;
     for grafts in [r.grafts_ptr(), r.shallow_grafts_ptr()] {
         let grafts = grafts.cast::<pend::git_grafts>();
         let mut g = ptr::null_mut();
-        // SAFETY: `grafts` is the repository's (the C asserts it is not
-        // NULL); `g` is writable.
+        // SAFETY: `g` is a writable local; `grafts` is NULL (which the
+        // export rejects: C asserts it is not) or the live repository's own
+        // grafts, unchanged during the call (the contract); `id` readable.
         if unsafe { pend::git_grafts_get(&raw mut g, grafts, id) } == 0 {
             return Some(g);
         }
@@ -1987,9 +1987,13 @@ pub mod ffi {
                 return e.raw();
             }
             // Perform necessary grafts
-            // SAFETY: the repository is live (contract).
-            if let Some(g) = unsafe { find_graft(c.object.repo, &id) } {
-                // SAFETY: the graft is the repository's, live meanwhile.
+            // SAFETY: `object.repo` is NULL or a live repository (this
+            // export's contract), only read through `&`.
+            let repo = unsafe { c.object.repo.as_ref() };
+            // SAFETY: the grafts are not changed during the parse (C's
+            // rule), and the graft is used only within this call.
+            if let Some(g) = unsafe { find_graft(repo, &id) } {
+                // SAFETY: a live graft of the unchanged grafts (above).
                 let graft = unsafe { &(*g).parents };
                 return code(parents_from_graft(&mut c.parent_ids, graft));
             }

@@ -119,7 +119,9 @@ impl Drop for Revwalk<'_> {
 impl<'repo> Revwalk<'repo> {
     /// `git_revwalk_new`: a walk over `repo`.
     pub fn new(repo: &'repo Repository) -> Result<Revwalk<'repo>> {
-        let raw = new_walk(repo.raw_ptr())?;
+        // SAFETY: a live repository, which outlives the walk: the walk
+        // borrows it for `'repo`.
+        let raw = unsafe { new_walk(repo.raw_ptr()) }?;
         Ok(Revwalk {
             raw,
             hide: None,
@@ -275,7 +277,11 @@ impl<'repo> Revwalk<'repo> {
         });
         let state = Box::into_non_null(state);
         let payload = state.as_ptr().cast::<c_void>();
-        self.with(|w, st| w.set_hide_cb(st, Some(hide_trampoline), payload));
+        // SAFETY: `hide_trampoline` is sound with this payload, a live
+        // `HideState` that is freed only after the walk lets go of it
+        // (`drop_hide` after a replacement or the walk's free); it does not
+        // reach the walk.
+        self.with(|w, st| unsafe { w.set_hide_cb(st, Some(hide_trampoline), payload) });
         self.drop_hide();
         self.hide = Some(state);
         self
@@ -283,7 +289,8 @@ impl<'repo> Revwalk<'repo> {
 
     /// `git_revwalk_add_hide_cb(walk, NULL, NULL)`: remove the callback.
     pub fn clear_hide_callback(&mut self) -> &mut Self {
-        self.with(|w, st| w.set_hide_cb(st, None, core::ptr::null_mut()));
+        // SAFETY: no callback.
+        self.with(|w, st| unsafe { w.set_hide_cb(st, None, core::ptr::null_mut()) });
         self.drop_hide();
         self
     }

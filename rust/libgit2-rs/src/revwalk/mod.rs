@@ -90,21 +90,31 @@ pub struct PushOptions {
 }
 
 /// The part of `struct git_revwalk` that C sees (`revwalk.h`).
+///
+/// The fields are private to this module, which keeps their invariants
+/// (safe code elsewhere could otherwise break them through `&mut` or the
+/// `Cell`): `repo` is NULL or a live repository that outlives the walk
+/// (from [`GitRevwalk::with_repo`], never written after); `odb` is NULL or
+/// the walk's own reference (set by `new_walk`, freed by `free_walk`);
+/// `user_input` is NULL or a well-formed list (NULL-terminated
+/// `git__allocator` cells) of nodes of this walk's pool. C reads `repo`,
+/// `odb` and `user_input`, and allocates from `commit_pool` only through
+/// this crate's exports.
 #[repr(C)]
 #[derive(Debug)]
 pub struct RevwalkPrefix {
     /// `repo`: set at creation, read by C.
-    pub repo: *mut git_repository,
+    repo: *mut git_repository,
     /// `odb`: set at creation, read by C.
-    pub odb: *mut git_odb,
+    odb: *mut git_odb,
     /// `commits`: every node of the walk, by id (only the Rust touches it).
-    pub(crate) commits: UnsafeCell<CommitMap>,
-    /// `commit_pool`: the nodes and their parent arrays; C allocates from
-    /// it (`git_commit_list_alloc_node`, `alloc_parents`).
-    pub commit_pool: UnsafeCell<GitPool>,
+    commits: UnsafeCell<CommitMap>,
+    /// `commit_pool`: the nodes and their parent arrays (allocated by
+    /// [`GitRevwalk::commit_lookup`] and [`GitRevwalk::pool_alloc`]).
+    commit_pool: UnsafeCell<GitPool>,
     /// `user_input`: the pushes and hides, a `git_commit_list` that
     /// `pack-objects.c` reads.
-    pub user_input: Cell<*mut CommitList>,
+    user_input: Cell<*mut CommitList>,
 }
 
 /// Which `get_next` the walk uses (C's function pointer).
@@ -398,7 +408,12 @@ const _: () = assert!(align_of::<GitRevwalk>() <= 8);
 impl GitRevwalk {
     /// A walk over `repo` with an empty state and no odb (the first half of
     /// `git_revwalk_new`).
-    pub(crate) fn with_repo(repo: *mut git_repository) -> Result<GitRevwalk> {
+    ///
+    /// # Safety
+    ///
+    /// `repo` is NULL or a live repository that outlives every use of the
+    /// walk (the walk's safe methods call C with it).
+    pub(crate) unsafe fn with_repo(repo: *mut git_repository) -> Result<GitRevwalk> {
         Ok(GitRevwalk {
             prefix: RevwalkPrefix {
                 repo,
@@ -417,9 +432,46 @@ impl GitRevwalk {
     }
 
     fn repo(&self) -> Repo {
-        // SAFETY: the repository the walk was made with, which C requires
-        // to outlive it.
+        // SAFETY: `repo` is NULL or a live repository that outlives the walk
+        // (the field's invariant, from `with_repo`).
         unsafe { Repo::new(self.prefix.repo) }
+    }
+
+    /// `walk->repo`.
+    pub fn repo_ptr(&self) -> *mut git_repository {
+        self.prefix.repo
+    }
+
+    /// The walk's repository (`None` for a walk made without one).
+    pub(crate) fn repository(&self) -> Option<&git_repository> {
+        // SAFETY: NULL or a live repository that outlives the walk (the
+        // field's invariant), which is only read through `&` (its state is
+        // interior-mutable).
+        unsafe { self.prefix.repo.as_ref() }
+    }
+
+    /// `walk->odb`.
+    pub fn odb_ptr(&self) -> *mut git_odb {
+        self.prefix.odb
+    }
+
+    /// `walk->user_input` (what `pack-objects.c` reads).
+    pub fn user_input_ptr(&self) -> *mut CommitList {
+        self.prefix.user_input.get()
+    }
+
+    /// `git_pool_malloc` / `git_pool_mallocz(&walk->commit_pool, items)`.
+    pub(crate) fn pool_alloc(&self, items: usize, zeroed: bool) -> Result<NonNull<u8>> {
+        // SAFETY: no other reference to the pool lives: they are made only
+        // here and in `commit_lookup`, for the extent of a pool call (which
+        // runs no code of ours or C's), and a walk is used by one thread
+        // (`GitRevwalk` is not `Sync`; C's contract).
+        let pool = unsafe { &mut *self.prefix.commit_pool.get() };
+        if zeroed {
+            pool.mallocz(items)
+        } else {
+            pool.malloc(items)
+        }
     }
 
     /// `git_revwalk__commit_lookup`: the node of `oid`, made if new; `None`
@@ -435,12 +487,8 @@ impl GitRevwalk {
             return Some(*n);
         }
 
-        // SAFETY: as for the map: no other reference to the pool lives (C
-        // allocates from it only inside `git_commit_list_parse`, which is
-        // not running now).
-        let pool = unsafe { &mut *self.prefix.commit_pool.get() };
         // git_commit_list_alloc_node: one zeroed item of COMMIT_ALLOC bytes
-        let p = pool.mallocz(1).ok()?.cast::<CommitListNode>();
+        let p = self.pool_alloc(1, true).ok()?.cast::<CommitListNode>();
         // SAFETY: a fresh, zeroed (so initialized: every field is valid
         // as zero) and 8-aligned node of the walk's pool, which lives as
         // long as the walk; the walk is used from one thread.
@@ -680,7 +728,13 @@ impl GitRevwalk {
     }
 
     /// `git_revwalk_add_hide_cb`.
-    fn set_hide_cb(&self, st: &State, cb: HideCb, payload: *mut c_void) {
+    ///
+    /// # Safety
+    ///
+    /// `cb` is `None` or sound to call with a commit id (valid for the
+    /// call) and `payload` whenever the walk runs, until it is replaced or
+    /// the walk is reset; it may call the walk's exports, but not free it.
+    unsafe fn set_hide_cb(&self, st: &State, cb: HideCb, payload: *mut c_void) {
         if st.walking.get() {
             self.reset(st);
         }
@@ -1055,18 +1109,24 @@ fn prepare_walk(w: &GitRevwalk) -> Result<()> {
 }
 
 /// Allocate a walk in `git__allocator`'s storage (C's `git__calloc`).
-fn alloc_walk(repo: *mut git_repository) -> Result<NonNull<GitRevwalk>> {
+///
+/// # Safety
+///
+/// As [`GitRevwalk::with_repo`].
+unsafe fn alloc_walk(repo: *mut git_repository) -> Result<NonNull<GitRevwalk>> {
     let p = crate::util::alloc::calloc(1, size_of::<GitRevwalk>()).cast::<GitRevwalk>();
     let p = NonNull::new(p).ok_or(ErrorCode::GENERIC)?;
-    match GitRevwalk::with_repo(repo) {
+    // SAFETY: the caller's guarantee on `repo`, which is `with_repo`'s.
+    match unsafe { GitRevwalk::with_repo(repo) } {
         Ok(w) => {
             // SAFETY: a fresh allocation of the size of `GitRevwalk`,
-            // 8-aligned (git__allocator), enough for it.
+            // 8-aligned (git__allocator; asserted above), unshared.
             unsafe { p.as_ptr().write(w) };
             Ok(p)
         }
         Err(e) => {
-            // SAFETY: our allocation, uninitialized, not used after.
+            // SAFETY: our `git__allocator` block, holding no value, not
+            // used after, freed once.
             unsafe { crate::util::alloc::free(p.as_ptr().cast()) };
             Err(e)
         }
@@ -1074,18 +1134,25 @@ fn alloc_walk(repo: *mut git_repository) -> Result<NonNull<GitRevwalk>> {
 }
 
 /// `git_revwalk_new`.
-fn new_walk(repo: *mut git_repository) -> Result<NonNull<GitRevwalk>> {
-    let p = alloc_walk(repo)?;
-    // SAFETY: the walk is ours alone: a shared reference for the call.
+///
+/// # Safety
+///
+/// As [`GitRevwalk::with_repo`].
+unsafe fn new_walk(repo: *mut git_repository) -> Result<NonNull<GitRevwalk>> {
+    // SAFETY: the caller's guarantee on `repo`.
+    let p = unsafe { alloc_walk(repo) }?;
+    // SAFETY: the walk just made, initialized and ours alone: a shared
+    // reference for this statement.
     let r = glue::repository_odb(unsafe { p.as_ref() }.repo());
     match r {
         Ok(odb) => {
-            // SAFETY: ours alone; set before anything else sees it.
+            // SAFETY: ours alone (no reference to it lives); set before
+            // anything else sees it.
             unsafe { (*p.as_ptr()).prefix.odb = odb };
             Ok(p)
         }
         Err(_) => {
-            // SAFETY: ours, not used after.
+            // SAFETY: from `alloc_walk`, ours alone, not used after.
             unsafe { free_walk(p) };
             Err(ErrorCode::GENERIC)
         }
@@ -1100,17 +1167,21 @@ fn new_walk(repo: *mut git_repository) -> Result<NonNull<GitRevwalk>> {
 /// reference to which lives).
 unsafe fn free_walk(p: NonNull<GitRevwalk>) {
     {
-        // SAFETY: a live walk (the contract), for the extent of the block.
+        // SAFETY: a live walk that nothing else uses (the contract), for the
+        // extent of the block.
         let w = unsafe { p.as_ref() };
         let st = w.state();
         w.reset(st);
-        // SAFETY: the walk's reference, not used after.
+        // SAFETY: NULL or the walk's own odb reference (the field's
+        // invariant), released once: nothing reads `odb` after.
         unsafe { glue::odb_free(w.prefix.odb) };
     }
-    // SAFETY: a live walk that nothing uses after; its state (NodePtrs)
-    // drops before its pool, and nothing reads the nodes in between.
+    // SAFETY: an initialized walk that nothing uses after and no reference
+    // covers (the block's ended); its state (NodePtrs) drops before its
+    // pool, and nothing reads the nodes in between.
     unsafe { ptr::drop_in_place(p.as_ptr()) };
-    // SAFETY: the walk's storage, from git__allocator.
+    // SAFETY: the walk's `git__allocator` storage (`alloc_walk`), freed
+    // once, its contents dropped.
     unsafe { crate::util::alloc::free(p.as_ptr().cast()) };
 }
 
@@ -1128,52 +1199,31 @@ unsafe fn free_walk(p: NonNull<GitRevwalk>) {
 pub mod ffi {
     use crate::git_arg;
     use crate::util::cabi::{CStrArg, Out};
-    use core::ffi::{c_char, c_int, c_uint, c_void};
+    use core::ffi::{c_int, c_uint, c_void};
     use core::ptr::{self, NonNull};
 
     use super::*;
-    use crate::util::export::{barrier, cstr, status};
-
-    /// The walk at `walk`, and its state.
-    ///
-    /// # Safety
-    ///
-    /// The contract of the module's exports: a live walk, not used
-    /// concurrently. Re-entry (from the hide callback) is fine: the state is
-    /// only ever borrowed shared.
-    #[inline(always)]
-    unsafe fn walk_of<'a>(walk: *mut GitRevwalk) -> (&'a GitRevwalk, &'a State) {
-        // SAFETY: a live walk (the contract); a shared reference, since C
-        // writes only the `UnsafeCell` parts while it lives.
-        let w = unsafe { &*walk };
-        let st = w.state();
-        (w, st)
-    }
+    use crate::util::export::{barrier, status};
 
     /// `git_revwalk__commit_lookup`: the walk's node for `oid`, made if
     /// new; NULL if out of memory.
     ///
     /// # Safety
     ///
-    /// A live walk (which C may call this on while the walk runs
-    /// `git_commit_list_parse`); `oid` is readable.
+    /// `walk` is NULL or a live walk (which C may call this on while the
+    /// walk runs `git_commit_list_parse`); `oid` NULL or a readable id.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk__commit_lookup(
-        walk: *mut GitRevwalk,
-        oid: *const Oid,
+        walk: Option<&GitRevwalk>,
+        oid: Option<&Oid>,
     ) -> *mut CommitListNode {
         barrier(|| {
-            if walk.is_null() || oid.is_null() {
-                // C dereferences both
-                let _ = errors::assert_arg_failed(if walk.is_null() { "walk" } else { "oid" });
-                return ptr::null_mut();
-            }
-            // SAFETY: a live walk, of which only the map and the pool are
-            // used (no state reference: this may run inside another export).
-            let w = unsafe { &*walk };
-            // SAFETY: a readable oid (the contract), copied.
-            let oid = unsafe { *oid };
-            w.commit_lookup(&oid)
+            // C dereferences both
+            let w = git_arg!(walk, "walk", ptr::null_mut());
+            let oid = git_arg!(oid, "oid", ptr::null_mut());
+            // Only the map and the pool are used (no state reference: this
+            // may run inside another export).
+            w.commit_lookup(oid)
                 .map_or(ptr::null_mut(), NodePtr::as_ptr)
         })
     }
@@ -1182,44 +1232,31 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// The module's contract; `oid` and `opts` are readable.
+    /// The module's contract; `oid` and `opts` are NULL or readable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk__push_commit(
-        walk: *mut GitRevwalk,
+        walk: Option<&GitRevwalk>,
         oid: Option<&Oid>,
-        opts: *const PushOptions,
+        opts: Option<&PushOptions>,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!walk.is_null(), "walk", -1);
-            let oid = git_arg!(oid, "oid", -1);
-            git_assert_arg!(!opts.is_null(), "opts", -1);
-            // SAFETY: the contract.
-            let (w, st) = unsafe { walk_of(walk) };
-            let oid = *oid;
-            // SAFETY: as above.
-            let opts = unsafe { *opts };
-            status(w.push_commit(st, &oid, &opts))
+            let w = git_arg!(walk, "walk", -1);
+            let oid = *git_arg!(oid, "oid", -1);
+            let opts = *git_arg!(opts, "opts", -1);
+            status(w.push_commit(w.state(), &oid, &opts))
         })
     }
 
     /// Push or hide `oid` (`git_revwalk_push` / `git_revwalk_hide`).
-    ///
-    /// # Safety
-    ///
-    /// The module's contract; `oid` is readable.
-    unsafe fn push_oid(walk: *mut GitRevwalk, oid: *const Oid, uninteresting: c_int) -> c_int {
+    fn push_oid(walk: Option<&GitRevwalk>, oid: Option<&Oid>, uninteresting: c_int) -> c_int {
         barrier(|| {
-            git_assert_arg!(!walk.is_null(), "walk", -1);
-            git_assert_arg!(!oid.is_null(), "oid", -1);
-            // SAFETY: the contract.
-            let (w, st) = unsafe { walk_of(walk) };
-            // SAFETY: readable, copied.
-            let oid = unsafe { *oid };
+            let w = git_arg!(walk, "walk", -1);
+            let oid = *git_arg!(oid, "oid", -1);
             let opts = PushOptions {
                 uninteresting,
                 ..PushOptions::default()
             };
-            status(w.push_commit(st, &oid, &opts))
+            status(w.push_commit(w.state(), &oid, &opts))
         })
     }
 
@@ -1227,76 +1264,64 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// The module's contract; `oid` is readable.
+    /// The module's contract; `oid` is NULL or readable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_revwalk_push(walk: *mut GitRevwalk, oid: *const Oid) -> c_int {
-        // SAFETY: forwarded.
-        unsafe { push_oid(walk, oid, 0) }
+    pub unsafe extern "C" fn git_revwalk_push(
+        walk: Option<&GitRevwalk>,
+        oid: Option<&Oid>,
+    ) -> c_int {
+        push_oid(walk, oid, 0)
     }
 
     /// `git_revwalk_hide`.
     ///
     /// # Safety
     ///
-    /// The module's contract; `oid` is readable.
+    /// The module's contract; `oid` is NULL or readable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_revwalk_hide(walk: *mut GitRevwalk, oid: *const Oid) -> c_int {
-        // SAFETY: forwarded.
-        unsafe { push_oid(walk, oid, 1) }
+    pub unsafe extern "C" fn git_revwalk_hide(
+        walk: Option<&GitRevwalk>,
+        oid: Option<&Oid>,
+    ) -> c_int {
+        push_oid(walk, oid, 1)
     }
 
     /// `git_revwalk__push_ref`.
     ///
     /// # Safety
     ///
-    /// The module's contract; `refname` is a string; `opts` is readable.
+    /// The module's contract; `refname` is NULL or a string; `opts` is
+    /// NULL or readable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk__push_ref(
-        walk: *mut GitRevwalk,
-        refname: *const c_char,
-        opts: *const PushOptions,
+        walk: Option<&GitRevwalk>,
+        refname: CStrArg<'_>,
+        opts: Option<&PushOptions>,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!walk.is_null(), "walk", -1);
-            git_assert_arg!(!opts.is_null(), "opts", -1);
-            // SAFETY: the contract.
-            let (w, st) = unsafe { walk_of(walk) };
-            // SAFETY: readable, copied.
-            let opts = unsafe { *opts };
+            let w = git_arg!(walk, "walk", -1);
+            let opts = *git_arg!(opts, "opts", -1);
             // A NULL name: `git_reference_name_to_id`'s check, and -1.
-            // SAFETY: a string (the contract), unchanged during the call.
-            let Some(refname) = (unsafe { cstr(refname) }) else {
-                let _ = errors::assert_arg_failed("name");
-                return -1;
-            };
-            status(w.push_ref(st, refname, &opts))
+            let refname = git_arg!(refname.get(), "name", -1);
+            status(w.push_ref(w.state(), refname, &opts))
         })
     }
 
-    /// Push or hide a reference (`git_revwalk_push_ref`, `_head`, …).
-    ///
-    /// # Safety
-    ///
-    /// The module's contract; `refname` is a string.
-    unsafe fn push_refname(
-        walk: *mut GitRevwalk,
-        refname: *const c_char,
+    /// Push or hide a reference (`git_revwalk_push_ref`, `_hide_ref`,
+    /// `_push_head`, `_hide_head`).
+    fn push_refname(
+        walk: Option<&GitRevwalk>,
+        refname: CStrArg<'_>,
         uninteresting: c_int,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!walk.is_null(), "walk", -1);
-            git_assert_arg!(!refname.is_null(), "refname", -1);
-            // SAFETY: the contract.
-            let (w, st) = unsafe { walk_of(walk) };
-            // SAFETY: a non-null string (the contract and the check above).
-            let Some(refname) = (unsafe { cstr(refname) }) else {
-                return -1;
-            };
+            let w = git_arg!(walk, "walk", -1);
+            let refname = git_arg!(refname.get(), "refname", -1);
             let opts = PushOptions {
                 uninteresting,
                 ..PushOptions::default()
             };
-            status(w.push_ref(st, refname, &opts))
+            status(w.push_ref(w.state(), refname, &opts))
         })
     }
 
@@ -1304,28 +1329,26 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// The module's contract; `refname` is a string.
+    /// The module's contract; `refname` is NULL or a string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk_push_ref(
-        walk: *mut GitRevwalk,
-        refname: *const c_char,
+        walk: Option<&GitRevwalk>,
+        refname: CStrArg<'_>,
     ) -> c_int {
-        // SAFETY: forwarded.
-        unsafe { push_refname(walk, refname, 0) }
+        push_refname(walk, refname, 0)
     }
 
     /// `git_revwalk_hide_ref`.
     ///
     /// # Safety
     ///
-    /// The module's contract; `refname` is a string.
+    /// The module's contract; `refname` is NULL or a string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk_hide_ref(
-        walk: *mut GitRevwalk,
-        refname: *const c_char,
+        walk: Option<&GitRevwalk>,
+        refname: CStrArg<'_>,
     ) -> c_int {
-        // SAFETY: forwarded.
-        unsafe { push_refname(walk, refname, 1) }
+        push_refname(walk, refname, 1)
     }
 
     /// `git_revwalk_push_head`.
@@ -1334,9 +1357,8 @@ pub mod ffi {
     ///
     /// The module's contract.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_revwalk_push_head(walk: *mut GitRevwalk) -> c_int {
-        // SAFETY: forwarded, with a static string.
-        unsafe { push_refname(walk, c"HEAD".as_ptr(), 0) }
+    pub unsafe extern "C" fn git_revwalk_push_head(walk: Option<&GitRevwalk>) -> c_int {
+        push_refname(walk, c"HEAD".into(), 0)
     }
 
     /// `git_revwalk_hide_head`.
@@ -1345,100 +1367,92 @@ pub mod ffi {
     ///
     /// The module's contract.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_revwalk_hide_head(walk: *mut GitRevwalk) -> c_int {
-        // SAFETY: forwarded, with a static string.
-        unsafe { push_refname(walk, c"HEAD".as_ptr(), 1) }
+    pub unsafe extern "C" fn git_revwalk_hide_head(walk: Option<&GitRevwalk>) -> c_int {
+        push_refname(walk, c"HEAD".into(), 1)
+    }
+
+    /// `git_revwalk__push_glob` of the exports.
+    fn push_glob(
+        walk: Option<&GitRevwalk>,
+        glob: CStrArg<'_>,
+        given_opts: Option<&PushOptions>,
+    ) -> c_int {
+        barrier(|| {
+            let w = git_arg!(walk, "walk", -1);
+            let glob = git_arg!(glob.get(), "glob", -1);
+            status(w.push_glob(w.state(), glob, given_opts))
+        })
     }
 
     /// `git_revwalk__push_glob`.
     ///
     /// # Safety
     ///
-    /// The module's contract; `glob` is a string; `given_opts` is NULL or
-    /// readable.
+    /// The module's contract; `glob` is NULL or a string; `given_opts` is
+    /// NULL or readable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk__push_glob(
-        walk: *mut GitRevwalk,
+        walk: Option<&GitRevwalk>,
         glob: CStrArg<'_>,
-        given_opts: *const PushOptions,
+        given_opts: Option<&PushOptions>,
     ) -> c_int {
-        barrier(|| {
-            git_assert_arg!(!walk.is_null(), "walk", -1);
-            let glob = git_arg!(glob.get(), "glob", -1);
-            // SAFETY: the contract.
-            let (w, st) = unsafe { walk_of(walk) };
-            let Some(glob) = Some(glob) else {
-                return -1;
-            };
-            // SAFETY: NULL or readable, copied.
-            let opts = unsafe { given_opts.as_ref() }.copied();
-            status(w.push_glob(st, glob, opts.as_ref()))
-        })
+        push_glob(walk, glob, given_opts)
     }
 
     /// `git_revwalk_push_glob`.
     ///
     /// # Safety
     ///
-    /// The module's contract; `glob` is a string.
+    /// The module's contract; `glob` is NULL or a string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk_push_glob(
-        walk: *mut GitRevwalk,
+        walk: Option<&GitRevwalk>,
         glob: CStrArg<'_>,
     ) -> c_int {
-        if walk.is_null() || glob.is_null() {
-            let _ = errors::assert_arg_failed(if walk.is_null() { "walk" } else { "glob" });
+        if walk.is_none() || glob.is_null() {
+            let _ = errors::assert_arg_failed(if walk.is_none() { "walk" } else { "glob" });
             return -1;
         }
-        let opts = PushOptions::default();
-        // SAFETY: forwarded.
-        unsafe { git_revwalk__push_glob(walk, glob, &raw const opts) }
+        push_glob(walk, glob, Some(&PushOptions::default()))
     }
 
     /// `git_revwalk_hide_glob`.
     ///
     /// # Safety
     ///
-    /// The module's contract; `glob` is a string.
+    /// The module's contract; `glob` is NULL or a string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk_hide_glob(
-        walk: *mut GitRevwalk,
+        walk: Option<&GitRevwalk>,
         glob: CStrArg<'_>,
     ) -> c_int {
-        if walk.is_null() || glob.is_null() {
-            let _ = errors::assert_arg_failed(if walk.is_null() { "walk" } else { "glob" });
+        if walk.is_none() || glob.is_null() {
+            let _ = errors::assert_arg_failed(if walk.is_none() { "walk" } else { "glob" });
             return -1;
         }
         let opts = PushOptions {
             uninteresting: 1,
             ..PushOptions::default()
         };
-        // SAFETY: forwarded.
-        unsafe { git_revwalk__push_glob(walk, glob, &raw const opts) }
+        push_glob(walk, glob, Some(&opts))
     }
 
     /// `git_revwalk_push_range`.
     ///
     /// # Safety
     ///
-    /// The module's contract; `range` is a string.
+    /// The module's contract; `range` is NULL or a string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk_push_range(
-        walk: *mut GitRevwalk,
-        range: *const c_char,
+        walk: Option<&GitRevwalk>,
+        range: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             // C dereferences `walk` unchecked
-            git_assert_arg!(!walk.is_null(), "walk", -1);
-            // SAFETY: the contract.
-            let (w, st) = unsafe { walk_of(walk) };
+            let w = git_arg!(walk, "walk", -1);
             // A NULL range: `git_revparse`'s check.
-            // SAFETY: a string (the contract), unchanged during the call.
-            let Some(range) = (unsafe { cstr(range) }) else {
-                let _ = errors::assert_arg_failed("spec");
-                return -1;
-            };
-            status(w.push_range(st, range))
+            let range = git_arg!(range.get(), "spec", -1);
+            status(w.push_range(w.state(), range))
         })
     }
 
@@ -1446,7 +1460,7 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` is writable; `repo` is NULL or a live repository that
+    /// `out` is NULL or writable; `repo` is NULL or a live repository that
     /// outlives the walk.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk_new(
@@ -1456,7 +1470,9 @@ pub mod ffi {
         barrier(|| {
             // C writes `*out` unchecked
             git_assert_arg!(!out.is_null(), "revwalk_out", -1);
-            match new_walk(repo) {
+            // SAFETY: `repo` is NULL or a live repository that outlives the
+            // walk (this export's contract).
+            match unsafe { new_walk(repo) } {
                 Ok(p) => {
                     out.write(p.as_ptr());
                     0
@@ -1470,12 +1486,15 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `walk` is NULL or a live walk, not used after.
+    /// `walk` is NULL or a live walk, not used after (nor during the call,
+    /// by any other thread or reference).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk_free(walk: *mut GitRevwalk) {
         barrier(|| {
             if let Some(p) = NonNull::new(walk) {
-                // SAFETY: the contract.
+                // SAFETY: a walk of `git_revwalk_new` (`alloc_walk`), which
+                // nothing uses during or after the call (this export's
+                // contract).
                 unsafe { free_walk(p) };
             }
         })
@@ -1487,12 +1506,10 @@ pub mod ffi {
     ///
     /// The module's contract.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_revwalk_repository(walk: *mut GitRevwalk) -> *mut git_repository {
-        barrier(|| {
-            git_assert_arg!(!walk.is_null(), "walk", ptr::null_mut());
-            // SAFETY: a live walk; `repo` is never written after creation.
-            unsafe { (*walk).prefix.repo }
-        })
+    pub unsafe extern "C" fn git_revwalk_repository(
+        walk: Option<&GitRevwalk>,
+    ) -> *mut git_repository {
+        barrier(|| git_arg!(walk, "walk", ptr::null_mut()).repo_ptr())
     }
 
     /// `git_revwalk_sorting`.
@@ -1502,14 +1519,12 @@ pub mod ffi {
     /// The module's contract.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk_sorting(
-        walk: *mut GitRevwalk,
+        walk: Option<&GitRevwalk>,
         sort_mode: c_uint,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!walk.is_null(), "walk", -1);
-            // SAFETY: the contract.
-            let (w, st) = unsafe { walk_of(walk) };
-            w.set_sorting(st, sort_mode);
+            let w = git_arg!(walk, "walk", -1);
+            w.set_sorting(w.state(), sort_mode);
             0
         })
     }
@@ -1520,13 +1535,11 @@ pub mod ffi {
     ///
     /// The module's contract.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_revwalk_simplify_first_parent(walk: *mut GitRevwalk) -> c_int {
+    pub unsafe extern "C" fn git_revwalk_simplify_first_parent(walk: Option<&GitRevwalk>) -> c_int {
         barrier(|| {
             // C dereferences `walk` unchecked
-            git_assert_arg!(!walk.is_null(), "walk", -1);
-            // SAFETY: the contract.
-            let (_, st) = unsafe { walk_of(walk) };
-            st.first_parent.set(true);
+            let w = git_arg!(walk, "walk", -1);
+            w.state().first_parent.set(true);
             0
         })
     }
@@ -1535,18 +1548,18 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// The module's contract; `oid` is writable.
+    /// The module's contract; `oid` is NULL or writable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_revwalk_next(oid: *mut Oid, walk: *mut GitRevwalk) -> c_int {
+    pub unsafe extern "C" fn git_revwalk_next(
+        mut oid: Out<'_, Oid>,
+        walk: Option<&GitRevwalk>,
+    ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!walk.is_null(), "walk", -1);
+            let w = git_arg!(walk, "walk", -1);
             git_assert_arg!(!oid.is_null(), "oid", -1);
-            // SAFETY: the contract.
-            let (w, st) = unsafe { walk_of(walk) };
-            match w.next(st) {
+            match w.next(w.state()) {
                 Ok(id) => {
-                    // SAFETY: writable (the contract).
-                    unsafe { oid.write(id) };
+                    oid.write(id);
                     0
                 }
                 Err(e) => e.raw(),
@@ -1562,16 +1575,16 @@ pub mod ffi {
     /// outlives the walk's use of it and is not changed meanwhile.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk_pathspec(
-        walk: *mut GitRevwalk,
+        walk: Option<&GitRevwalk>,
         pathspec: *mut git_pathspec,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!walk.is_null(), "walk", -1);
-            // SAFETY: the contract.
-            let (w, st) = unsafe { walk_of(walk) };
-            // SAFETY: the contract.
+            let w = git_arg!(walk, "walk", -1);
+            // SAFETY: a non-NULL `pathspec` is live, unchanged and not freed
+            // while the walk uses it (this export's contract), which is
+            // `Pathspec`'s invariant.
             let spec = NonNull::new(pathspec).map(|p| unsafe { Pathspec::new(p) });
-            w.set_pathspec(st, spec);
+            w.set_pathspec(w.state(), spec);
             0
         })
     }
@@ -1582,12 +1595,10 @@ pub mod ffi {
     ///
     /// The module's contract.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_revwalk_reset(walk: *mut GitRevwalk) -> c_int {
+    pub unsafe extern "C" fn git_revwalk_reset(walk: Option<&GitRevwalk>) -> c_int {
         barrier(|| {
-            git_assert_arg!(!walk.is_null(), "walk", -1);
-            // SAFETY: the contract.
-            let (w, st) = unsafe { walk_of(walk) };
-            w.reset(st);
+            let w = git_arg!(walk, "walk", -1);
+            w.reset(w.state());
             0
         })
     }
@@ -1601,15 +1612,15 @@ pub mod ffi {
     /// exports, but not free the walk).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_revwalk_add_hide_cb(
-        walk: *mut GitRevwalk,
+        walk: Option<&GitRevwalk>,
         hide_cb: HideCb,
         payload: *mut c_void,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!walk.is_null(), "walk", -1);
-            // SAFETY: the contract.
-            let (w, st) = unsafe { walk_of(walk) };
-            w.set_hide_cb(st, hide_cb, payload);
+            let w = git_arg!(walk, "walk", -1);
+            // SAFETY: `hide_cb` is NULL or sound with `payload` during the
+            // walks, and does not free the walk (this export's contract).
+            unsafe { w.set_hide_cb(w.state(), hide_cb, payload) };
             0
         })
     }

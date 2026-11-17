@@ -116,8 +116,8 @@ fn walk_lifecycle_and_arguments() {
         let mut w = ptr::null_mut();
         assert_eq!(git_revwalk_new(&mut w, repo), 0);
         assert_eq!(git_revwalk_repository(w), repo);
-        assert_eq!((*w).prefix.repo, repo);
-        assert!(!(*w).prefix.odb.is_null());
+        assert_eq!((*w).repo_ptr(), repo);
+        assert!(!(*w).odb_ptr().is_null());
 
         // nothing pushed
         let mut id = Oid::NONE;
@@ -210,7 +210,7 @@ fn hide_cb_and_internal_pushes() {
         };
         assert_eq!(git_revwalk__push_glob(w, c"refs/*".as_ptr(), &opts), 0);
         let mut times = Vec::new();
-        let mut l = (*w).prefix.user_input.get();
+        let mut l = (*w).user_input_ptr();
         while !l.is_null() {
             times.push((*(*l).item).time);
             l = (*l).next;
@@ -218,7 +218,7 @@ fn hide_cb_and_internal_pushes() {
         assert!(times.len() > 5);
         assert!(times.windows(2).all(|t| t[0] >= t[1]), "{times:?}");
         assert_eq!(git_revwalk_reset(w), 0);
-        assert!((*w).prefix.user_input.get().is_null());
+        assert!((*w).user_input_ptr().is_null());
 
         // from_glob skips what is missing
         let opts = PushOptions {

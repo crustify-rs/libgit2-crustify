@@ -40,11 +40,11 @@ impl Repo {
 /// `git_repository_odb`.
 pub fn repository_odb(repo: Repo) -> Result<*mut p::git_odb> {
     let mut out = ptr::null_mut();
-    // SAFETY: `repo` is NULL or a live repository (this function's contract),
+    // SAFETY: `repo.0` is NULL or a live repository (`Repo`'s invariant),
     // only read through `&` (its state is interior-mutable).
     let repo_ref = unsafe { repo.0.as_ref() };
-    // SAFETY: `out` is writable; the repository is NULL (which C rejects
-    // with an error) or live (the invariant).
+    // SAFETY: `out` is a writable local; the repository is NULL (which the
+    // export rejects with an error) or live.
     ErrorCode::check(unsafe {
         crate::repository::ffi::git_repository_odb(&raw mut out, repo_ref)
     })?;
@@ -57,23 +57,18 @@ pub fn repository_odb(repo: Repo) -> Result<*mut p::git_odb> {
 ///
 /// `odb` is NULL or a reference the caller owns, not used after.
 pub unsafe fn odb_free(odb: *mut p::git_odb) {
-    // SAFETY: the caller's contract.
+    // SAFETY: NULL or an odb reference the caller owns and gives up, not
+    // used after (the contract): what `git_odb_free` releases.
     unsafe { crate::odb::ffi::git_odb_free(odb) }
 }
 
 /// `git_commit_list_parse` of a node of `walk` (it is not parsed yet: the
-/// Rust checks `parsed` first, as the C does on entry).
+/// Rust checks `parsed` first, as the C does on entry). It writes the node
+/// (through `NodePtr`) and allocates from the pool and the map (in their
+/// `UnsafeCell`s, borrowed only within the pool and map calls); it does
+/// not touch the walk's state.
 pub fn commit_list_parse(walk: &GitRevwalk, node: NodePtr) -> Result<()> {
-    let w: *mut crate::commit::deps::git_revwalk = ptr::from_ref(walk).cast_mut().cast();
-    // SAFETY: a live walk and one of its nodes. C reads `repo` and `odb`,
-    // writes the node (no Rust reference covers it) and the pool, and calls
-    // `git_revwalk__commit_lookup`, which reaches `commits` and the pool:
-    // both in `UnsafeCell`s, and no Rust reference to them lives across
-    // this call. It does not touch the Rust state.
-    ErrorCode::check(unsafe {
-        crate::commit_list::ffi::git_commit_list_parse(w, node.as_void().cast())
-    })?;
-    Ok(())
+    crate::commit_list::parse(walk, node)
 }
 
 /// An owned `git_object *`.
