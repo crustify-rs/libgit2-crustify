@@ -176,6 +176,17 @@ impl<'a> RawCStr<'a> {
     pub(crate) unsafe fn new(p: core::ptr::NonNull<c_char>) -> RawCStr<'a> {
         RawCStr(p.cast(), core::marker::PhantomData)
     }
+
+    /// The string of a C string argument (`None` for NULL), still without
+    /// a `strlen`.
+    #[inline(always)]
+    pub(crate) fn from_arg(s: crate::util::cabi::CStrArg<'a>) -> Option<RawCStr<'a>> {
+        let p = core::ptr::NonNull::new(s.as_ptr().cast_mut())?;
+        // SAFETY: `CStrArg`'s invariant: a non-null pointer is a
+        // NUL-terminated string readable and unwritten for `'a`, which is
+        // `new`'s contract.
+        Some(unsafe { RawCStr::new(p) })
+    }
 }
 
 impl<'b> CBytes for RawCStr<'b> {

@@ -129,21 +129,16 @@ pub unsafe extern "C" fn git_fs_path_basename_offset(buffer: Option<&GitStr>) ->
 ///
 /// # Safety
 ///
-/// `path` is a NUL-terminated string.
+/// `path` is NULL (-1) or a NUL-terminated string, unwritten during the
+/// call.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_fs_path_root(path: *const c_char) -> c_int {
-    if path.is_null() {
+pub unsafe extern "C" fn git_fs_path_root(path: CStrArg<'_>) -> c_int {
+    let Some(path) = RawCStr::from_arg(path) else {
         return -1;
-    }
+    };
     // Only the bytes C reads: at most the first five, never past the NUL
-    // (`root_with`'s contract), so no `strlen`.
-    barrier(|| {
-        root_with(|i| {
-            // SAFETY: `path` is a NUL-terminated string and `i` is at most
-            // the index of its NUL.
-            unsafe { path.cast::<u8>().wrapping_add(i).read() }
-        })
-    })
+    // (`root_with` reads so, as `CBytes::at` requires), so no `strlen`.
+    barrier(|| root_with(|i| path.at(i)))
 }
 
 /// `git_fs_path_to_dir`.
@@ -507,21 +502,13 @@ contains_fn!(git_fs_path_contains_file => contains_file);
 ///
 /// # Safety
 ///
-/// `one` and `two` are NUL-terminated strings.
+/// `one` and `two` are NULL (0) or NUL-terminated strings, unwritten
+/// during the call.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn git_fs_path_common_dirlen(
-    one: *const c_char,
-    two: *const c_char,
-) -> usize {
-    let (Some(one), Some(two)) = (NonNull::new(one.cast_mut()), NonNull::new(two.cast_mut()))
-    else {
+pub unsafe extern "C" fn git_fs_path_common_dirlen(one: CStrArg<'_>, two: CStrArg<'_>) -> usize {
+    let (Some(one), Some(two)) = (RawCStr::from_arg(one), RawCStr::from_arg(two)) else {
         return 0;
     };
-    // SAFETY: the caller passes NUL-terminated strings, unwritten during
-    // the call.
-    let one = unsafe { RawCStr::new(one) };
-    // SAFETY: as above.
-    let two = unsafe { RawCStr::new(two) };
     barrier(|| common_dirlen_with(one, two))
 }
 
