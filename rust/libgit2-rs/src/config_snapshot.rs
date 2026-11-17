@@ -18,6 +18,7 @@ use crate::config::{
 use crate::config_list::ConfigList;
 use crate::config_mem::{arg, error_readonly};
 use crate::repository::GitRepository as git_repository;
+use crate::util::cabi::Out;
 use crate::util::errors::{ErrorCode, Result};
 
 /// `config_snapshot_backend`.
@@ -29,10 +30,14 @@ pub struct SnapshotBackend {
     list: Mutex<Option<Arc<ConfigList>>>,
 }
 
-// SAFETY: `source` is only used by `open`, under C's contract that it is
-// live then (backends may be used from any thread); the rest is `Sync`.
+// SAFETY: the fields are `list` (a `Mutex` of a `Send + Sync` list) and
+// `source`, a pointer to another backend that is dereferenced only by
+// `open`, when `backend_snapshot`'s contract keeps it live; a backend may
+// be used from any thread and from several at once (sys/config.h; see
+// `ConfigBackendCell`), so `open` may run on any thread.
 unsafe impl Send for SnapshotBackend {}
-// SAFETY: as above.
+// SAFETY: as for `Send`: through `&SnapshotBackend` only `open` reaches
+// `source`, which C calls on any thread, and `list` is behind its lock.
 unsafe impl Sync for SnapshotBackend {}
 
 impl SnapshotBackend {
@@ -43,14 +48,19 @@ impl SnapshotBackend {
     /// `config_snapshot_open`: copy the source's entries.
     fn open(&self) -> Result<()> {
         let mut list = ConfigList::new();
-        // SAFETY: the source is live during `open` (see `source`).
+        // SAFETY: `source` is a live table until the snapshot is opened
+        // (`backend_snapshot`'s contract, the only constructor), and `src`
+        // is used only during this `open`.
         let src = unsafe { BackendPtr::new(self.source) };
         let mut it = src.iterator()?;
         loop {
             match it.next_entry() {
                 Ok(be) => {
-                    // SAFETY: the entry the source's iterator holds, valid
-                    // until its next call.
+                    // SAFETY: `be` is the entry the source's iterator just
+                    // returned: a live `git_config_entry` (its first field)
+                    // whose strings are NULL or NUL-terminated, unwritten
+                    // until the iterator's next call, after `push_c` copies
+                    // them.
                     unsafe { list.push_c(be.as_ptr().cast()) }?;
                 }
                 Err(e) if e == ErrorCode::ITER_OVER => break,
@@ -63,7 +73,7 @@ impl SnapshotBackend {
     }
 
     /// `config_snapshot_get`.
-    fn get(&self, key: &[u8], out: *mut *mut git_config_backend_entry) -> c_int {
+    fn get(&self, key: &[u8], mut out: Out<'_, *mut git_config_backend_entry>) -> c_int {
         let g = self.list.lock().unwrap_or_else(|e| e.into_inner());
         let Some(list) = g.as_ref() else {
             return ErrorCode::NOT_FOUND.raw();
@@ -71,26 +81,31 @@ impl SnapshotBackend {
         match list.get(key) {
             None => ErrorCode::NOT_FOUND.raw(),
             Some(e) => {
-                let p = ConfigList::lend(list, e);
-                // SAFETY: `out` is the slot's writable out-parameter.
-                unsafe { out.write(p) };
+                out.write(ConfigList::lend(list, e));
                 0
             }
         }
     }
 
     /// `config_snapshot_iterator`.
-    fn iterator(&self, out: *mut *mut git_config_iterator) -> c_int {
+    fn iterator(&self, mut out: Out<'_, *mut git_config_iterator>) -> c_int {
         let list = self.list().unwrap_or_else(|| ConfigList::new().freeze());
-        // SAFETY: `out` is the slot's writable out-parameter.
-        unsafe { out.write(crate::config_list::iterator_new(list)) };
+        out.write(crate::config_list::iterator_new(list));
         0
     }
 }
 
 ffibox::impl_cvtable! {
-    // SAFETY: libgit2 passes each slot its backend in the marked position,
-    // and calls only the slots set here.
+    // SAFETY: libgit2 passes each slot its backend in the marked (`@cfg`)
+    // position, the only `git_config_backend *` argument; every slot runs
+    // through `impl_cvtable!`'s trampolines (state via `enter`, `free` via
+    // `release`) and keeps sys/config.h's contract (out-parameters written
+    // only on success, entries and iterators handed over); all twelve slots
+    // are set (`snapshot` in the base, to this crate's
+    // `git_config_backend_snapshot`); `version` is
+    // `GIT_CONFIG_BACKEND_VERSION` and `cfg` NULL until `add_backend` sets
+    // it, as C accepts.
+    // `readonly` is 1: the writes fail as C's do.
     unsafe impl CVtable<SnapshotBackend> for ConfigBackendCell {}
     base = git_config_backend {
         readonly: 1,
@@ -113,8 +128,10 @@ ffibox::impl_cvtable! {
     fn get(@cfg, key: *const c_char, out: *mut *mut git_config_backend_entry) -> c_int {
         on panic: slot_panicked(),
         on busy: slot_busy(),
-        // SAFETY: `key` is NUL-terminated (the slot's contract).
-        |b: &SnapshotBackend| b.get(unsafe { arg(key) }, out),
+        // SAFETY: `key` is a NUL-terminated string and `out` aligned and
+        // writable for the call (the slot's contract, sys/config.h);
+        // nothing references `*out`.
+        |b: &SnapshotBackend| b.get(unsafe { arg(key) }, unsafe { Out::from_ptr(out) }),
     }
     fn set(@cfg, name: *const c_char, value: *const c_char) -> c_int {
         on panic: slot_panicked(),
@@ -152,7 +169,9 @@ ffibox::impl_cvtable! {
     fn iterator(out: *mut *mut git_config_iterator, @cfg) -> c_int {
         on panic: slot_panicked(),
         on busy: slot_busy(),
-        |b: &SnapshotBackend| b.iterator(out),
+        // SAFETY: `out` is aligned and writable for the call (the slot's
+        // contract), and nothing references `*out`.
+        |b: &SnapshotBackend| b.iterator(unsafe { Out::from_ptr(out) }),
     }
     fn lock(@cfg) -> c_int {
         on panic: slot_panicked(),
@@ -190,11 +209,13 @@ pub unsafe fn backend_snapshot(source: NonNull<git_config_backend>) -> Backend {
         list: Mutex::new(None),
     };
     let p = CTable::<ConfigBackendCell, SnapshotBackend>::new(state).into_c();
-    // SAFETY: a table surrendered just now, released through its `free`
-    // slot (`CTable::release`), which `Backend`'s policy calls.
+    // SAFETY: `p` is the table `into_c` surrendered just now, owned by
+    // nothing else, and released through its `free` slot
+    // (`CTable::release`), which `Backend`'s policy calls.
     let b = unsafe { Backend::from_c(p.as_ptr().cast()) }.unwrap_or_else(|| unreachable!());
     debug_assert_eq!(
-        // SAFETY: the new table, read raw.
+        // SAFETY: `b` owns the live, aligned table just made; the field is
+        // copied through the raw pointer.
         unsafe { (*b.raw()).version },
         GIT_CONFIG_BACKEND_VERSION
     );
@@ -223,11 +244,13 @@ pub mod ffi {
             let Some(source) = NonNull::new(source) else {
                 return crate::util::errors::assert_arg_failed("source").raw();
             };
-            // SAFETY: `source` is live until the snapshot is opened (the
-            // contract).
+            // SAFETY: `source` is a live backend until the snapshot is
+            // opened (this export's contract).
             let b = unsafe { backend_snapshot(source) };
-            // SAFETY: `out` is writable (the contract; the slot's caller
-            // passes its own out-parameter).
+            // SAFETY: `out` is aligned and writable for the call, and no
+            // reference covers it (this export's contract; as a `snapshot`
+            // slot its caller passes a local). It stays a raw pointer: the
+            // function is also the C slot, whose type is C's.
             unsafe { out.write(b.into_c().cast()) };
             0
         })

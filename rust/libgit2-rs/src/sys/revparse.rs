@@ -24,9 +24,11 @@ pub fn ext<'r>(
     let (mut o, mut r) = (ptr::null_mut(), ptr::null_mut());
     // SAFETY: a live repository, a NUL-terminated spec, local outs.
     let e = unsafe { git_revparse_ext(&raw mut o, &raw mut r, repo.as_ptr(), spec.as_ptr()) };
-    // SAFETY: what C wrote is NULL or an object of `repo`, owned by us.
+    // SAFETY: what C wrote is NULL or an object of `repo` whose reference
+    // is now ours, adopted once.
     let o = NonNull::new(o.cast()).map(|o| unsafe { Object::adopt(o) });
-    // SAFETY: as above.
+    // SAFETY: NULL or a reference of `repo` that is now ours, adopted
+    // once.
     let r = unsafe { Reference::from_raw(r.cast()) };
     (e, o, r)
 }

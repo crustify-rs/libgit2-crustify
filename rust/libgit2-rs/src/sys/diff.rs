@@ -213,20 +213,24 @@ pub unsafe fn count_deltas(
 ) -> Result<usize, c_int> {
     let mut diff = core::ptr::null_mut();
     let r = if new_tree.is_null() {
-        // SAFETY: the caller's contract; `diff` is writable.
+        // SAFETY: `repo` is a live repository, `old_tree` NULL or a live
+        // tree of it and `index` a live index (`new_tree` is NULL), none
+        // freed during the call (this function's contract); `diff` is a
+        // local out-parameter; NULL options are the defaults.
         unsafe { git_diff_tree_to_index(&raw mut diff, repo, old_tree, index, core::ptr::null()) }
     } else {
-        // SAFETY: as above.
+        // SAFETY: as above, with the live `new_tree`.
         unsafe { git_diff_tree_to_tree(&raw mut diff, repo, old_tree, new_tree, core::ptr::null()) }
     };
     if r < 0 {
-        // SAFETY: NULL or the diff the call made.
+        // SAFETY: NULL (which `git_diff_free` accepts) or the diff the
+        // failed call made, ours, freed once.
         unsafe { git_diff_free(diff.cast()) };
         return Err(r);
     }
-    // SAFETY: the diff just made.
+    // SAFETY: the live diff the call just made, ours.
     let n = unsafe { git_diff_num_deltas(diff.cast()) };
-    // SAFETY: freed once.
+    // SAFETY: the same diff, freed once, not used after.
     unsafe { git_diff_free(diff.cast()) };
     Ok(n)
 }

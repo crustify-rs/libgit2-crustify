@@ -78,8 +78,10 @@ impl StrArray {
         if raw.strings.is_null() {
             return StrArray::new();
         }
-        // SAFETY: the caller's contract; `Option<GitCStr>` is a nullable
-        // `char *`.
+        // SAFETY: `strings` is a libgit2 allocation of `count` pointers,
+        // each NULL or a distinct libgit2 string, that nothing else frees
+        // (this function's contract); `Option<GitCStr>` is a nullable
+        // `char *`, so the buffer is a `CVec` of them.
         StrArray(
             unsafe { CVec::from_raw_parts_or_empty(raw.strings.cast(), raw.count) }
                 .unwrap_or_default(),
@@ -171,7 +173,8 @@ impl<'a> StrArrayRef<'a> {
     /// `raw` is a valid `git_strarray`: `strings` holds `count` pointers,
     /// each NULL or NUL-terminated, all readable and unwritten for `'a`.
     pub unsafe fn from_ptr(raw: *const GitStrArray) -> StrArrayRef<'a> {
-        // SAFETY: the caller passes a valid array.
+        // SAFETY: `raw` points to a valid, aligned `git_strarray` (this
+        // function's contract); it is copied by value.
         let raw = unsafe { raw.read() };
         StrArrayRef {
             raw,
@@ -221,6 +224,7 @@ impl<'a> StrArrayRef<'a> {
 pub mod ffi {
     use super::*;
     use crate::git_assert_arg;
+    use crate::util::cabi::Out;
     use crate::util::export::barrier;
 
     /// `git_strarray_copy`.
@@ -231,13 +235,16 @@ pub mod ffi {
     /// freed); `src` is NULL or a valid `git_strarray`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_strarray_copy(
-        tgt: *mut GitStrArray,
+        mut tgt: Out<'_, GitStrArray>,
         src: *const GitStrArray,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!tgt.is_null(), "tgt", -1);
             git_assert_arg!(!src.is_null(), "src", -1);
-            // SAFETY: a valid source array, read for the call.
+            // SAFETY: `src` is non-null, so a valid array whose strings are
+            // NULL or NUL-terminated and unwritten during the call (this
+            // export's contract); it is read (by value) before `tgt` is
+            // written, so it may be `tgt` itself.
             let r = StrArray::copy_from(unsafe { StrArrayRef::from_ptr(src) });
             let (out, ret) = match r {
                 Ok(a) => (a.into_raw(), 0),
@@ -249,8 +256,7 @@ pub mod ffi {
                     e.raw(),
                 ),
             };
-            // SAFETY: `tgt` is writable.
-            unsafe { tgt.write(out) };
+            tgt.write(out);
             ret
         })
     }
@@ -260,24 +266,25 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `array` is NULL or a `git_strarray` that libgit2 filled (or zeroed).
+    /// `array` is NULL or a `git_strarray` that libgit2 filled (or zeroed),
+    /// which nothing else accesses during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_strarray_dispose(array: *mut GitStrArray) {
+    pub unsafe extern "C" fn git_strarray_dispose(array: Option<&mut GitStrArray>) {
         barrier(|| {
-            if array.is_null() {
+            let Some(array) = array else {
                 return;
-            }
-            // SAFETY: `array` is a valid `git_strarray`.
-            let raw = unsafe { array.read() };
-            // SAFETY: libgit2 filled it: adopted once, and zeroed below.
-            drop(unsafe { StrArray::from_raw(raw) });
-            // SAFETY: `array` is writable.
-            unsafe {
-                array.write(GitStrArray {
+            };
+            let raw = core::mem::replace(
+                array,
+                GitStrArray {
                     strings: core::ptr::null_mut(),
                     count: 0,
-                })
-            };
+                },
+            );
+            // SAFETY: `raw` is what libgit2 filled (or zeroed) (this
+            // export's contract): adopted once, and `array` no longer holds
+            // it.
+            drop(unsafe { StrArray::from_raw(raw) });
         })
     }
 }
@@ -286,6 +293,7 @@ pub mod ffi {
 #[allow(clippy::multiple_unsafe_ops_per_block, clippy::borrow_as_ptr)] // each block's SAFETY covers its sequence
 mod tests {
     use super::*;
+    use crate::util::cabi::Out;
 
     #[test]
     fn copy_skips_null_and_disposes() {
@@ -307,11 +315,11 @@ mod tests {
         };
         // SAFETY: valid arrays, as C passes them.
         unsafe {
-            assert_eq!(ffi::git_strarray_copy(&mut tgt, &src), 0);
+            assert_eq!(ffi::git_strarray_copy(Out::from(&mut tgt), &src), 0);
             assert_eq!(tgt.count, 2);
             let r = StrArrayRef::from_ptr(&tgt);
             assert_eq!(r.iter().collect::<Vec<_>>(), [c"x", c"y"]);
-            ffi::git_strarray_dispose(&mut tgt);
+            ffi::git_strarray_dispose(Some(&mut tgt));
         }
         assert!(tgt.strings.is_null() && tgt.count == 0);
         let empty = GitStrArray {
@@ -320,7 +328,7 @@ mod tests {
         };
         // SAFETY: as above.
         unsafe {
-            assert_eq!(ffi::git_strarray_copy(&mut tgt, &empty), 0);
+            assert_eq!(ffi::git_strarray_copy(Out::from(&mut tgt), &empty), 0);
             assert!(tgt.strings.is_null());
         }
     }

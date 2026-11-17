@@ -4,6 +4,7 @@
 use core::ffi::{c_int, c_void};
 
 use crate::config::GitConfig;
+use crate::util::cabi::Out;
 use crate::util::errors::{ErrorCode, Result};
 
 /// `git_transaction`, opaque.
@@ -21,19 +22,23 @@ unsafe extern "C" {
 }
 
 /// `git_transaction_config_new`: a transaction over `cfg` that unlocks
-/// `data` (with `git_config_unlock`) when it is committed or freed.
+/// `data` (with `git_config_unlock`) when it is committed or freed; it is
+/// written to `out` (NULL fails as C's `GIT_ASSERT_ARG(out)`).
 ///
 /// # Safety
 ///
-/// `out` is writable; `cfg` is a live config, which the transaction keeps
-/// (without a reference) until it is freed; `data` is what
-/// `git_config_unlock` expects for `cfg`.
+/// `cfg` is a live config, which the transaction keeps (without a
+/// reference) until it is freed; `data` is what `git_config_unlock`
+/// expects for `cfg`.
 pub unsafe fn config_new(
-    out: *mut *mut git_transaction,
+    out: Out<'_, *mut git_transaction>,
     cfg: *mut GitConfig,
     data: *mut c_void,
 ) -> Result<()> {
-    // SAFETY: per this function's contract.
-    let r = unsafe { git_transaction_config_new(out, cfg.cast(), data) };
+    // SAFETY: `out` is NULL (which the C rejects) or writable for the
+    // call, and C writes it once, as `Out` would; `cfg` and `data` are as
+    // the C requires (this function's contract); the C reads neither
+    // during the call, it only stores them.
+    let r = unsafe { git_transaction_config_new(out.as_ptr(), cfg.cast(), data) };
     ErrorCode::check(r).map(drop)
 }

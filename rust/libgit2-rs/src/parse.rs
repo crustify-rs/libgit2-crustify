@@ -59,9 +59,12 @@ pub struct GitParseCtx<'a> {
     _content: PhantomData<&'a [u8]>,
 }
 
-// SAFETY: the context only reads shared, immutable content.
+// SAFETY: the fields are lengths and three pointers into the content,
+// which the context borrows as `&'a [u8]` (`PhantomData`): it is shared,
+// never written through the context, and `[u8]` is `Sync`, so the context
+// may move to and be read from any thread.
 unsafe impl Send for GitParseCtx<'_> {}
-// SAFETY: as above.
+// SAFETY: as for `Send`: `&GitParseCtx` only reads the content.
 unsafe impl Sync for GitParseCtx<'_> {}
 
 impl Default for GitParseCtx<'_> {
@@ -84,13 +87,16 @@ impl Default for GitParseCtx<'_> {
 ///
 /// # Safety
 ///
-/// When `len > 0`, `p` is valid for `len` bytes for `'a`.
+/// When `len > 0`, `p` is valid for reads of `len` bytes for `'a`, and
+/// nothing writes them then.
 #[inline(always)]
 unsafe fn slice<'a>(p: *const u8, len: usize) -> &'a [u8] {
     if len == 0 {
         &[]
     } else {
-        // SAFETY: the caller's contract.
+        // SAFETY: `len > 0`, so `p` is valid for reads of `len` bytes for
+        // `'a` (this function's contract), which nothing writes then; `u8`
+        // has alignment 1, and a valid range is at most `isize::MAX`.
         unsafe { core::slice::from_raw_parts(p, len) }
     }
 }
@@ -128,7 +134,8 @@ impl<'a> GitParseCtx<'a> {
     /// The whole content.
     #[inline]
     pub fn content(&self) -> &'a [u8] {
-        // SAFETY: the invariant.
+        // SAFETY: the invariant: `content_len` bytes at `content`, borrowed
+        // for `'a`.
         unsafe { slice(self.content, self.content_len) }
     }
 
@@ -272,6 +279,7 @@ pub mod ffi {
     use core::ffi::{c_char, c_int};
 
     use super::*;
+    use crate::git_arg;
     use crate::git_assert;
     use crate::oid::{git_oid_t, oid_hexsize};
     use crate::util::export::{barrier, bytes, status};
@@ -292,8 +300,9 @@ pub mod ffi {
         content_len: usize,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller keeps the content alive while the context
-            // is used: that is the context's `'static` here.
+            // SAFETY: `content` is NULL or readable, and unwritten, for
+            // `content_len` bytes for as long as the context is used (this
+            // export's contract): that is the context's `'static` here.
             let content = unsafe { bytes(content, content_len) };
             ctx.write(GitParseCtx::new(content));
             0
@@ -312,55 +321,45 @@ pub mod ffi {
         ctx.write(c);
     }
 
-    /// The context, exclusively for the call.
-    ///
-    /// # Safety
-    ///
-    /// `ctx` is a valid context (made by `git_parse_ctx_init` and then
-    /// only advanced) whose content is alive; nothing else uses it during
-    /// the call.
-    unsafe fn ctx_mut<'c>(ctx: *mut Ctx) -> &'c mut Ctx {
-        // SAFETY: the caller's contract.
-        unsafe { &mut *ctx }
-    }
-
     /// `git_parse_advance_line`.
     ///
     /// # Safety
     ///
-    /// As [`ctx_mut`].
+    /// `ctx` is NULL (an invalid argument; C crashes) or a valid context
+    /// (made by `git_parse_ctx_init` and then only advanced) whose content
+    /// is alive, and which nothing else uses during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_parse_advance_line(ctx: *mut Ctx) {
-        // SAFETY: forwarded.
-        barrier(|| unsafe { ctx_mut(ctx) }.advance_line())
+    pub unsafe extern "C" fn git_parse_advance_line(ctx: Option<&mut Ctx>) {
+        barrier(|| git_arg!(ctx, "ctx", ()).advance_line())
     }
 
     /// `git_parse_advance_chars`.
     ///
     /// # Safety
     ///
-    /// As [`ctx_mut`].
+    /// `ctx` is NULL (an invalid argument; C crashes) or a valid context
+    /// (made by `git_parse_ctx_init` and then only advanced) whose content
+    /// is alive, and which nothing else uses during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_parse_advance_chars(ctx: *mut Ctx, char_cnt: usize) {
-        // SAFETY: forwarded.
-        barrier(|| unsafe { ctx_mut(ctx) }.advance_chars(char_cnt))
+    pub unsafe extern "C" fn git_parse_advance_chars(ctx: Option<&mut Ctx>, char_cnt: usize) {
+        barrier(|| git_arg!(ctx, "ctx", ()).advance_chars(char_cnt))
     }
 
     /// `git_parse_advance_expected`.
     ///
     /// # Safety
     ///
-    /// As [`ctx_mut`]; `expected` is readable for `expected_len` bytes.
+    /// `ctx` as for [`git_parse_advance_line`]; `expected` is readable for `expected_len` bytes.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_parse_advance_expected(
-        ctx: *mut Ctx,
+        ctx: Option<&mut Ctx>,
         expected: *const c_char,
         expected_len: usize,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: forwarded.
-            let ctx = unsafe { ctx_mut(ctx) };
-            // SAFETY: `expected_len` readable bytes.
+            let ctx = git_arg!(ctx, "ctx", -1);
+            // SAFETY: `expected` is readable, and unwritten, for
+            // `expected_len` bytes during the call (this export's contract).
             let e = unsafe { bytes(expected, expected_len) };
             status(ctx.advance_expected(e))
         })
@@ -370,44 +369,43 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// As [`ctx_mut`].
+    /// `ctx` is NULL (an invalid argument; C crashes) or a valid context
+    /// (made by `git_parse_ctx_init` and then only advanced) whose content
+    /// is alive, and which nothing else uses during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_parse_advance_ws(ctx: *mut Ctx) -> c_int {
-        // SAFETY: forwarded.
-        barrier(|| status(unsafe { ctx_mut(ctx) }.advance_ws()))
+    pub unsafe extern "C" fn git_parse_advance_ws(ctx: Option<&mut Ctx>) -> c_int {
+        barrier(|| status(git_arg!(ctx, "ctx", -1).advance_ws()))
     }
 
     /// `git_parse_advance_nl`.
     ///
     /// # Safety
     ///
-    /// As [`ctx_mut`].
+    /// `ctx` is NULL (an invalid argument; C crashes) or a valid context
+    /// (made by `git_parse_ctx_init` and then only advanced) whose content
+    /// is alive, and which nothing else uses during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_parse_advance_nl(ctx: *mut Ctx) -> c_int {
-        // SAFETY: forwarded.
-        barrier(|| status(unsafe { ctx_mut(ctx) }.advance_nl()))
+    pub unsafe extern "C" fn git_parse_advance_nl(ctx: Option<&mut Ctx>) -> c_int {
+        barrier(|| status(git_arg!(ctx, "ctx", -1).advance_nl()))
     }
 
     /// `git_parse_advance_digit`.
     ///
     /// # Safety
     ///
-    /// As [`ctx_mut`]; `out` is writable.
+    /// `ctx` as for [`git_parse_advance_line`]; `out` is writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_parse_advance_digit(
         mut out: Out<'_, i64>,
-        ctx: *mut Ctx,
+        ctx: Option<&mut Ctx>,
         base: c_int,
     ) -> c_int {
-        barrier(|| {
-            // SAFETY: forwarded.
-            match unsafe { ctx_mut(ctx) }.advance_digit(base) {
-                Ok(v) => {
-                    out.write(v);
-                    0
-                }
-                Err(e) => e.raw(),
+        barrier(|| match git_arg!(ctx, "ctx", -1).advance_digit(base) {
+            Ok(v) => {
+                out.write(v);
+                0
             }
+            Err(e) => e.raw(),
         })
     }
 
@@ -416,23 +414,24 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// As [`ctx_mut`]; `out` is writable.
+    /// `ctx` as for [`git_parse_advance_line`]; `out` is writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_parse_advance_oid(
-        out: *mut Oid,
-        ctx: *mut Ctx,
+        out: Out<'_, Oid>,
+        ctx: Option<&mut Ctx>,
         oid_type: git_oid_t,
     ) -> c_int {
         barrier(|| {
             let hexsize = oid_hexsize(oid_type);
             git_assert!(hexsize != 0, "oid_hexsize", -1);
-            // SAFETY: forwarded.
-            let ctx = unsafe { ctx_mut(ctx) };
+            let ctx = git_arg!(ctx, "ctx", -1);
             let line = ctx.line();
             if line.len() < hexsize {
                 return -1;
             }
-            // SAFETY: `out` is writable and the line has `hexsize` bytes.
+            // SAFETY: `line` is a readable slice of at least `hexsize`
+            // bytes, which nothing writes during the call; `out` is NULL or
+            // writable (this export's contract, carried by `Out`).
             let r = unsafe {
                 crate::oid::ffi::git_oid_from_prefix(out, line.as_ptr().cast(), hexsize, oid_type)
             };
@@ -448,16 +447,15 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// As [`ctx_mut`]; `out` is writable.
+    /// `ctx` as for [`git_parse_advance_line`]; `out` is writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_parse_peek(
         mut out: Out<'_, c_char>,
-        ctx: *mut Ctx,
+        ctx: Option<&mut Ctx>,
         flags: c_int,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: forwarded.
-            let ctx = unsafe { ctx_mut(ctx) };
+            let ctx = git_arg!(ctx, "ctx", -1);
             match ctx.peek(flags & GIT_PARSE_PEEK_SKIP_WHITESPACE != 0) {
                 Some(c) => {
                     out.write(c as c_char);

@@ -19,6 +19,7 @@ use crate::config_list::{ConfigList, EntryMeta};
 use crate::config_parse::{self, ParseHandler};
 use crate::git_error_set;
 use crate::repository::GitRepository as git_repository;
+use crate::util::cabi::{CStrArg, Out};
 use crate::util::ctype_compat::tolower;
 use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
 
@@ -145,24 +146,20 @@ impl MemBackend {
     }
 
     /// `config_memory_get`.
-    fn get(&self, key: &[u8], out: *mut *mut git_config_backend_entry) -> c_int {
+    fn get(&self, key: &[u8], mut out: Out<'_, *mut git_config_backend_entry>) -> c_int {
         let list = self.list.lock().unwrap_or_else(|e| e.into_inner());
         match list.get(key) {
             None => ErrorCode::NOT_FOUND.raw(),
             Some(e) => {
-                let p = ConfigList::lend(&list, e);
-                // SAFETY: `out` is the slot's writable out-parameter.
-                unsafe { out.write(p) };
+                out.write(ConfigList::lend(&list, e));
                 0
             }
         }
     }
 
     /// `config_memory_iterator`.
-    fn iterator(&self, out: *mut *mut git_config_iterator) -> c_int {
-        let it = crate::config_list::iterator_new(self.list());
-        // SAFETY: `out` is the slot's writable out-parameter.
-        unsafe { out.write(it) };
+    fn iterator(&self, mut out: Out<'_, *mut git_config_iterator>) -> c_int {
+        out.write(crate::config_list::iterator_new(self.list()));
         0
     }
 }
@@ -171,18 +168,25 @@ impl MemBackend {
 ///
 /// # Safety
 ///
-/// `p` is NULL or NUL-terminated, for the call.
+/// `p` is NULL or NUL-terminated, and unwritten for `'a` (the slot's
+/// call).
 pub(crate) unsafe fn arg<'a>(p: *const c_char) -> &'a [u8] {
-    if p.is_null() {
-        return b"";
-    }
-    // SAFETY: per the contract.
-    unsafe { CStr::from_ptr(p) }.to_bytes()
+    // SAFETY: this function's contract is `CStrArg::from_ptr`'s; NULL is
+    // `""`.
+    unsafe { CStrArg::from_ptr(p) }.to_bytes()
 }
 
 ffibox::impl_cvtable! {
-    // SAFETY: libgit2 passes each slot its backend in the marked position,
-    // and calls only the slots set here (all of them but none).
+    // SAFETY: libgit2 passes each slot its backend in the marked (`@cfg`)
+    // position, the only `git_config_backend *` argument; every slot runs
+    // through `impl_cvtable!`'s trampolines (state via `enter`, `free` via
+    // `release`) and keeps sys/config.h's contract (out-parameters written
+    // only on success, entries and iterators handed over); all twelve slots
+    // are set (`snapshot` in the base, to this crate's
+    // `git_config_backend_snapshot`); `version` is
+    // `GIT_CONFIG_BACKEND_VERSION` and `cfg` NULL until `add_backend` sets
+    // it, as C accepts.
+    // `readonly` is 1: the writes fail as C's do.
     unsafe impl CVtable<MemBackend> for ConfigBackendCell {}
     base = git_config_backend {
         readonly: 1,
@@ -202,8 +206,10 @@ ffibox::impl_cvtable! {
     fn get(@cfg, key: *const c_char, out: *mut *mut git_config_backend_entry) -> c_int {
         on panic: slot_panicked(),
         on busy: slot_busy(),
-        // SAFETY: `key` is NUL-terminated (the slot's contract).
-        |b: &MemBackend| b.get(unsafe { arg(key) }, out),
+        // SAFETY: `key` is a NUL-terminated string and `out` aligned and
+        // writable for the call (the slot's contract, sys/config.h);
+        // nothing references `*out`.
+        |b: &MemBackend| b.get(unsafe { arg(key) }, unsafe { Out::from_ptr(out) }),
     }
     fn set(@cfg, name: *const c_char, value: *const c_char) -> c_int {
         on panic: slot_panicked(),
@@ -241,7 +247,9 @@ ffibox::impl_cvtable! {
     fn iterator(out: *mut *mut git_config_iterator, @cfg) -> c_int {
         on panic: slot_panicked(),
         on busy: slot_busy(),
-        |b: &MemBackend| b.iterator(out),
+        // SAFETY: `out` is aligned and writable for the call (the slot's
+        // contract), and nothing references `*out`.
+        |b: &MemBackend| b.iterator(unsafe { Out::from_ptr(out) }),
     }
     fn lock(@cfg) -> c_int {
         on panic: slot_panicked(),
@@ -268,8 +276,9 @@ fn backend_new(source: Source, backend_type: Option<&[u8]>, origin_path: Option<
         list: Mutex::new(ConfigList::new().freeze()),
     };
     let p = CTable::<ConfigBackendCell, MemBackend>::new(state).into_c();
-    // SAFETY: a table surrendered just now, released through its `free`
-    // slot (`CTable::release`), which `Backend`'s policy calls.
+    // SAFETY: `p` is the table `into_c` surrendered just now, owned by
+    // nothing else, and released through its `free` slot
+    // (`CTable::release`), which `Backend`'s policy calls.
     unsafe { Backend::from_c(p.as_ptr().cast()) }.unwrap_or_else(|| unreachable!())
 }
 
@@ -303,7 +312,6 @@ pub fn backend_from_values(
 /// The exports of `config_mem.c`.
 pub mod ffi {
     use super::*;
-    use crate::util::cabi::Out;
     use crate::util::export::barrier;
     use crate::{git_assert_arg, git_error_set};
 
@@ -311,18 +319,18 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `opts` is NULL or valid, its strings NULL or NUL-terminated.
+    /// The strings of `opts` are NULL or NUL-terminated, and unwritten for
+    /// `'a`.
     unsafe fn options<'a>(
-        opts: *const git_config_backend_memory_options,
+        opts: Option<&git_config_backend_memory_options>,
     ) -> (Option<&'a [u8]>, Option<&'a [u8]>) {
-        if opts.is_null() {
+        let Some(o) = opts else {
             return (None, None);
-        }
-        // SAFETY: per the contract.
-        let o = unsafe { &*opts };
+        };
         let s = |p: *const c_char| {
-            // SAFETY: per the contract.
-            (!p.is_null()).then(|| unsafe { arg(p) })
+            // SAFETY: each string is NULL or NUL-terminated, unwritten for
+            // `'a` (this function's contract).
+            unsafe { CStrArg::from_ptr(p) }.get().map(CStr::to_bytes)
         };
         (s(o.backend_type), s(o.origin_path))
     }
@@ -334,7 +342,7 @@ pub mod ffi {
     /// `opts` is NULL or writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_backend_memory_options_init(
-        opts: *mut git_config_backend_memory_options,
+        mut opts: Out<'_, git_config_backend_memory_options>,
         version: c_uint,
     ) -> c_int {
         barrier(|| {
@@ -347,14 +355,11 @@ pub mod ffi {
                 )
                 .raw();
             }
-            // SAFETY: `opts` is writable.
-            unsafe {
-                opts.write(git_config_backend_memory_options {
-                    version: GIT_CONFIG_BACKEND_MEMORY_OPTIONS_VERSION,
-                    backend_type: core::ptr::null(),
-                    origin_path: core::ptr::null(),
-                })
-            };
+            opts.write(git_config_backend_memory_options {
+                version: GIT_CONFIG_BACKEND_MEMORY_OPTIONS_VERSION,
+                backend_type: core::ptr::null(),
+                origin_path: core::ptr::null(),
+            });
             0
         })
     }
@@ -363,19 +368,22 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` is writable; `cfg` is readable for `len` bytes; `opts` as
-    /// `options` requires.
+    /// `out` is writable; `cfg` is readable for `len` bytes; `opts` is NULL
+    /// or valid options whose strings are NULL or NUL-terminated, none
+    /// written during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_backend_from_string(
         mut out: Out<'_, *mut git_config_backend>,
         cfg: *const c_char,
         len: usize,
-        opts: *mut git_config_backend_memory_options,
+        opts: Option<&git_config_backend_memory_options>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `cfg` is readable for `len` bytes (the contract).
+            // SAFETY: `cfg` is readable, and unwritten, for `len` bytes
+            // during the call (this export's contract).
             let text = unsafe { crate::util::export::bytes(cfg.cast(), len) };
-            // SAFETY: `opts` is NULL or valid (the contract).
+            // SAFETY: the strings of `opts` are NULL or NUL-terminated,
+            // unwritten during the call (this export's contract).
             let (t, o) = unsafe { options(opts) };
             match backend_from_string(text, t, o) {
                 Ok(b) => {
@@ -392,24 +400,28 @@ pub mod ffi {
     /// # Safety
     ///
     /// `out` is writable; `values` is readable for `len` NUL-terminated
-    /// strings; `opts` as `options` requires.
+    /// strings; `opts` as for `git_config_backend_from_string`; none is
+    /// written during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_backend_from_values(
         mut out: Out<'_, *mut git_config_backend>,
         values: *const *const c_char,
         len: usize,
-        opts: *mut git_config_backend_memory_options,
+        opts: Option<&git_config_backend_memory_options>,
     ) -> c_int {
         barrier(|| {
             let ptrs = if len == 0 {
                 &[][..]
             } else {
-                // SAFETY: per the contract.
+                // SAFETY: `values` is an aligned C array of `len` pointers
+                // (so at most `isize::MAX` bytes), readable and unwritten
+                // during the call (this export's contract).
                 unsafe { core::slice::from_raw_parts(values, len) }
             };
-            // SAFETY: per the contract.
+            // SAFETY: each pointer is a NUL-terminated string, unwritten
+            // during the call (this export's contract).
             let v: Vec<&[u8]> = ptrs.iter().map(|&p| unsafe { arg(p) }).collect();
-            // SAFETY: per the contract.
+            // SAFETY: as in `git_config_backend_from_string`.
             let (t, o) = unsafe { options(opts) };
             match backend_from_values(&v, t, o) {
                 Ok(b) => {

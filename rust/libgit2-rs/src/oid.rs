@@ -1036,10 +1036,14 @@ impl<'a> OidShortener<'a> {
     }
 }
 
-// SAFETY: the tails are shared borrows of `[u8]` (`Sync`), so the shortener
-// may move to, and be read from, another thread.
+// SAFETY: the fields are the nodes (`Vec` of plain data, but for each
+// leaf's tail pointer), `min_length` and `full`. A tail points into an id
+// that is borrowed as `&'a [u8]` (the `PhantomData`, `add`) or, through the
+// C API, that C keeps alive and unwritten until the shortener is freed;
+// shared bytes that nothing writes may be read from any thread.
 unsafe impl Send for OidShortener<'_> {}
-// SAFETY: as above; `&OidShortener` only reads.
+// SAFETY: as for `Send`; through `&OidShortener` only `min_length` is
+// read (every method that follows a tail takes `&mut self`).
 unsafe impl Sync for OidShortener<'_> {}
 
 // ---------------------------------------------------------------------------
@@ -1056,6 +1060,7 @@ pub mod ffi {
     use super::*;
     use crate::git_assert_arg;
     use crate::util::alloc;
+    use crate::util::cabi::Out;
     use crate::util::export::{barrier, status};
 
     /// `git_oid__empty_blob_sha1`.
@@ -1075,7 +1080,7 @@ pub mod ffi {
     /// non-hex byte or `len` bytes, whichever comes first.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oid_from_prefix(
-        out: *mut Oid,
+        out: Out<'_, Oid>,
         str: *const c_char,
         len: usize,
         type_: git_oid_t,
@@ -1083,29 +1088,37 @@ pub mod ffi {
         barrier(|| {
             git_assert_arg!(!out.is_null(), "out", -1);
             git_assert_arg!(!str.is_null(), "str", -1);
-            // SAFETY: the caller's contract.
+            // SAFETY: `str` is non-null, so readable up to its first non-hex
+            // byte or `len` bytes, and unwritten during the call (this
+            // export's contract).
             status(unsafe { from_prefix_raw(out, str.cast(), len, type_) })
         })
     }
 
-    /// The body of `git_oid_from_prefix`.
+    /// The body of `git_oid_from_prefix`: the id is written to `out` (even
+    /// partly parsed, as C leaves it on failure).
     ///
     /// # Safety
     ///
-    /// As [`git_oid_from_prefix`], with both pointers non-null.
+    /// `s` is readable, and unwritten during the call, up to its first
+    /// non-hex byte or `len` bytes, whichever comes first.
     #[inline(always)]
-    unsafe fn from_prefix_raw(out: *mut Oid, s: *const u8, len: usize, t: git_oid_t) -> Result<()> {
+    unsafe fn from_prefix_raw(
+        mut out: Out<'_, Oid>,
+        s: *const u8,
+        len: usize,
+        t: git_oid_t,
+    ) -> Result<()> {
         prefix_checks(len, oid_hexsize(t))?;
         let mut oid = Oid {
             kind: t as u8,
             id: [0; GIT_OID_MAX_SIZE],
         };
-        // SAFETY: `i < len`, and `parse_hex_into` reads in order and stops
-        // at the first non-hex byte: the caller's guarantee covers it.
+        // SAFETY: `parse_hex_into` reads byte `i < len` only after bytes
+        // `0..i` were hex digits, so within what this function's contract
+        // makes readable.
         let r = parse_hex_into(&mut oid.id, len, |i| unsafe { s.wrapping_add(i).read() });
-        // SAFETY: `out` is writable (the caller's contract); C leaves the
-        // partial result there on failure too.
-        unsafe { out.write(oid) };
+        out.write(oid);
         r.map_err(|()| oid_error_invalid("contains invalid characters"))
     }
 
@@ -1116,7 +1129,7 @@ pub mod ffi {
     /// `out` is NULL or writable; `str` is NULL or a NUL-terminated string.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oid_from_string(
-        out: *mut Oid,
+        mut out: Out<'_, Oid>,
         str: *const c_char,
         type_: git_oid_t,
     ) -> c_int {
@@ -1127,9 +1140,10 @@ pub mod ffi {
             }
             git_assert_arg!(!out.is_null(), "out", -1);
             git_assert_arg!(!str.is_null(), "str", -1);
-            // SAFETY: a NUL-terminated string is readable up to its NUL,
+            // SAFETY: `str` is non-null, so a NUL-terminated string (this
+            // export's contract), readable and unwritten up to its NUL,
             // which is not a hex digit.
-            if let Err(e) = unsafe { from_prefix_raw(out, str.cast(), hexsize, type_) } {
+            if let Err(e) = unsafe { from_prefix_raw(out.reborrow(), str.cast(), hexsize, type_) } {
                 return e.raw();
             }
             // SAFETY: the `hexsize` bytes before were digits, so not the NUL:
@@ -1182,16 +1196,17 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `str` is writable for `n` bytes (it may be uninitialized; not
-    /// aliasing `oid`); `oid` is NULL or a valid oid.
+    /// `str` is writable for `n` bytes (it may be uninitialized) and does
+    /// not overlap `oid`; `oid` is NULL or a valid oid, unwritten during the
+    /// call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_oid_nfmt(str: *mut c_char, n: usize, oid: *const Oid) -> c_int {
+    pub unsafe extern "C" fn git_oid_nfmt(str: *mut c_char, n: usize, oid: Option<&Oid>) -> c_int {
         barrier(|| {
             let dst = str.cast::<u8>();
-            // SAFETY: NULL or a valid oid.
-            let Some(oid) = (unsafe { oid.as_ref() }) else {
-                // SAFETY: `n` writable bytes (C's output buffers may be
-                // uninitialized: they are only written, through the pointer).
+            let Some(oid) = oid else {
+                // SAFETY: `str` is writable for `n` bytes (this export's
+                // contract; C's output buffers may be uninitialized: they
+                // are only written, through the pointer).
                 unsafe { ptr::write_bytes(dst, 0, n) };
                 return 0;
             };
@@ -1202,10 +1217,11 @@ pub mod ffi {
             let k = n.min(hex_size);
             let mut buf = [0u8; GIT_OID_MAX_HEXSIZE];
             fmt_substr(&mut buf[..k], &oid.id, 0, k);
-            // SAFETY: `k <= n` writable bytes, not overlapping the local.
+            // SAFETY: `k <= n` bytes of `str`, writable (this export's
+            // contract), overlapping neither the local nor `oid`.
             unsafe { ptr::copy_nonoverlapping(buf.as_ptr(), dst, k) };
             if n > hex_size {
-                // SAFETY: the rest of the `n` bytes.
+                // SAFETY: the rest of the `n` writable bytes of `str`.
                 unsafe { ptr::write_bytes(dst.wrapping_add(hex_size), 0, n - hex_size) };
             }
             0
@@ -1217,7 +1233,7 @@ pub mod ffi {
     /// # Safety
     ///
     /// `oid` is a valid oid; `str` is writable for its hex size (it may be
-    /// uninitialized).
+    /// uninitialized) and does not overlap `oid`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oid_fmt(str: *mut c_char, oid: Option<&Oid>) -> c_int {
         barrier(|| {
@@ -1228,7 +1244,8 @@ pub mod ffi {
             }
             let mut buf = [0u8; GIT_OID_MAX_HEXSIZE];
             fmt_substr(&mut buf[..hex_size], &oid.id, 0, hex_size);
-            // SAFETY: `hex_size` writable bytes, not overlapping the local.
+            // SAFETY: `str` is writable for `hex_size` bytes (this export's
+            // contract), overlapping neither the local nor `oid`.
             unsafe { ptr::copy_nonoverlapping(buf.as_ptr(), str.cast::<u8>(), hex_size) };
             0
         })
@@ -1239,7 +1256,9 @@ pub mod ffi {
     /// # Safety
     ///
     /// `oid` is a valid oid; `str` is writable for its hex size + 1 (it may
-    /// be uninitialized).
+    /// be uninitialized) and does not overlap `oid` (`oid` is a reference
+    /// for the whole call: a write into it through `str` would be undefined
+    /// behaviour, even after the id is copied).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oid_pathfmt(str: *mut c_char, oid: Option<&Oid>) -> c_int {
         barrier(|| {
@@ -1249,11 +1268,11 @@ pub mod ffi {
                 return oid_error_invalid("unknown type").raw();
             }
             // Written in place, as C does: going through a local and a copy
-            // stalls on store forwarding (oid/pathfmt, perf WP). The id is a
-            // copy, so `str` may even overlap the oid.
-            // SAFETY: `str` is writable for `hex_size + 1` bytes (contract),
-            // which nothing else accesses during the call; `MaybeUninit`
-            // admits them uninitialized.
+            // stalls on store forwarding (oid/pathfmt, perf WP).
+            // SAFETY: `str` is writable for `hex_size + 1` bytes (at most
+            // `GIT_OID_MAX_HEXSIZE + 1`), which nothing else accesses during
+            // the call and which do not overlap `oid` (this export's
+            // contract); `MaybeUninit` admits them uninitialized.
             let out = unsafe {
                 core::slice::from_raw_parts_mut(
                     str.cast::<core::mem::MaybeUninit<u8>>(),
@@ -1327,19 +1346,18 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` is NULL or writable for `n` bytes; `oid` is NULL or valid.
+    /// `out` is NULL or writable for `n` bytes, not overlapping `oid`;
+    /// `oid` is NULL or valid, unwritten during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oid_tostr(
         out: *mut c_char,
         n: usize,
-        oid: *const Oid,
+        oid: Option<&Oid>,
     ) -> *mut c_char {
         barrier(|| {
             if out.is_null() || n == 0 {
                 return c"".as_ptr().cast_mut();
             }
-            // SAFETY: NULL or a valid oid.
-            let oid = unsafe { oid.as_ref() };
             let hex_size = oid.map_or(0, Oid::hexsize);
             let n = n.min(hex_size + 1);
             let mut buf = [0u8; GIT_OID_MAX_HEXSIZE + 1];
@@ -1352,8 +1370,9 @@ pub mod ffi {
                 None => {}
             }
             // `buf[n - 1]` is the NUL.
-            // SAFETY: `n` is at most the caller's `n` writable bytes (which
-            // may be uninitialized), not overlapping the local.
+            // SAFETY: `n` is at most the caller's `n` writable bytes of `out`
+            // (which may be uninitialized), overlapping neither the local
+            // nor `oid` (this export's contract).
             unsafe { ptr::copy_nonoverlapping(buf.as_ptr(), out.cast::<u8>(), n) };
             out
         })
@@ -1366,7 +1385,9 @@ pub mod ffi {
     /// `out` is writable and `src` valid (they may be the same).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oid_cpy(out: *mut Oid, src: *const Oid) -> c_int {
-        // SAFETY: the caller's contract; `copy` allows overlap.
+        // SAFETY: `src` is a valid oid and `out` aligned and writable for
+        // one (this export's contract); no reference covers either, and
+        // `copy` allows them to overlap (or be the same).
         unsafe { ptr::copy(src, out, 1) };
         0
     }
@@ -1430,7 +1451,7 @@ pub mod ffi {
     /// As [`git_oid_strcmp`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_oid_streq(oid: Option<&Oid>, str: *const c_char) -> c_int {
-        // SAFETY: forwarded.
+        // SAFETY: this export's contract is `git_oid_strcmp`'s.
         if unsafe { git_oid_strcmp(oid, str) } == 0 {
             0
         } else {

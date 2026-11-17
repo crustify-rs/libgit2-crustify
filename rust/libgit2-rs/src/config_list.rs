@@ -60,10 +60,13 @@ impl Text {
     /// range is within it.
     unsafe fn bytes<'a>(self, off: usize, len: usize) -> &'a [u8] {
         debug_assert!(off + len <= self.alloc);
-        // SAFETY: per the contract: within the allocation, which nothing
-        // writes after `new`.
+        // SAFETY: `off <= off + len <= alloc` (this function's contract), so
+        // `p` stays within the live allocation of `alloc` bytes.
         let p = unsafe { self.ptr.as_ptr().add(off) };
-        // SAFETY: as above: `len` initialized bytes at `p`.
+        // SAFETY: `len` bytes at `p` are within the allocation, initialized
+        // by `new` and written by nothing after it, and the allocation is
+        // not freed for `'a` (this function's contract); `u8` has
+        // alignment 1 and `len <= alloc <= isize::MAX` (a `Box`'s size).
         unsafe { core::slice::from_raw_parts(p, len) }
     }
 
@@ -79,7 +82,9 @@ impl Text {
     /// It came from [`new`](Self::new), and is not used again.
     unsafe fn free(self) {
         let slice = core::ptr::slice_from_raw_parts_mut(self.ptr.as_ptr(), self.alloc);
-        // SAFETY: per the contract, the `Box<[u8]>` `new` leaked.
+        // SAFETY: `ptr` and `alloc` are the `Box<[u8]>` that `new` leaked
+        // (this function's contract), rebuilt and dropped once; no copy of
+        // the text is used again.
         drop(unsafe { Box::from_raw(slice) });
     }
 }
@@ -93,9 +98,10 @@ struct Key {
 
 impl Key {
     fn bytes(&self) -> &[u8] {
-        // SAFETY: a key points into a `Text` of the list that holds the
-        // map; the map is dropped before the texts (`ConfigList::drop`),
-        // and nothing writes a text.
+        // SAFETY: keys are made only by `ConfigList::push`, over the name
+        // (`len` initialized bytes) at the start of an entry's `Text`; a key
+        // lives only in that list's map, which is cleared before the texts
+        // are freed (`ConfigList::drop`), and nothing writes a text.
         unsafe { core::slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
     }
 }
@@ -204,8 +210,10 @@ pub struct ListEntry {
 impl ListEntry {
     /// The normalized name.
     pub fn name(&self) -> &[u8] {
-        // SAFETY: the text lives as long as the list, which `&self`
-        // borrows; `name_len` is within it.
+        // SAFETY: an entry exists only inside the list that made it (its
+        // fields are private, it is neither `Clone` nor built elsewhere),
+        // whose texts live as long as the list, which `&self` borrows;
+        // `name_len < alloc` (the name and its NUL are the text's start).
         unsafe { self.text.bytes(0, self.name_len) }
     }
 
@@ -248,23 +256,32 @@ pub struct ConfigList {
     strings: Vec<Text>,
 }
 
-// SAFETY: every raw pointer in a list points into allocations the list owns
-// (its texts) or at the list itself, and a list is changed only while it is
-// owned alone (before `freeze`); C only reads the entries.
+// SAFETY: the fields that are not `Send` by themselves are the raw
+// pointers: each `Text` and `Key` points into an allocation the list owns
+// (freed only by its `drop`), each entry's `base` strings into those texts,
+// and each entry's `list` at the list itself. Moving the list moves all of
+// them together, and `Text` is freed by Rust's allocator, from any thread.
 unsafe impl Send for ConfigList {}
-// SAFETY: as above; a shared list is never written, by Rust or C.
+// SAFETY: a list is written only through `&mut` (before `freeze`); a
+// frozen, shared list is never written: Rust only reads it, and C only
+// reads the entries it is lent (`base` is an `UnsafeCell` for C's sake,
+// but nothing writes it) and calls their `free`, which touches only the
+// `Arc`'s atomic count.
 unsafe impl Sync for ConfigList {}
 
 impl Drop for ConfigList {
     fn drop(&mut self) {
         self.map.clear();
         for e in self.entries.drain(..) {
-            // SAFETY: each entry's text is its own, freed once here; the
-            // list is no longer reachable (it is being dropped).
+            // SAFETY: each entry's text came from `Text::new` and is the
+            // entry's own, freed once here; the map's keys into it were
+            // cleared just above, and the list is being dropped, so no
+            // entry is lent any more (a lent entry holds a reference).
             unsafe { e.text.free() };
         }
         for s in self.strings.drain(..) {
-            // SAFETY: as above.
+            // SAFETY: as above, for the interned strings, which only the
+            // entries' `base` (dropped above) point into.
             unsafe { s.free() };
         }
     }
@@ -329,7 +346,9 @@ impl ConfigList {
     /// distinct string).
     pub fn intern(&mut self, s: &[u8]) -> Result<*const c_char> {
         for t in &self.strings {
-            // SAFETY: the list's own live text.
+            // SAFETY: an interned text of this list, live while `self` is
+            // borrowed; `alloc - 1` (its length without the NUL) is within
+            // it.
             if unsafe { t.bytes(0, t.alloc - 1) } == s {
                 return Ok(t.c_ptr(0));
             }
@@ -414,10 +433,13 @@ impl ConfigList {
     /// `entry` is a valid `git_config_entry` (its strings NUL-terminated or
     /// NULL), not written during the call.
     pub unsafe fn push_c(&mut self, entry: *const git_config_entry) -> Result<()> {
-        // SAFETY: per the contract.
+        // SAFETY: `entry` is a valid, aligned `git_config_entry` that
+        // nothing writes during the call (this function's contract).
         let e = unsafe { &*entry };
         let cs = |p: *const c_char| -> Option<&[u8]> {
-            // SAFETY: per the contract, NULL or NUL-terminated.
+            // SAFETY: each string of the entry is NULL (excluded here) or
+            // NUL-terminated, unwritten during the call (this function's
+            // contract); the bytes are copied before it returns.
             (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) }.to_bytes())
         };
         let name = cs(e.name).unwrap_or(b"");
@@ -526,8 +548,11 @@ impl ListIter {
 }
 
 ffibox::impl_cvtable! {
-    // SAFETY: libgit2 passes an iterator's `next` the iterator, second, and
-    // frees it once through `free`; `next` and `free` are both set.
+    // SAFETY: libgit2 passes an iterator's slots the iterator in the marked
+    // (`@iter`) position, the only `git_config_iterator *` argument; `next`
+    // reaches the state through `enter` and writes `entry` only on success,
+    // `free` releases through `release`, once; both are set, and the base's
+    // `backend` (NULL) and `flags` (0) are values C accepts.
     unsafe impl CVtable<ListIter> for ConfigIterator {}
     base = git_config_iterator::default();
     /// `config_iterator_next`.
@@ -536,7 +561,9 @@ ffibox::impl_cvtable! {
         on busy: crate::config::iter_busy(),
         |it: &mut ListIter| match it.next_entry() {
             Some(e) => {
-                // SAFETY: `entry` is C's writable out-parameter.
+                // SAFETY: `entry` is aligned and writable for the call
+                // (`next`'s contract, sys/config.h), and nothing
+                // references `*entry`.
                 unsafe { entry.write(e.as_backend_entry()) };
                 0
             }

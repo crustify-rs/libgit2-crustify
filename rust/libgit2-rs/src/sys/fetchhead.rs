@@ -33,6 +33,7 @@ pub unsafe fn fetchhead_foreach(
     payload: *mut c_void,
 ) -> c_int {
     // SAFETY: a live repository (C reads its git directory's path and the
-    // file) and the caller's contract.
+    // file); `cb` may be called with `payload` for each line (this
+    // function's contract).
     unsafe { git_repository_fetchhead_foreach(repo.as_ptr(), cb, payload) }
 }

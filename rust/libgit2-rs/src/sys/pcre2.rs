@@ -61,7 +61,9 @@ define_ctype!(MatchData, MatchDataRef, MatchDataMut, pcre2_match_data_8);
 // matching with one pattern from several threads at once (each with its
 // own match data) as safe, and freeing it from any thread.
 unsafe impl Send for Code {}
-// SAFETY: as above: shared access only matches.
+// SAFETY: as for `Send`: through a shared borrow a pattern is only
+// matched (`pcre2_match` takes it `const`), which PCRE2 allows from
+// several threads at once.
 unsafe impl Sync for Code {}
 // SAFETY: match data belongs to one owner, and PCRE2 frees it from any
 // thread.
@@ -129,35 +131,54 @@ pub fn match_data_create(pairs: u32) -> Option<MatchDataBox> {
     unsafe { MatchDataBox::from_c(md) }
 }
 
-/// `pcre2_match(code, subject, len, 0, 0, md, NULL)`: the number of pairs
-/// set (0 when the match data is too small), or a negative error.
-pub fn pcre2_match(code: CodeRef<'_>, subject: &[u8], md: &mut MatchDataBox) -> c_int {
+/// `pcre2_match(code, subject, len, 0, 0, md, NULL)`: on a match, the
+/// offsets PCRE2 set (two per pair: the `rc` pairs of its result, or all
+/// of them when it returns 0 because the match data is too small);
+/// otherwise its negative error code.
+///
+/// Only the pairs PCRE2 set are returned: the rest of the ovector is
+/// uninitialized (`pcre2_match_data_create` does not clear it, and a match
+/// leaves the pairs past the pattern's groups unchanged).
+pub fn pcre2_match<'m>(
+    code: CodeRef<'_>,
+    subject: &[u8],
+    md: &'m mut MatchDataBox,
+) -> Result<&'m [usize], c_int> {
+    let p = md.as_c_ptr();
     // SAFETY: `code` is a live compiled pattern (the handle's borrow);
-    // `subject` is readable for its length; `md` is exclusively ours for
-    // the call; PCRE2 keeps neither pointer.
-    unsafe {
+    // `subject` is readable for its length; `p` is the match data `md`
+    // owns, which the `&mut` makes exclusively ours for the call; PCRE2
+    // keeps neither pointer.
+    let rc = unsafe {
         pcre2_match_8(
             code.as_ptr(),
             subject.as_ptr(),
             subject.len(),
             0,
             0,
-            md.as_c_ptr(),
+            p,
             core::ptr::null_mut(),
         )
+    };
+    if rc < 0 {
+        return Err(rc);
     }
-}
-
-/// The ovector of `md`: two offsets per pair.
-pub fn ovector(md: &MatchDataBox) -> &[usize] {
-    let p = md.as_c_ptr();
-    // SAFETY: `md` is a live match data block; the accessor only reads it.
+    // SAFETY: `p` is live (owned by `md`); the accessor only reads it.
+    let count = unsafe { pcre2_get_ovector_count_8(p) };
+    let pairs = if rc == 0 {
+        count
+    } else {
+        rc.unsigned_abs().min(count)
+    };
+    // SAFETY: as for the count.
     let ptr = unsafe { pcre2_get_ovector_pointer_8(p) };
-    // SAFETY: as above.
-    let pairs = unsafe { pcre2_get_ovector_count_8(p) };
-    // SAFETY: PCRE2's ovector has `2 * pairs` offsets, owned by `md` and
-    // written only by `pcre2_match`, which needs `&mut md`.
-    unsafe { core::slice::from_raw_parts(ptr, 2 * pairs as usize) }
+    // SAFETY: the ovector has `2 * count` offsets in `md`'s allocation
+    // (`count` <= `u32::MAX`, so the length fits `isize`); the first
+    // `2 * pairs` were written by the match just made (PCRE2 sets every
+    // pair below its result, or all of them for 0); nothing writes them
+    // while the slice lives: only `pcre2_match` does, and it needs the
+    // `&mut md` this result borrows.
+    Ok(unsafe { core::slice::from_raw_parts(ptr, 2 * pairs as usize) })
 }
 
 /// Borrow a compiled pattern C holds.
@@ -167,6 +188,7 @@ pub fn ovector(md: &MatchDataBox) -> &[usize] {
 /// A non-null `code` is a live compiled pattern that is not freed for
 /// `'a`.
 pub unsafe fn code_ref<'a>(code: *mut pcre2_code_8) -> Option<CodeRef<'a>> {
-    // SAFETY: the caller's contract.
+    // SAFETY: a non-null `code` is a live compiled pattern, not freed for
+    // `'a` (this function's contract).
     unsafe { CodeRef::from_ptr(code) }
 }

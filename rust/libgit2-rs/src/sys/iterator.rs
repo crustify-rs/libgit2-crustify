@@ -113,8 +113,8 @@ impl FsIterator {
         // is writable. The iterator copies what it keeps.
         let r = unsafe { git_iterator_for_filesystem(&raw mut out, root.as_ptr(), &raw mut opts) };
         if r < 0 {
-            // SAFETY: on failure the C frees what it made; `out` is NULL or
-            // an iterator we own.
+            // SAFETY: on failure `out` is NULL (which `git_iterator_free`
+            // accepts) or an iterator the C handed us, freed once.
             unsafe { git_iterator_free(out) };
             ErrorCode::check(r)?;
         }
@@ -127,12 +127,14 @@ impl FsIterator {
     pub fn advance(&mut self) -> Option<&CStr> {
         let mut entry: *const GitIndexEntryRaw = core::ptr::null();
         let it = self.0.as_ptr();
-        // SAFETY: `it` is a live iterator we own; its `cb` table is the
-        // filesystem iterator's, whose `advance` is set.
+        // SAFETY: `it` is the live iterator `self` owns, aligned, with the
+        // layout-tested prefix; the field is copied through the pointer.
         let cb = unsafe { (*it).cb };
-        // SAFETY: as above.
+        // SAFETY: `cb` is the filesystem iterator's static callback table
+        // (layout-tested); the slot is copied through the pointer.
         let advance = unsafe { (*cb).advance }?;
-        // SAFETY: as above; `entry` is writable.
+        // SAFETY: the iterator's own `advance`, called with the iterator,
+        // which `&mut self` makes ours for the call, and a local `entry`.
         if unsafe { advance(&raw mut entry, it) } != 0 || entry.is_null() {
             return None;
         }
@@ -146,14 +148,15 @@ impl FsIterator {
                 .cast::<*const c_char>()
                 .read_unaligned()
         };
-        // SAFETY: as above.
+        // SAFETY: as above: a NUL-terminated string owned by the iterator,
+        // unchanged until its next advance, after the borrow of `self`.
         Some(unsafe { CStr::from_ptr(path) })
     }
 }
 
 impl Drop for FsIterator {
     fn drop(&mut self) {
-        // SAFETY: an iterator we own, freed once.
+        // SAFETY: the iterator `self` owns, freed once, here.
         unsafe { git_iterator_free(self.0.as_ptr()) };
     }
 }

@@ -42,10 +42,13 @@ pub struct GitCommitGraft {
 
 /// Allocate `v` in a `git__allocator` block.
 fn boxed<T>(v: T) -> Result<NonNull<T>> {
+    // `git__allocator` blocks are aligned as `malloc`'s (at least 8): a
+    // compile-time check, not a `debug_assert!`, since a release build
+    // would write misaligned otherwise.
+    const { assert!(align_of::<T>() <= 8 && size_of::<T>() > 0) };
     let p = NonNull::new(alloc::malloc(size_of::<T>()).cast::<T>()).ok_or(ErrorCode::GENERIC)?;
-    debug_assert!(align_of::<T>() <= 8);
-    // SAFETY: a fresh block of `T`'s size, 8-aligned (`git__allocator`'s
-    // memory), enough for `T`.
+    // SAFETY: a fresh, non-null block of `size_of::<T>()` bytes, aligned
+    // for `T` (checked above), that nothing else references.
     unsafe { p.as_ptr().write(v) };
     Ok(p)
 }
@@ -54,13 +57,15 @@ fn boxed<T>(v: T) -> Result<NonNull<T>> {
 ///
 /// # Safety
 ///
-/// `p` came from [`boxed`] and is not used again.
+/// `p` came from [`boxed`], is not freed elsewhere, and is not used
+/// again (no reference to it is live).
 unsafe fn unboxed<T>(p: NonNull<T>) {
-    // SAFETY: the caller's contract.
+    // SAFETY: `p` holds the initialized `T` that `boxed` wrote, dropped
+    // once (this function's contract: it is not used again).
     unsafe {
         ptr::drop_in_place(p.as_ptr());
     }
-    // SAFETY: as above.
+    // SAFETY: `p` is the `git__allocator` block `boxed` made, freed once.
     unsafe { alloc::free(p.as_ptr().cast()) };
 }
 
@@ -76,10 +81,15 @@ pub struct Grafts {
     path_checksum: [u8; SHA256_SIZE],
 }
 
-// SAFETY: the grafts own every graft in the map, plain data in
-// `git__allocator` blocks, freed from any thread.
+// SAFETY: the fields that are not `Send` by themselves are the map's raw
+// pointers: each value is a graft (an oid and a `git__allocator` array of
+// oids, plain data) in a `git__allocator` block that the grafts own alone,
+// and each key points at its own graft's oid. Moving the grafts moves that
+// ownership; `git__allocator` frees from any thread.
 unsafe impl Send for Grafts {}
-// SAFETY: shared access only reads.
+// SAFETY: through `&Grafts` the grafts are only read (`get`, `oids`,
+// `len`); every write (`add`, `remove`, `clear`, `refresh`, `parse`) takes
+// `&mut`.
 unsafe impl Sync for Grafts {}
 
 impl Drop for Grafts {
@@ -128,8 +138,9 @@ impl Grafts {
     /// `git_grafts_clear`.
     pub fn clear(&mut self) {
         for g in self.commits.values() {
-            // SAFETY: each graft is the map's, freed once (the map is
-            // cleared at once, so no key outlives its graft).
+            // SAFETY: each value is a block of `boxed` that the map owns,
+            // freed once here; the map is cleared just after, so no key or
+            // value is used again.
             unsafe { unboxed(*g) };
         }
         self.commits.clear();
@@ -217,7 +228,8 @@ impl Grafts {
             Ok(()) => {}
             Err(e) if e == ErrorCode::NOT_FOUND => {}
             Err(e) => {
-                // SAFETY: the new graft, not in the map.
+                // SAFETY: the block `boxed` just made, not in the map, freed
+                // once.
                 unsafe { unboxed(graft) };
                 return Err(e);
             }
@@ -229,7 +241,7 @@ impl Grafts {
         // its block (never moved or written) until the entry is removed.
         let key = unsafe { OidPtr::new(oid_ptr) };
         if let Err(e) = self.commits.put(key, graft) {
-            // SAFETY: the new graft, not in the map.
+            // SAFETY: as above: the failed `put` did not keep it.
             unsafe { unboxed(graft) };
             return Err(e);
         }
@@ -239,11 +251,13 @@ impl Grafts {
     /// `git_grafts_remove`: `GIT_ENOTFOUND` (no message) if `oid` has no
     /// graft.
     pub fn remove(&mut self, oid: &Oid) -> Result<()> {
-        // SAFETY: a key for the lookup only, alive during it.
+        // SAFETY: a key for the lookup only, which does not outlive the
+        // borrowed `oid`.
         let key = unsafe { OidPtr::new(NonNull::from(oid)) };
         match self.commits.remove(&key) {
             Some((_, g)) => {
-                // SAFETY: the removed graft, freed once.
+                // SAFETY: the removed graft, a block of `boxed` that the map
+                // no longer holds, freed once.
                 unsafe { unboxed(g) };
                 Ok(())
             }
@@ -253,9 +267,11 @@ impl Grafts {
 
     /// `git_grafts_get`.
     pub fn get(&self, oid: &Oid) -> Option<&GitCommitGraft> {
-        // SAFETY: a key for the lookup only.
+        // SAFETY: a key for the lookup only, which does not outlive the
+        // borrowed `oid`.
         let key = unsafe { OidPtr::new(NonNull::from(oid)) };
-        // SAFETY: the map's graft, alive while `&self` is.
+        // SAFETY: a graft of the map: a live block that is freed or written
+        // only through `&mut self`, so not while the result borrows `self`.
         self.commits.get(&key).map(|g| unsafe { g.as_ref() })
     }
 
@@ -292,7 +308,7 @@ impl Grafts {
 /// The exports of `grafts.c`.
 pub mod ffi {
     use super::*;
-    use crate::util::cabi::Out;
+    use crate::util::cabi::{CStrArg, Out};
     use crate::util::export::{barrier, bytes, status};
 
     /// `git_grafts_new`.
@@ -302,15 +318,14 @@ pub mod ffi {
     /// `out` is NULL or writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_grafts_new(
-        out: *mut *mut Grafts,
+        mut out: Out<'_, *mut Grafts>,
         oid_type: crate::oid::git_oid_t,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!out.is_null() && oid_type != 0, "out && oid_type", -1);
             match boxed(Grafts::new_raw(OidType::from_raw(oid_type))) {
                 Ok(g) => {
-                    // SAFETY: writable.
-                    unsafe { out.write(g.as_ptr()) };
+                    out.write(g.as_ptr());
                     0
                 }
                 Err(e) => e.raw(),
@@ -325,8 +340,8 @@ pub mod ffi {
     /// `out` is NULL or writable; `path` NULL or NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_grafts_open(
-        out: *mut *mut Grafts,
-        path: *const c_char,
+        mut out: Out<'_, *mut Grafts>,
+        path: CStrArg<'_>,
         oid_type: crate::oid::git_oid_t,
     ) -> c_int {
         barrier(|| {
@@ -335,12 +350,10 @@ pub mod ffi {
                 "out && path && oid_type",
                 -1
             );
-            // SAFETY: NUL-terminated.
-            let path = unsafe { CStr::from_ptr(path) };
+            let path = path.or_empty();
             match Grafts::open_raw(path, OidType::from_raw(oid_type)).and_then(boxed) {
                 Ok(g) => {
-                    // SAFETY: writable.
-                    unsafe { out.write(g.as_ptr()) };
+                    out.write(g.as_ptr());
                     0
                 }
                 Err(e) => e.raw(),
@@ -356,23 +369,26 @@ pub mod ffi {
     /// or NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_grafts_open_or_refresh(
-        out: *mut *mut Grafts,
-        path: *const c_char,
+        out: Option<&mut *mut Grafts>,
+        path: CStrArg<'_>,
         oid_type: crate::oid::git_oid_t,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(
-                !out.is_null() && !path.is_null() && oid_type != 0,
+                out.is_some() && !path.is_null() && oid_type != 0,
                 "out && path && oid_type",
                 -1
             );
-            // SAFETY: readable.
-            let g = unsafe { *out };
+            let Some(out) = out else { return -1 };
+            let g = *out;
             if g.is_null() {
-                // SAFETY: forwarded.
-                unsafe { git_grafts_open(out, path, oid_type) }
+                // SAFETY: `out` is writable (a `&mut`), `path` a string
+                // (this export's contract): `git_grafts_open`'s contract.
+                unsafe { git_grafts_open(Out::from(out), path, oid_type) }
             } else {
-                // SAFETY: live grafts.
+                // SAFETY: a non-null `*out` is live grafts that nothing
+                // else uses during the call (this export's contract), which
+                // is `git_grafts_refresh`'s.
                 unsafe { git_grafts_refresh(g) }
             }
         })
@@ -388,20 +404,12 @@ pub mod ffi {
     pub unsafe extern "C" fn git_grafts_free(grafts: *mut Grafts) {
         barrier(|| {
             if let Some(g) = NonNull::new(grafts) {
-                // SAFETY: the caller's contract.
+                // SAFETY: a non-null `grafts` came from `git_grafts_new` /
+                // `_open` (blocks of `boxed`) and is not used again (this
+                // export's contract).
                 unsafe { unboxed(g) };
             }
         })
-    }
-
-    /// Borrow C's grafts for the call.
-    ///
-    /// # Safety
-    ///
-    /// `g` is NULL or live grafts, not otherwise accessed during the call.
-    unsafe fn with<'a>(g: *mut Grafts) -> Option<&'a mut Grafts> {
-        // SAFETY: the caller's contract.
-        unsafe { g.as_mut() }
     }
 
     /// `git_grafts_clear` (NULL allowed).
@@ -411,10 +419,9 @@ pub mod ffi {
     /// `grafts` is NULL or live grafts, not otherwise accessed during the
     /// call (grafts C got from [`git_grafts_get`] are freed).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_grafts_clear(grafts: *mut Grafts) {
+    pub unsafe extern "C" fn git_grafts_clear(grafts: Option<&mut Grafts>) {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            if let Some(g) = unsafe { with(grafts) } {
+            if let Some(g) = grafts {
                 g.clear();
             }
         })
@@ -428,8 +435,10 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_grafts_refresh(grafts: *mut Grafts) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let Some(g) = (unsafe { with(grafts) }) else {
+            // SAFETY: `grafts` is NULL or live grafts that nothing else
+            // accesses during the call (this export's contract). (Raw: the
+            // repository's callers pass the pointer it holds.)
+            let Some(g) = (unsafe { grafts.as_mut() }) else {
                 return crate::util::errors::assert_arg_failed("grafts").raw();
             };
             status(g.refresh())
@@ -443,16 +452,17 @@ pub mod ffi {
     /// As [`git_grafts_clear`] (non-NULL); `buf` readable for `len` bytes.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_grafts_parse(
-        grafts: *mut Grafts,
+        grafts: Option<&mut Grafts>,
         buf: *const c_char,
         len: usize,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract (C does not check for NULL).
-            let Some(g) = (unsafe { with(grafts) }) else {
+            // (C does not check for NULL.)
+            let Some(g) = grafts else {
                 return crate::util::errors::assert_arg_failed("grafts").raw();
             };
-            // SAFETY: readable for `len` bytes.
+            // SAFETY: `buf` is readable, and unwritten, for `len` bytes
+            // during the call (this export's contract).
             status(g.parse(unsafe { bytes(buf, len) }))
         })
     }
@@ -472,10 +482,12 @@ pub mod ffi {
         let parents = core::mem::ManuallyDrop::new(parents);
         barrier(|| {
             git_assert_arg!(!grafts.is_null() && !oid.is_null(), "grafts && oid", -1);
-            // SAFETY: live grafts, not otherwise accessed (the caller's
-            // contract).
+            // SAFETY: `grafts` is non-null, so live grafts that nothing else
+            // accesses during the call (this export's contract).
             let g = unsafe { &mut *grafts };
-            // SAFETY: a valid oid (the caller's contract).
+            // SAFETY: `oid` is non-null, so a valid, aligned oid (this
+            // export's contract). It is copied before any change: it may be
+            // a graft's own oid, which `add` frees (so it stays raw).
             let oid = unsafe { oid.read() };
             status(g.add(&oid, parents.as_slice()))
         })
@@ -490,10 +502,10 @@ pub mod ffi {
     pub unsafe extern "C" fn git_grafts_remove(grafts: *mut Grafts, oid: *const Oid) -> c_int {
         barrier(|| {
             git_assert_arg!(!grafts.is_null() && !oid.is_null(), "grafts && oid", -1);
-            // SAFETY: live grafts, not otherwise accessed (the caller's
-            // contract).
+            // SAFETY: as in `git_grafts_add`.
             let g = unsafe { &mut *grafts };
-            // SAFETY: a valid oid (the caller's contract).
+            // SAFETY: as in `git_grafts_add`: copied first, as `remove` may
+            // free the graft it points into.
             let oid = unsafe { oid.read() };
             status(g.remove(&oid))
         })
@@ -508,24 +520,25 @@ pub mod ffi {
     /// during the call; `oid` NULL or valid.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_grafts_get(
-        out: *mut *mut GitCommitGraft,
+        mut out: Out<'_, *mut GitCommitGraft>,
         grafts: *mut Grafts,
-        oid: *const Oid,
+        oid: Option<&Oid>,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(
-                !out.is_null() && !grafts.is_null() && !oid.is_null(),
+                !out.is_null() && !grafts.is_null() && oid.is_some(),
                 "out && grafts && oid",
                 -1
             );
-            // SAFETY: live grafts, not modified during the call.
+            let Some(oid) = oid else { return -1 };
+            // SAFETY: `grafts` is non-null, so live grafts that nothing
+            // changes during the call (this export's contract). (Raw: the
+            // commit module passes the pointer the repository holds.)
             let g = unsafe { &*grafts };
-            // SAFETY: a valid oid.
-            let oid = unsafe { &*oid };
             match g.get(oid) {
                 Some(graft) => {
-                    // SAFETY: writable; the graft's block, which C reads.
-                    unsafe { out.write(ptr::from_ref(graft).cast_mut()) };
+                    // The graft's block, which C reads.
+                    out.write(ptr::from_ref(graft).cast_mut());
                     0
                 }
                 None => ErrorCode::NOT_FOUND.raw(),
@@ -540,20 +553,19 @@ pub mod ffi {
     /// `out` NULL or writable; `out_len` writable; `grafts` NULL or live.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_grafts_oids(
-        out: *mut *mut Oid,
+        mut out: Out<'_, *mut Oid>,
         mut out_len: Out<'_, usize>,
         grafts: *mut Grafts,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!out.is_null() && !grafts.is_null(), "out && grafts", -1);
-            // SAFETY: live grafts.
+            // SAFETY: `grafts` is non-null, so live grafts that nothing
+            // changes during the call (this export's contract). (Raw: the
+            // repository passes the pointer it holds.)
             match unsafe { &*grafts }.oids() {
                 Ok(a) => {
                     let (p, n, _) = a.into_raw_parts();
-                    // SAFETY: writable.
-                    unsafe {
-                        out.write(p);
-                    }
+                    out.write(p);
                     out_len.write(n);
                     0
                 }
@@ -568,9 +580,8 @@ pub mod ffi {
     ///
     /// `grafts` is NULL or live.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_grafts_size(grafts: *mut Grafts) -> usize {
-        // SAFETY: NULL or live.
-        unsafe { grafts.as_ref() }.map_or(0, Grafts::len)
+    pub unsafe extern "C" fn git_grafts_size(grafts: Option<&Grafts>) -> usize {
+        grafts.map_or(0, Grafts::len)
     }
 }
 

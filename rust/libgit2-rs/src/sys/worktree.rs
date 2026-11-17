@@ -49,22 +49,24 @@ impl Worktree {
         NonNull::new(out).map(Worktree).ok_or(ErrorCode::GENERIC)
     }
 
-    /// Adopt a worktree C passes in, without owning it.
+    /// The `gitlink_path` of a worktree C passes in (borrowed, not owned).
     ///
     /// # Safety
     ///
     /// `p` is a live `git_worktree` for `'a`.
     pub unsafe fn gitlink_path_of<'a>(p: NonNull<c_void>) -> Option<&'a CStr> {
-        // SAFETY: the caller's contract; `gitlink_path` is a `char *` at
+        // SAFETY: `p` is a live worktree for `'a` (this function's
+        // contract), whose `gitlink_path` is a `char *` at the layout-tested
         // `WORKTREE_GITLINK_PATH_OFFSET`.
         let s: *const c_char = unsafe { read_field(p, WORKTREE_GITLINK_PATH_OFFSET) };
-        // SAFETY: NULL or NUL-terminated, owned by the live worktree.
+        // SAFETY: NULL or a NUL-terminated string owned by the worktree,
+        // which lives, unwritten, for `'a`.
         unsafe { opt_cstr(s) }
     }
 
     /// The worktree's `gitlink_path`.
     pub fn gitlink_path(&self) -> Option<&CStr> {
-        // SAFETY: the owned, live worktree.
+        // SAFETY: the live worktree `self` owns, for the borrow of `self`.
         unsafe { Worktree::gitlink_path_of(self.0) }
     }
 }

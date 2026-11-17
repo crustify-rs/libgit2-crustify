@@ -40,6 +40,7 @@ use ffibox::{CBox, CRefSeam};
 
 use crate::buf::GitBuf;
 use crate::repository::GitRepository as git_repository;
+use crate::util::cabi::Out;
 use crate::util::errors::{self, Bytes, Error, ErrorClass, ErrorCode, Result};
 use crate::util::regexp::Regexp;
 use crate::util::str::GitStr;
@@ -262,18 +263,26 @@ ffibox::define_ctype!(
     git_config_iterator
 );
 
-// SAFETY: libgit2's contract for config backends (sys/config.h): a backend
-// may be used from any thread, and from several at once, as a repository's
-// config is (`tests/libgit2/threads`); its slots synchronise what they
-// share. The handles only call slots.
+// SAFETY: the table's fields are `version` and `readonly` (plain data),
+// `cfg` (a pointer the backend only stores and hands back) and the slots
+// (function pointers). libgit2's contract for config backends
+// (sys/config.h) is that a backend may be used from any thread, and from
+// several at once, as a repository's config is (`tests/libgit2/threads`):
+// the slots synchronise the state they share. The handles only read the
+// fields and call the slots; the one Rust write of a field (`cfg` in
+// `add_backend`, `readonly` in `rust_backend::new`) happens before the
+// table is shared.
 unsafe impl Send for ConfigBackendCell {}
-// SAFETY: as above.
+// SAFETY: as for `Send`: every slot may run concurrently with the others.
 unsafe impl Sync for ConfigBackendCell {}
-// SAFETY: an iterator is used by one thread at a time (libgit2's contract
-// for non-shared objects), and may move between threads; Rust reaches it
-// only through `&mut` (exclusive slots).
+// SAFETY: the table's fields are `backend` (a pointer the iterator only
+// stores), `flags` and the `next` / `free` slots. An iterator is used by
+// one thread at a time (libgit2's contract for non-shared objects) and may
+// move between threads: its slots keep no thread-local state.
 unsafe impl Send for ConfigIterator {}
-// SAFETY: as above: no slot is reachable through a shared borrow.
+// SAFETY: a shared borrow reaches no slot: the slots take `&mut` (the
+// `impl_cvtable!` tables are exclusive) and `IterBox` calls them only
+// through `&mut self`.
 unsafe impl Sync for ConfigIterator {}
 
 /// The `on panic:` result of this crate's table slots: C's generic
@@ -316,11 +325,14 @@ pub(crate) fn raise(e: &Error) -> ErrorCode {
 ///
 /// # Safety
 ///
-/// `b` is a live backend, released once.
+/// `b` is a live backend table that nothing uses any more, released once.
 unsafe extern "C" fn backend_free(b: *mut git_config_backend) {
-    // SAFETY: per the contract, `b` is live; the slot is read raw.
+    // SAFETY: `b` is a live, aligned table (this function's contract); the
+    // field is copied out through the raw pointer, no reference formed.
     if let Some(free) = unsafe { (*b).free } {
-        // SAFETY: C's contract: `free` releases the backend.
+        // SAFETY: the table's own `free`, called once with its table, which
+        // nothing uses afterwards (this function's contract): the slot's
+        // contract (sys/config.h).
         unsafe { free(b) };
     }
 }
@@ -389,7 +401,8 @@ pub trait BackendCalls: sealed::Sealed {
     /// `readonly`, as C may have set it.
     fn is_readonly(&self) -> bool {
         let p = self.raw();
-        // SAFETY: a live table; the field is read raw.
+        // SAFETY: `p` is the live, aligned table of this handle (the sealed
+        // trait's invariant); the field is copied through the raw pointer.
         unsafe { (*p).readonly != 0 }
     }
 
@@ -402,7 +415,9 @@ pub trait BackendCalls: sealed::Sealed {
     unsafe fn open(&self, level: c_int, repo: *const git_repository) -> Result<()> {
         let p = self.raw();
         let f = slot!(self, open).ok_or_else(|| no_slot("open"))?;
-        // SAFETY: the slot's contract (see the trait).
+        // SAFETY: `f` is the `open` slot of `p`, called with its live table
+        // (the trait's invariant); `repo` is NULL or a repository that
+        // outlives the backend (this method's contract).
         ErrorCode::check(unsafe { f(p, level, repo) }).map(drop)
     }
 
@@ -411,7 +426,9 @@ pub trait BackendCalls: sealed::Sealed {
         let p = self.raw();
         let f = slot!(self, get).ok_or_else(|| no_slot("get"))?;
         let mut out = core::ptr::null_mut();
-        // SAFETY: the slot's contract; `out` is writable.
+        // SAFETY: `f` is the `get` slot of `p`, called with its live table
+        // (the trait's invariant), a NUL-terminated key borrowed for the
+        // call, and a local out-parameter.
         let r = unsafe { f(p, key.as_ptr(), &raw mut out) };
         if r == ErrorCode::NOT_FOUND.raw() {
             return Ok(None);
@@ -427,7 +444,9 @@ pub trait BackendCalls: sealed::Sealed {
     fn set(&self, name: &CStr, value: &CStr) -> Result<c_int> {
         let p = self.raw();
         let f = slot!(self, set).ok_or_else(|| no_slot("set"))?;
-        // SAFETY: the slot's contract.
+        // SAFETY: `f` is the `set` slot of `p`, called with its live table
+        // (the trait's invariant) and two NUL-terminated strings borrowed
+        // for the call (the backend copies what it keeps).
         ErrorCode::check(unsafe { f(p, name.as_ptr(), value.as_ptr()) })
     }
 
@@ -440,7 +459,8 @@ pub trait BackendCalls: sealed::Sealed {
     ) -> Result<c_int> {
         let p = self.raw();
         let f = slot!(self, set_multivar).ok_or_else(|| no_slot("set_multivar"))?;
-        // SAFETY: the slot's contract (the file backend checks `regexp`).
+        // SAFETY: as in `set`; `regexp` and `value` may be NULL, which the
+        // slot checks (the file backend rejects a NULL `regexp`).
         ErrorCode::check(unsafe { f(p, name.as_ptr(), opt_ptr(regexp), opt_ptr(value)) })
     }
 
@@ -448,7 +468,9 @@ pub trait BackendCalls: sealed::Sealed {
     fn del(&self, name: &CStr) -> Result<c_int> {
         let p = self.raw();
         let f = slot!(self, del).ok_or_else(|| no_slot("del"))?;
-        // SAFETY: the slot's contract.
+        // SAFETY: `f` is the `del` slot of `p`, called with its live table
+        // (the trait's invariant) and a NUL-terminated name borrowed for
+        // the call.
         ErrorCode::check(unsafe { f(p, name.as_ptr()) })
     }
 
@@ -456,7 +478,7 @@ pub trait BackendCalls: sealed::Sealed {
     fn del_multivar(&self, name: &CStr, regexp: Option<&CStr>) -> Result<c_int> {
         let p = self.raw();
         let f = slot!(self, del_multivar).ok_or_else(|| no_slot("del_multivar"))?;
-        // SAFETY: the slot's contract.
+        // SAFETY: as in `del`; `regexp` may be NULL, which the slot checks.
         ErrorCode::check(unsafe { f(p, name.as_ptr(), opt_ptr(regexp)) })
     }
 
@@ -465,7 +487,8 @@ pub trait BackendCalls: sealed::Sealed {
         let p = self.raw();
         let f = slot!(self, iterator).ok_or_else(|| no_slot("iterator"))?;
         let mut out = core::ptr::null_mut();
-        // SAFETY: the slot's contract; `out` is writable.
+        // SAFETY: `f` is the `iterator` slot of `p`, called with a local
+        // out-parameter and its live table (the trait's invariant).
         let r = unsafe { f(&raw mut out, p) };
         if r != 0 {
             return Err(ErrorCode::from_raw(r).unwrap_or(ErrorCode::GENERIC));
@@ -479,7 +502,8 @@ pub trait BackendCalls: sealed::Sealed {
         let p = self.raw();
         let f = slot!(self, snapshot).ok_or_else(|| no_slot("snapshot"))?;
         let mut out = core::ptr::null_mut();
-        // SAFETY: the slot's contract; `out` is writable.
+        // SAFETY: `f` is the `snapshot` slot of `p`, called with a local
+        // out-parameter and its live table (the trait's invariant).
         let r = unsafe { f(&raw mut out, p) };
         if r != 0 {
             return Err(ErrorCode::from_raw(r).unwrap_or(ErrorCode::GENERIC));
@@ -492,7 +516,8 @@ pub trait BackendCalls: sealed::Sealed {
     fn lock(&self) -> Result<c_int> {
         let p = self.raw();
         let f = slot!(self, lock).ok_or_else(|| no_slot("lock"))?;
-        // SAFETY: the slot's contract.
+        // SAFETY: `f` is the `lock` slot of `p`, called with its live table
+        // (the trait's invariant).
         ErrorCode::check(unsafe { f(p) })
     }
 
@@ -500,7 +525,8 @@ pub trait BackendCalls: sealed::Sealed {
     fn unlock(&self, success: c_int) -> Result<c_int> {
         let p = self.raw();
         let f = slot!(self, unlock).ok_or_else(|| no_slot("unlock"))?;
-        // SAFETY: the slot's contract.
+        // SAFETY: `f` is the `unlock` slot of `p`, called with its live
+        // table (the trait's invariant).
         ErrorCode::check(unsafe { f(p, success) })
     }
 }
@@ -540,8 +566,12 @@ impl BackendCalls for BackendPtr {
 #[derive(Debug)]
 pub struct EntryBox(NonNull<git_config_backend_entry>);
 
-// SAFETY: entries are released on any thread (C's contract: they keep
-// their backend's data alive by reference counts, which are atomic).
+// SAFETY: the one field is the pointer to an entry this box owns alone
+// (`from_raw`'s contract). An entry is plain data (strings it points at
+// and its `free` slot), and libgit2 hands entries to any thread and frees
+// them there (C's contract: they keep their backend's data alive by
+// atomic reference counts, as `config_list`'s do). `EntryBox` is not
+// `Sync`.
 unsafe impl Send for EntryBox {}
 
 impl EntryBox {
@@ -569,26 +599,32 @@ impl EntryBox {
 
     /// The entry's value (`None` for a bare name).
     pub fn value(&self) -> Option<&[u8]> {
-        // SAFETY: a live entry (owned); its value is NULL or a C string that
-        // lives as long as the entry and that nothing writes.
+        // SAFETY: a live, aligned entry that this box owns (`from_raw`'s
+        // contract); the field is copied through the raw pointer.
         let v = unsafe { (*self.0.as_ptr()).entry.value };
-        // SAFETY: as above.
+        // SAFETY: an entry's value is NULL or a NUL-terminated string that
+        // lives as long as the entry (until `drop`, after the `&self`
+        // borrow) and that nothing writes.
         (!v.is_null()).then(|| unsafe { CStr::from_ptr(v) }.to_bytes())
     }
 
     /// The entry's fields, read once.
     pub fn view(&self) -> EntryView<'_> {
-        // SAFETY: a live entry (owned), which nothing writes: its fields
-        // are read by value.
+        // SAFETY: a live, aligned entry that this box owns (`from_raw`'s
+        // contract), whose `git_config_entry` is its first field; it is
+        // copied by value.
         let e = unsafe { self.0.as_ptr().cast::<git_config_entry>().read() };
-        // SAFETY: as above; the strings live as long as the entry.
+        // SAFETY: the entry's strings are NULL or NUL-terminated, live as
+        // long as the entry (until `drop`, after the borrow of `self` the
+        // view carries), and written by nothing.
         unsafe { EntryView::new(&e) }
     }
 }
 
 impl Drop for EntryBox {
     fn drop(&mut self) {
-        // SAFETY: an owned entry, released once.
+        // SAFETY: the entry this box owns (`from_raw`'s contract), released
+        // once, here; nothing borrows it any more (`drop` has `&mut`).
         unsafe { entry_free(self.0.as_ptr().cast()) }
     }
 }
@@ -601,9 +637,12 @@ impl Drop for EntryBox {
 /// once.
 unsafe fn entry_free(entry: *mut git_config_entry) {
     let be = entry.cast::<git_config_backend_entry>();
-    // SAFETY: per the contract; the slot is read raw.
+    // SAFETY: `entry` is the first field of a live, aligned backend entry
+    // (this function's contract), so `be` is that entry; the slot is copied
+    // through the raw pointer.
     if let Some(free) = unsafe { (*be).free } {
-        // SAFETY: C's contract: `free` releases the entry.
+        // SAFETY: the entry's own `free`, called once with it (this
+        // function's contract): the slot's contract (sys/config.h).
         unsafe { free(be) };
     }
 }
@@ -634,7 +673,9 @@ impl<'a> EntryView<'a> {
     /// for `'a`.
     pub unsafe fn new(e: &git_config_entry) -> EntryView<'a> {
         let cs = |p: *const c_char| -> Option<&'a [u8]> {
-            // SAFETY: per the contract.
+            // SAFETY: each string of `e` is NULL (excluded here) or
+            // NUL-terminated, and neither written nor freed for `'a` (this
+            // function's contract).
             (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) }.to_bytes())
         };
         EntryView {
@@ -651,11 +692,14 @@ impl<'a> EntryView<'a> {
     ///
     /// # Safety
     ///
-    /// `be` is a live entry, as [`new`](Self::new) requires.
+    /// `be` is a live, aligned `git_config_backend_entry` whose strings are
+    /// NULL or NUL-terminated, and not written or freed, for `'a`.
     pub unsafe fn of(be: *const git_config_backend_entry) -> EntryView<'a> {
-        // SAFETY: per the contract; read by value.
+        // SAFETY: `be` is a live, aligned entry (this function's contract),
+        // whose `git_config_entry` is its first field; copied by value.
         let e = unsafe { be.cast::<git_config_entry>().read() };
-        // SAFETY: per the contract.
+        // SAFETY: its strings are as `new` requires (this function's
+        // contract).
         unsafe { EntryView::new(&e) }
     }
 }
@@ -664,9 +708,12 @@ impl<'a> EntryView<'a> {
 #[derive(Debug)]
 pub struct IterBox(NonNull<git_config_iterator>);
 
-// SAFETY: as `ConfigIterator`: used by one thread at a time.
+// SAFETY: the one field is the pointer to an iterator this box owns alone
+// (`from_raw`'s contract); as for `ConfigIterator`, an iterator may move
+// between threads (used by one at a time).
 unsafe impl Send for IterBox {}
-// SAFETY: `IterBox` has no method taking `&self` that calls a slot.
+// SAFETY: `IterBox` has no method taking `&self` that reaches the
+// iterator (`next_entry` takes `&mut self`, `into_raw` takes `self`).
 unsafe impl Sync for IterBox {}
 
 impl IterBox {
@@ -690,12 +737,15 @@ impl IterBox {
     /// call or its release); `Err(GIT_ITEROVER)` at the end.
     pub fn next_entry(&mut self) -> Result<NonNull<git_config_backend_entry>> {
         let p = self.0.as_ptr();
-        // SAFETY: a live iterator, ours; the slot is read raw.
+        // SAFETY: a live, aligned iterator this box owns (`from_raw`'s
+        // contract); the slot is copied through the raw pointer.
         let Some(f) = (unsafe { (*p).next }) else {
             return Err(no_slot("next"));
         };
         let mut out = core::ptr::null_mut();
-        // SAFETY: C's contract for `next`; `out` is writable.
+        // SAFETY: `f` is the iterator's `next`, called with a local
+        // out-parameter and the iterator, which `&mut self` makes ours for
+        // the call (the slot's contract, sys/config.h).
         let r = unsafe { f(&raw mut out, p) };
         if r != 0 {
             return Err(ErrorCode::from_raw(r).unwrap_or(ErrorCode::GENERIC));
@@ -707,9 +757,11 @@ impl IterBox {
 impl Drop for IterBox {
     fn drop(&mut self) {
         let p = self.0.as_ptr();
-        // SAFETY: an owned iterator, released once; the slot is read raw.
+        // SAFETY: a live, aligned iterator this box owns (`from_raw`'s
+        // contract); the slot is copied through the raw pointer.
         if let Some(free) = unsafe { (*p).free } {
-            // SAFETY: as above.
+            // SAFETY: the iterator's own `free`, called once, here, with
+            // the iterator nothing uses afterwards.
             unsafe { free(p) };
         }
     }
@@ -777,9 +829,17 @@ pub struct GitConfig {
 
 crate::impl_ccounted!(GitConfig, std::alloc::Global);
 
-// SAFETY: C writes only `rc` (GIT_REFCOUNT_*, atomics); the backends are
-// behind an `RwLock`.
+// SAFETY: the fields are `rc` and `backends`. C writes only `rc`
+// (`GIT_REFCOUNT_INC` / `_DEC` / `_OWN`), whose count and owner are atomics;
+// holders through `&GitConfig` write only `backends`, an `RwLock` (so an
+// `UnsafeCell` behind its own synchronisation), replacing the `Arc` inside
+// it, never moving or freeing the field. `GitConfig` is `Sync` by its
+// fields (asserted below), which states those writes are synchronised.
 unsafe impl ffibox::CShareable for GitConfig {}
+const _: () = {
+    fn thread_safe<T: Send + Sync>() {}
+    let _ = thread_safe::<GitConfig>;
+};
 
 /// `git_vector_insert_sorted`'s position for `key` (with `git__bsearch` and
 /// comparison `cmp(key, element)`), or the position of an equal element.
@@ -919,7 +979,8 @@ impl GitConfig {
         force: bool,
     ) -> core::result::Result<(), (ErrorCode, Backend)> {
         let p = backend.raw();
-        // SAFETY: a live table (owned).
+        // SAFETY: `p` is the live, aligned table `backend` owns; the field
+        // is copied through the raw pointer.
         let version = unsafe { (*p).version };
         if let Err(e) = check_version(version, GIT_CONFIG_BACKEND_VERSION, "git_config_backend") {
             return Err((e, backend));
@@ -928,7 +989,9 @@ impl GitConfig {
         if let Err(e) = unsafe { backend.open(level, repo) } {
             return Err((e, backend));
         }
-        // SAFETY: a live table (owned); C writes the field the same way.
+        // SAFETY: `p` is the live, aligned table `backend` owns, not yet
+        // shared with any other config or thread (the instance is made
+        // below), and no reference covers it: C's own write of the field.
         unsafe { (*p).cfg = core::ptr::from_ref(self).cast_mut() };
         let instance = Arc::new(Instance { backend });
         match self.add_instance(&instance, level, force) {
@@ -1205,7 +1268,8 @@ impl GitConfig {
             regex,
         };
         let p = CTable::<ConfigIterator, AllIter>::new(it).into_c();
-        // SAFETY: a new iterator, ours.
+        // SAFETY: `p` is the table just surrendered by `into_c`, owned by
+        // nothing else; its `free` slot (`release free`) releases it.
         Ok(unsafe { IterBox::from_raw(p.as_ptr()) }.unwrap_or_else(|| unreachable!()))
     }
 
@@ -1219,7 +1283,7 @@ impl GitConfig {
         };
         let it = MultivarIter { inner, name, regex };
         let p = CTable::<ConfigIterator, MultivarIter>::new(it).into_c();
-        // SAFETY: a new iterator, ours.
+        // SAFETY: as in `iterator`.
         Ok(unsafe { IterBox::from_raw(p.as_ptr()) }.unwrap_or_else(|| unreachable!()))
     }
 
@@ -1297,13 +1361,11 @@ impl GitConfig {
         err
     }
 
-    /// `git_config_lock`: lock the writer, and a transaction that unlocks
-    /// it.
-    ///
-    /// # Safety
-    ///
-    /// `out` is writable; `this` is `self`'s C pointer.
-    unsafe fn lock(&self, out: *mut *mut crate::sys::transaction::git_transaction) -> Result<()> {
+    /// `git_config_lock`: lock the writer, and write to `out` a transaction
+    /// that unlocks it. The transaction points at `self` without a
+    /// reference: whoever uses or frees it (C, through `unsafe` calls)
+    /// keeps `self` alive meanwhile, as C's contract says.
+    fn lock(&self, out: Out<'_, *mut crate::sys::transaction::git_transaction>) -> Result<()> {
         let Some(instance) = self.writer() else {
             let _ = git_error_set!(
                 ErrorClass::CONFIG,
@@ -1316,11 +1378,14 @@ impl GitConfig {
             .cast_mut()
             .cast::<c_void>();
         let this = core::ptr::from_ref(self).cast_mut();
-        // SAFETY: `out` is writable (contract); `this` is live; `data` is an
-        // instance reference that `git_config_unlock` releases.
+        // SAFETY: `this` is `self`, live for the call; the transaction keeps
+        // it only as the pointer `git_config_unlock` is passed, which its
+        // users keep alive (see above); `data` is a reference to the writer
+        // instance (`Arc::into_raw`), which `git_config_unlock` takes back.
         let r = unsafe { crate::sys::transaction::config_new(out, this, data) };
         if r.is_err() {
-            // SAFETY: the reference made above, not handed over.
+            // SAFETY: `data` is the `Arc::into_raw` made above, which the
+            // failed call did not hand over: taken back once here.
             drop(unsafe { Arc::from_raw(data.cast_const().cast::<Instance>()) });
         }
         r
@@ -1399,10 +1464,11 @@ impl GitConfig {
         mut f: impl FnMut(&EntryView<'_>) -> Result<()>,
     ) -> Result<()> {
         let r = self.foreach_match(regexp, |e| {
-            // SAFETY: the entry the iterator holds, live for the call.
-            let e = unsafe { &*e };
-            // SAFETY: as above: its strings are C's, live for the call.
-            let view = unsafe { EntryView::new(e) };
+            // SAFETY: `e` is the entry the config's iterator holds (the
+            // `git_config_entry` at the start of a backend entry), live
+            // and unwritten, with its strings, until the next `next` call,
+            // after this callback.
+            let view = unsafe { EntryView::of(e.cast()) };
             match f(&view) {
                 Ok(()) => 0,
                 Err(e) => e.raw(),
@@ -1420,10 +1486,11 @@ impl GitConfig {
         mut f: impl FnMut(&EntryView<'_>) -> Result<()>,
     ) -> Result<()> {
         let r = self.get_multivar_foreach(name, regexp, |e| {
-            // SAFETY: the entry the iterator holds, live for the call.
-            let e = unsafe { &*e };
-            // SAFETY: as above: its strings are C's, live for the call.
-            let view = unsafe { EntryView::new(e) };
+            // SAFETY: `e` is the entry the config's iterator holds (the
+            // `git_config_entry` at the start of a backend entry), live
+            // and unwritten, with its strings, until the next `next` call,
+            // after this callback.
+            let view = unsafe { EntryView::of(e.cast()) };
             match f(&view) {
                 Ok(()) => 0,
                 Err(e) => e.raw(),
@@ -1504,7 +1571,9 @@ impl AllIter {
             let Some(regex) = &self.regex else {
                 return Ok(be);
             };
-            // SAFETY: an entry the current backend iterator holds.
+            // SAFETY: `be` is the entry the current backend iterator just
+            // returned: live and unwritten until its next `next` (after the
+            // name's last use here).
             let name = unsafe { EntryView::of(be.as_ptr()) }.name;
             if regex.matches(name).is_ok() {
                 return Ok(be);
@@ -1514,18 +1583,13 @@ impl AllIter {
 }
 
 /// Write an iterator's result to C's out-parameter.
-///
-/// # Safety
-///
-/// `out` is writable.
-unsafe fn iter_result(
-    out: *mut *mut git_config_backend_entry,
+fn iter_result(
+    mut out: Out<'_, *mut git_config_backend_entry>,
     r: Result<NonNull<git_config_backend_entry>>,
 ) -> c_int {
     match r {
         Ok(be) => {
-            // SAFETY: per the contract.
-            unsafe { out.write(be.as_ptr()) };
+            out.write(be.as_ptr());
             0
         }
         Err(e) => e.raw(),
@@ -1533,16 +1597,20 @@ unsafe fn iter_result(
 }
 
 ffibox::impl_cvtable! {
-    // SAFETY: libgit2 passes an iterator's `next` the iterator, second, and
-    // frees it once through `free`; both are set.
+    // SAFETY: libgit2 passes an iterator's slots the iterator in the marked
+    // (`@iter`) position, the only `git_config_iterator *` argument; `next`
+    // reaches the state through `enter` and writes `entry` only on success,
+    // `free` releases through `release`, once; both are set, and the base's
+    // `backend` (NULL) and `flags` (0) are values C accepts.
     unsafe impl CVtable<AllIter> for ConfigIterator {}
     base = git_config_iterator::default();
     /// `all_iter_next` / `all_iter_glob_next`.
     fn next(entry: *mut *mut git_config_backend_entry, @iter) -> c_int {
         on panic: slot_panicked(),
         on busy: iter_busy(),
-        // SAFETY: `entry` is C's writable out-parameter.
-        |it: &mut AllIter| unsafe { iter_result(entry, it.next_entry()) },
+        // SAFETY: `entry` is writable for the call (`next`'s contract,
+        // sys/config.h), and nothing else references `*entry`.
+        |it: &mut AllIter| iter_result(unsafe { Out::from_ptr(entry) }, it.next_entry()),
     }
     release free;
 }
@@ -1559,7 +1627,9 @@ impl MultivarIter {
     fn next_entry(&mut self) -> Result<NonNull<git_config_backend_entry>> {
         loop {
             let be = self.inner.next_entry()?;
-            // SAFETY: an entry the inner iterator holds.
+            // SAFETY: `be` is the entry the inner iterator just returned:
+            // live and unwritten until its next `next` (after `v`'s last
+            // use).
             let v = unsafe { EntryView::of(be.as_ptr()) };
             if v.name != self.name.as_slice() {
                 continue;
@@ -1582,8 +1652,8 @@ ffibox::impl_cvtable! {
     fn next(entry: *mut *mut git_config_backend_entry, @iter) -> c_int {
         on panic: slot_panicked(),
         on busy: iter_busy(),
-        // SAFETY: `entry` is C's writable out-parameter.
-        |it: &mut MultivarIter| unsafe { iter_result(entry, it.next_entry()) },
+        // SAFETY: as for `AllIter`.
+        |it: &mut MultivarIter| iter_result(unsafe { Out::from_ptr(entry) }, it.next_entry()),
     }
     release free;
 }
@@ -1607,7 +1677,8 @@ pub fn backend_foreach_match(
     let mut error = 0;
     while let Ok(be) = iter.next_entry() {
         if let Some(regex) = &regex {
-            // SAFETY: an entry the iterator holds.
+            // SAFETY: `be` is the entry `iter` just returned: live and
+            // unwritten until its next `next` (after `name`'s last use).
             let name = unsafe { EntryView::of(be.as_ptr()) }.name;
             if regex.matches(name).is_err() {
                 continue;
@@ -2056,18 +2127,8 @@ fn rename_entry(
 pub mod ffi {
     use super::*;
     use crate::git_arg;
-    use crate::util::cabi::{CStrArg, Out};
+    use crate::util::cabi::CStrArg;
     use crate::util::export::barrier;
-
-    /// A C string argument, borrowed for the call.
-    ///
-    /// # Safety
-    ///
-    /// `p` is NULL or NUL-terminated, not written during the call.
-    unsafe fn c<'a>(p: *const c_char) -> Option<&'a CStr> {
-        // SAFETY: per the contract.
-        (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) })
-    }
 
     /// A NULL-able C string argument as `%s` prints it.
     fn or_null(p: CStrArg<'_>) -> &CStr {
@@ -2079,21 +2140,6 @@ pub mod ffi {
         out.write(CShared::into_raw(CShared::from_box(c)));
     }
 
-    /// `GIT_BUF_WRAP_PRIVATE`: run `f` on a `git_str` made from `buf`, and
-    /// move the result back.
-    ///
-    /// # Safety
-    ///
-    /// `buf` is NULL or a valid `git_buf`.
-    pub(crate) unsafe fn wrap_buf(
-        buf: *mut GitBuf,
-        f: impl FnOnce(&mut GitStr) -> Result<()>,
-    ) -> c_int {
-        // SAFETY: `buf` is NULL or a valid `git_buf` (contract), which `f`
-        // does not reach.
-        unsafe { crate::buf::wrap_private(buf, f) }
-    }
-
     /// `git_config_entry_free` (NULL allowed).
     ///
     /// # Safety
@@ -2103,7 +2149,9 @@ pub mod ffi {
     pub unsafe extern "C" fn git_config_entry_free(entry: *mut git_config_entry) {
         barrier(|| {
             if !entry.is_null() {
-                // SAFETY: per the contract.
+                // SAFETY: a non-null `entry` is the `entry` of a backend
+                // entry libgit2 handed out, freed once (this export's
+                // contract).
                 unsafe { entry_free(entry) }
             }
         })
@@ -2117,7 +2165,9 @@ pub mod ffi {
     /// up.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_free(config: *mut GitConfig) {
-        // SAFETY: the contract.
+        // SAFETY: `config` is NULL or a live config made by `CShared`
+        // (every `git_config *` is), whose reference the caller gives up
+        // (this export's contract).
         barrier(|| unsafe { CShared::release(config) })
     }
 
@@ -2269,7 +2319,9 @@ pub mod ffi {
         barrier(|| {
             let config = git_arg!(config, "config", -1);
             git_assert_arg!(!backend.is_null(), "backend", -1);
-            // SAFETY: per the contract: a backend the config may own.
+            // SAFETY: `backend` is a valid table that nothing else owns
+            // (this export's contract), released by its own `free` slot,
+            // which is `Backend`'s release.
             let Some(b) = (unsafe { Backend::from_c(backend.cast()) }) else {
                 return -1;
             };
@@ -2289,8 +2341,8 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `config` is live; `levels` is readable for `len` values (or `len` is
-    /// 0).
+    /// `config` is live; `levels` is readable for `len` values, unwritten
+    /// during the call (or `len` is 0).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_set_writeorder(
         config: Option<&GitConfig>,
@@ -2303,7 +2355,10 @@ pub mod ffi {
             let levels = if len == 0 {
                 &[][..]
             } else {
-                // SAFETY: per the contract.
+                // SAFETY: `levels` is aligned and readable for `len` ints,
+                // which nothing writes during the call (this export's
+                // contract); `len < INT_MAX` (asserted above), so the
+                // slice is shorter than `isize::MAX` bytes.
                 unsafe { core::slice::from_raw_parts(levels, len) }
             };
             match config.set_writeorder(levels) {
@@ -2369,16 +2424,14 @@ pub mod ffi {
     pub unsafe extern "C" fn git_config_multivar_iterator_new(
         mut out: Out<'_, *mut git_config_iterator>,
         config: Option<&GitConfig>,
-        name: *const c_char,
+        name: CStrArg<'_>,
         regexp: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            git_assert_arg!(!name.is_null(), "in", -1);
+            let name = git_arg!(name.get(), "in", -1);
             let config = git_arg!(config, "config", -1);
             let regexp = regexp.get();
-            // SAFETY: per the contract.
-            let r = unsafe { config.multivar_iterator(CStr::from_ptr(name), regexp) };
-            match r {
+            match config.multivar_iterator(name, regexp) {
                 Ok(it) => {
                     out.write(it.into_raw());
                     0
@@ -2392,19 +2445,23 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `entry` is writable; `iter` is a live iterator.
+    /// `entry` is writable; `iter` is a live iterator that no other thread
+    /// uses during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_next(
         mut entry: Out<'_, *mut git_config_entry>,
         iter: *mut git_config_iterator,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: a live iterator (contract); the slot is read raw.
+            // SAFETY: `iter` is a live, aligned iterator (this export's
+            // contract); the slot is copied through the raw pointer.
             let Some(next) = (unsafe { (*iter).next }) else {
                 return no_slot("next").raw();
             };
             let mut be = core::ptr::null_mut();
-            // SAFETY: C's contract for `next`.
+            // SAFETY: `next` is the iterator's own slot, called with a local
+            // out-parameter and the live iterator, which only this call uses
+            // (this export's contract; the slot's, sys/config.h).
             let error = unsafe { next(&raw mut be, iter) };
             if error != 0 {
                 return error;
@@ -2422,7 +2479,8 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_iterator_free(iter: *mut git_config_iterator) {
         barrier(|| {
-            // SAFETY: per the contract.
+            // SAFETY: `iter` is NULL or a live iterator libgit2 handed out,
+            // freed once (this export's contract): ours to release.
             drop(unsafe { IterBox::from_raw(iter) });
         })
     }
@@ -2438,7 +2496,8 @@ pub mod ffi {
     /// `cb` is NULL or valid for `entry` and `payload`.
     unsafe fn call(cb: ForeachCb, entry: *const git_config_entry, payload: *mut c_void) -> c_int {
         match cb {
-            // SAFETY: per the contract.
+            // SAFETY: `f` may be called with `entry` and `payload` (this
+            // function's contract).
             Some(f) => unsafe { f(entry, payload) },
             None => errors::assert_arg_failed("cb").raw(),
         }
@@ -2474,9 +2533,12 @@ pub mod ffi {
         barrier(|| {
             let config = git_arg!(config, "config", -1);
             let regexp = regexp.get();
-            // SAFETY: per the contract; the callback gets the entry the
-            // iterator holds and the caller's payload.
-            unsafe { config.foreach_match(regexp, |e| call(cb, e, payload)) }
+            config.foreach_match(regexp, |e| {
+                // SAFETY: `cb` is NULL or a callback valid for `payload`
+                // (this export's contract), given the entry the iterator
+                // holds, live for the call.
+                unsafe { call(cb, e, payload) }
+            })
         })
     }
 
@@ -2484,8 +2546,8 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `backend` is NULL or a live backend; the rest as
-    /// `git_config_foreach_match`.
+    /// `backend` is NULL or a live backend, not freed during the call; the
+    /// rest as `git_config_foreach_match`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_backend_foreach_match(
         backend: *mut git_config_backend,
@@ -2501,10 +2563,14 @@ pub mod ffi {
             let Some(cb) = cb else {
                 return errors::assert_arg_failed("cb").raw();
             };
-            // SAFETY: a live backend (contract).
+            // SAFETY: `backend` is a live table for the call (this
+            // export's contract), and `b` does not outlive the call.
             let b = unsafe { BackendPtr::new(backend) };
-            // SAFETY: per the contract, as `git_config_foreach_match`.
-            unsafe { backend_foreach_match(&b, regexp, |e| cb(e, payload)) }
+            backend_foreach_match(&b, regexp, |e| {
+                // SAFETY: `cb` is valid for `payload` (this export's
+                // contract), given the entry the iterator holds.
+                unsafe { cb(e, payload) }
+            })
         })
     }
 
@@ -2525,8 +2591,12 @@ pub mod ffi {
             let name = git_arg!(name.get(), "in", -1);
             let config = git_arg!(config, "config", -1);
             let regexp = regexp.get();
-            // SAFETY: the callback is valid for the payload (the contract).
-            config.get_multivar_foreach(name, regexp, |e| unsafe { call(cb, e, payload) })
+            config.get_multivar_foreach(name, regexp, |e| {
+                // SAFETY: `cb` is NULL or a callback valid for `payload`
+                // (this export's contract), given the entry the iterator
+                // holds.
+                unsafe { call(cb, e, payload) }
+            })
         })
     }
 
@@ -2775,7 +2845,9 @@ pub mod ffi {
         map_n: usize,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
+            // SAFETY: `maps` is readable for `map_n` maps whose strings are
+            // NULL or NUL-terminated, unwritten during the call (this
+            // export's contract), which is `configmaps`'.
             let maps = unsafe { configmaps(maps, map_n) };
             match with_value(config, name, |v| lookup_map_value(&maps, v)) {
                 Ok(v) => {
@@ -2791,19 +2863,24 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `maps` is readable for `n` maps whose strings are NULL or
-    /// NUL-terminated, for `'a`.
+    /// `maps` is aligned and readable for `n` maps (or `n` is 0) whose
+    /// strings are NULL or NUL-terminated, all unwritten for `'a`.
     unsafe fn configmaps<'a>(maps: *const git_configmap, n: usize) -> Vec<RawConfigMap<'a>> {
         if n == 0 {
             return Vec::new();
         }
-        // SAFETY: per the contract.
+        // SAFETY: `maps` is aligned and readable for `n` maps, one C array
+        // (so at most `isize::MAX` bytes), unwritten for `'a` (this
+        // function's contract).
         let maps = unsafe { core::slice::from_raw_parts(maps, n) };
         maps.iter()
             .map(|m| RawConfigMap {
                 kind: m.type_,
-                // SAFETY: per the contract.
-                str_match: unsafe { c(m.str_match) }.map(CStr::to_bytes),
+                // SAFETY: each `str_match` is NULL or a NUL-terminated
+                // string, unwritten for `'a` (this function's contract).
+                str_match: unsafe { CStrArg::from_ptr(m.str_match) }
+                    .get()
+                    .map(CStr::to_bytes),
                 map_value: m.map_value,
             })
             .collect()
@@ -2873,11 +2950,12 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` is NULL (an error, as C's assertion) or a valid `git_str`;
-    /// `config` is live; `name` is NUL-terminated.
+    /// `out` is NULL (an error, as C's assertion) or a valid `git_str` that
+    /// nothing else accesses during the call; `config` is live; `name` is
+    /// NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config__get_path(
-        out: *mut GitStr,
+        out: Option<&mut GitStr>,
         config: Option<&GitConfig>,
         name: CStrArg<'_>,
     ) -> c_int {
@@ -2885,15 +2963,11 @@ pub mod ffi {
             let parse = |v: Option<&[u8]>| {
                 // `GIT_ASSERT_ARG(out)` and `(value)` in
                 // `git_config__parse_path`, after the lookup, as C.
-                if out.is_null() {
-                    return Err(errors::assert_arg_failed("out"));
-                }
+                let out = git_arg!(out, "out");
                 let Some(v) = v else {
                     return Err(errors::assert_arg_failed("value"));
                 };
-                // SAFETY: a valid, exclusive `git_str` (the contract; NULL
-                // excluded above).
-                parse_path(unsafe { &mut *out }, v)
+                parse_path(out, v)
             };
             let r = with_value(config, name, parse);
             crate::util::export::status(r)
@@ -2904,21 +2978,22 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` is a valid `git_buf`; the rest as `git_config__get_path`.
+    /// `out` is NULL or a valid `git_buf` that nothing else accesses during
+    /// the call; the rest as `git_config__get_path`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_get_path(
-        out: *mut GitBuf,
+        out: Option<&mut GitBuf>,
         config: Option<&GitConfig>,
         name: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             let get = |s: &mut GitStr| {
-                // SAFETY: `s` is a valid `git_str`; `config` and `name` are
-                // as `git_config__get_path` requires (the contract).
-                ErrorCode::check_zero(unsafe { git_config__get_path(s, config, name) })
+                // SAFETY: `s` is a valid `git_str` that only this call
+                // reaches; `config` and `name` are what
+                // `git_config__get_path` requires (this export's contract).
+                ErrorCode::check_zero(unsafe { git_config__get_path(Some(s), config, name) })
             };
-            // SAFETY: `out` is NULL or a valid `git_buf` (the contract).
-            unsafe { wrap_buf(out, get) }
+            crate::buf::wrap(out, get)
         })
     }
 
@@ -2926,21 +3001,21 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` is NULL or a valid `git_buf`; `value` is NULL or
-    /// NUL-terminated.
+    /// `out` is NULL or a valid `git_buf` that nothing else accesses during
+    /// the call; `value` is NULL or NUL-terminated.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_config_parse_path(out: *mut GitBuf, value: CStrArg<'_>) -> c_int {
+    pub unsafe extern "C" fn git_config_parse_path(
+        out: Option<&mut GitBuf>,
+        value: CStrArg<'_>,
+    ) -> c_int {
         barrier(|| {
             let value = value.get();
-            // SAFETY: per the contract.
-            unsafe {
-                wrap_buf(out, |s| {
-                    let Some(v) = value else {
-                        return Err(errors::assert_arg_failed("value"));
-                    };
-                    parse_path(s, v.to_bytes())
-                })
-            }
+            crate::buf::wrap(out, |s| {
+                let Some(v) = value else {
+                    return Err(errors::assert_arg_failed("value"));
+                };
+                parse_path(s, v.to_bytes())
+            })
         })
     }
 
@@ -2969,7 +3044,8 @@ pub mod ffi {
             let r = config.get_entry(name, true, Want::AllErrors);
             let (p, code) = match &r {
                 Ok(Some(e)) => {
-                    // SAFETY: a live entry; read by value.
+                    // SAFETY: `e` owns a live, aligned entry; the field is
+                    // copied through the raw pointer.
                     let v = unsafe { (*e.as_entry()).value };
                     (if v.is_null() { c"".as_ptr() } else { v }, 0)
                 }
@@ -3006,22 +3082,23 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` is NULL or a valid `git_buf`; the rest as
-    /// `git_config__get_string_buf`.
+    /// `out` is NULL or a valid `git_buf` that nothing else accesses during
+    /// the call; the rest as `git_config__get_string_buf`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_get_string_buf(
-        out: *mut GitBuf,
+        out: Option<&mut GitBuf>,
         config: Option<&GitConfig>,
         name: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             let get = |s: &mut GitStr| {
-                // SAFETY: `s` is a valid `git_str`; `config` and `name` are
-                // as `git_config__get_string_buf` requires (the contract).
+                // SAFETY: `s` is a valid `git_str` that only this call
+                // reaches; `config` and `name` are what
+                // `git_config__get_string_buf` requires (this export's
+                // contract).
                 ErrorCode::check_zero(unsafe { git_config__get_string_buf(Some(s), config, name) })
             };
-            // SAFETY: `out` is NULL or a valid `git_buf` (the contract).
-            unsafe { wrap_buf(out, get) }
+            crate::buf::wrap(out, get)
         })
     }
 
@@ -3120,8 +3197,9 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             let value = value.get();
-            // SAFETY: per the contract.
-            let (maps, value) = unsafe { (configmaps(maps, map_n), value) };
+            // SAFETY: `maps` is as `configmaps` requires (this export's
+            // contract, as `git_config_get_mapped`'s).
+            let maps = unsafe { configmaps(maps, map_n) };
             match lookup_map_value(&maps, value.map(CStr::to_bytes)) {
                 Ok(v) => {
                     out.write(v);
@@ -3150,7 +3228,9 @@ pub mod ffi {
             let maps = if map_n == 0 {
                 &[][..]
             } else {
-                // SAFETY: per the contract.
+                // SAFETY: `maps` is aligned and readable for `map_n` maps,
+                // one C array (at most `isize::MAX` bytes), unwritten during
+                // the call (this export's contract).
                 unsafe { core::slice::from_raw_parts(maps, map_n) }
             };
             match maps.iter().find(|m| m.map_value == enum_val) {
@@ -3241,7 +3321,7 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config__normalize_name(
         input: CStrArg<'_>,
-        out: *mut *mut c_char,
+        mut out: Out<'_, *mut c_char>,
     ) -> c_int {
         barrier(|| {
             let input = git_arg!(input.get(), "in", -1);
@@ -3252,8 +3332,7 @@ pub mod ffi {
                     if s.is_null() {
                         return -1;
                     }
-                    // SAFETY: `out` is writable.
-                    unsafe { out.write(s) };
+                    out.write(s);
                     0
                 }
                 Err(e) => e.raw(),
@@ -3265,16 +3344,14 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `path` is NULL or a valid `git_buf`.
+    /// `path` is NULL or a valid `git_buf` that nothing else accesses
+    /// during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_config_find_global(path: *mut GitBuf) -> c_int {
+    pub unsafe extern "C" fn git_config_find_global(path: Option<&mut GitBuf>) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            unsafe {
-                wrap_buf(path, |s| {
-                    crate::sys::sysdir::find_global_file(s, GIT_CONFIG_FILENAME_GLOBAL)
-                })
-            }
+            crate::buf::wrap(path, |s| {
+                crate::sys::sysdir::find_global_file(s, GIT_CONFIG_FILENAME_GLOBAL)
+            })
         })
     }
 
@@ -3296,16 +3373,14 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `path` is NULL or a valid `git_buf`.
+    /// `path` is NULL or a valid `git_buf` that nothing else accesses
+    /// during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_config_find_xdg(path: *mut GitBuf) -> c_int {
+    pub unsafe extern "C" fn git_config_find_xdg(path: Option<&mut GitBuf>) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            unsafe {
-                wrap_buf(path, |s| {
-                    crate::sys::sysdir::find_xdg_file(s, GIT_CONFIG_FILENAME_XDG)
-                })
-            }
+            crate::buf::wrap(path, |s| {
+                crate::sys::sysdir::find_xdg_file(s, GIT_CONFIG_FILENAME_XDG)
+            })
         })
     }
 
@@ -3327,16 +3402,14 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `path` is NULL or a valid `git_buf`.
+    /// `path` is NULL or a valid `git_buf` that nothing else accesses
+    /// during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_config_find_system(path: *mut GitBuf) -> c_int {
+    pub unsafe extern "C" fn git_config_find_system(path: Option<&mut GitBuf>) -> c_int {
         barrier(|| {
-            // SAFETY: per the contract.
-            unsafe {
-                wrap_buf(path, |s| {
-                    crate::sys::sysdir::find_system_file(s, GIT_CONFIG_FILENAME_SYSTEM)
-                })
-            }
+            crate::buf::wrap(path, |s| {
+                crate::sys::sysdir::find_system_file(s, GIT_CONFIG_FILENAME_SYSTEM)
+            })
         })
     }
 
@@ -3395,13 +3468,12 @@ pub mod ffi {
     /// transaction.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_lock(
-        tx: *mut *mut crate::sys::transaction::git_transaction,
+        tx: Out<'_, *mut crate::sys::transaction::git_transaction>,
         config: Option<&GitConfig>,
     ) -> c_int {
         barrier(|| {
             let config = git_arg!(config, "config", -1);
-            // SAFETY: per the contract.
-            crate::util::export::status(unsafe { config.lock(tx) })
+            crate::util::export::status(config.lock(tx))
         })
     }
 
@@ -3420,7 +3492,9 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!config.is_null() && !data.is_null(), "config && data", -1);
-            // SAFETY: per the contract: the reference `lock` made.
+            // SAFETY: a non-null `data` is the `Arc::into_raw` reference
+            // `git_config_lock` gave the transaction, released once (this
+            // export's contract): taken back here.
             let instance = unsafe { Arc::from_raw(data.cast_const().cast::<Instance>()) };
             let r = instance.backend.unlock(commit);
             drop(instance);
@@ -3435,20 +3509,18 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `repo` is a live repository; `old_section_name` is NUL-terminated;
-    /// `new_section_name` is NULL or NUL-terminated.
+    /// `repo` is NULL or a live repository, not freed during the call;
+    /// `old_section_name` is NULL or NUL-terminated; `new_section_name` is
+    /// NULL or NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_rename_section(
-        repo: *mut git_repository,
+        repo: Option<&git_repository>,
         old_section_name: CStrArg<'_>,
         new_section_name: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
             let new_section_name = new_section_name.get();
             let old = old_section_name.to_bytes();
-            // SAFETY: `repo` is NULL or a live repository (the contract),
-            // which is `Sync`.
-            let repo = unsafe { repo.as_ref() };
             rename_section(repo, old, new_section_name.map(CStr::to_bytes))
         })
     }
@@ -3772,7 +3844,8 @@ impl<'r> Config<'r> {
     ///
     /// `raw` is a live config.
     pub(crate) unsafe fn new_ref(raw: NonNull<GitConfig>) -> Config<'r> {
-        // SAFETY: the caller's contract.
+        // SAFETY: `raw` is a live config (this function's contract), made
+        // by `CShared` as every `git_config` is.
         let c = unsafe { CShared::from_borrowed(raw.as_ptr()) }.expect("non-null");
         Config(c, core::marker::PhantomData)
     }
@@ -4167,7 +4240,9 @@ impl Iterator for ConfigEntries<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.it.next_entry() {
-            // SAFETY: the entry the iterator holds, copied at once.
+            // SAFETY: `be` is the entry the iterator just returned, live
+            // and unwritten until its next `next`; the view is copied into
+            // an owned entry at once.
             Ok(be) => Some(Ok(ConfigEntry::from_view(&unsafe {
                 EntryView::of(be.as_ptr())
             }))),
@@ -4271,12 +4346,14 @@ mod rust_backend {
     ///
     /// # Safety
     ///
-    /// `p` is NULL or NUL-terminated, for the call.
+    /// `p` is NULL or NUL-terminated, and unwritten for `'a` (a slot's
+    /// call).
     unsafe fn b<'a>(p: *const c_char) -> &'a [u8] {
         if p.is_null() {
             return b"";
         }
-        // SAFETY: per the contract.
+        // SAFETY: a non-null `p` is NUL-terminated and unwritten for `'a`
+        // (this function's contract).
         unsafe { CStr::from_ptr(p) }.to_bytes()
     }
 
@@ -4322,7 +4399,7 @@ mod rust_backend {
     }
 
     impl State {
-        fn get(&self, key: &[u8], out: *mut *mut git_config_backend_entry) -> c_int {
+        fn get(&self, key: &[u8], mut out: Out<'_, *mut git_config_backend_entry>) -> c_int {
             match self.backend.get(key) {
                 Err(e) => raise(&e).raw(),
                 Ok(None) => ErrorCode::NOT_FOUND.raw(),
@@ -4335,9 +4412,7 @@ mod rust_backend {
                     match list_of(core::slice::from_ref(&e)) {
                         Err(c) => c.raw(),
                         Ok(l) => {
-                            let p = ConfigList::lend(&l, &l.entries()[0]);
-                            // SAFETY: `out` is C's writable out-parameter.
-                            unsafe { out.write(p) };
+                            out.write(ConfigList::lend(&l, &l.entries()[0]));
                             0
                         }
                     }
@@ -4345,14 +4420,13 @@ mod rust_backend {
             }
         }
 
-        fn iterator(&self, out: *mut *mut git_config_iterator) -> c_int {
+        fn iterator(&self, mut out: Out<'_, *mut git_config_iterator>) -> c_int {
             match self.backend.entries() {
                 Err(e) => raise(&e).raw(),
                 Ok(entries) => match list_of(&entries) {
                     Err(c) => c.raw(),
                     Ok(l) => {
-                        // SAFETY: `out` is C's writable out-parameter.
-                        unsafe { out.write(crate::config_list::iterator_new(l)) };
+                        out.write(crate::config_list::iterator_new(l));
                         0
                     }
                 },
@@ -4361,8 +4435,15 @@ mod rust_backend {
     }
 
     ffibox::impl_cvtable! {
-        // SAFETY: libgit2 passes each slot its backend, in the position
-        // marked; every slot libgit2 calls is set (`snapshot` and `free` too).
+        // SAFETY: libgit2 passes each slot its backend in the marked (`@cfg`)
+        // position, the only `git_config_backend *` argument; every slot runs
+        // through `impl_cvtable!`'s trampolines (state via `enter`, `free` via
+        // `release`) and keeps sys/config.h's contract (out-parameters written
+        // only on success, entries and iterators handed over); all twelve slots
+        // are set (`snapshot` in the base, to this crate's
+        // `git_config_backend_snapshot`); `version` is
+        // `GIT_CONFIG_BACKEND_VERSION` and `cfg` NULL until `add_backend` sets
+        // it, as C accepts.
         unsafe impl CVtable<State> for ConfigBackendCell {}
         base = git_config_backend {
             snapshot: Some(crate::config_snapshot::ffi::git_config_backend_snapshot),
@@ -4380,8 +4461,10 @@ mod rust_backend {
         fn get(@cfg, key: *const c_char, out: *mut *mut git_config_backend_entry) -> c_int {
             on panic: slot_panicked(),
             on busy: slot_busy(),
-            // SAFETY: `key` is NUL-terminated (the slot's contract).
-            |s: &State| s.get(unsafe { b(key) }, out),
+            // SAFETY: `key` is a NUL-terminated string and `out` writable
+            // for the call (the slot's contract, sys/config.h); nothing
+            // else references `*out`.
+            |s: &State| s.get(unsafe { b(key) }, unsafe { Out::from_ptr(out) }),
         }
         fn set(@cfg, name: *const c_char, value: *const c_char) -> c_int {
             on panic: slot_panicked(),
@@ -4393,9 +4476,10 @@ mod rust_backend {
             on panic: slot_panicked(),
             on busy: slot_busy(),
             |s: &State| {
-                // SAFETY: as for `set`.
+                // SAFETY: `name` and `regexp` are NULL or NUL-terminated
+                // strings borrowed for the call (the slot's contract).
                 let (name, regexp) = (unsafe { b(name) }, unsafe { b(regexp) });
-                // SAFETY: as above; `value` may be NULL.
+                // SAFETY: as above, for `value`.
                 let value = (!value.is_null()).then(|| unsafe { b(value) });
                 status(s.backend.set_multivar(name, regexp, value))
             },
@@ -4415,7 +4499,9 @@ mod rust_backend {
         fn iterator(out: *mut *mut git_config_iterator, @cfg) -> c_int {
             on panic: slot_panicked(),
             on busy: slot_busy(),
-            |s: &State| s.iterator(out),
+            // SAFETY: `out` is writable for the call (the slot's contract),
+            // and nothing else references `*out`.
+            |s: &State| s.iterator(unsafe { Out::from_ptr(out) }),
         }
         fn lock(@cfg) -> c_int {
             on panic: slot_panicked(),

@@ -672,7 +672,12 @@ mod miri_quick {
     fn empty_grafts() -> crate::repository::GraftsBox {
         let mut g = core::ptr::null_mut();
         // SAFETY: a local out-parameter.
-        let r = unsafe { crate::grafts::ffi::git_grafts_new(&raw mut g, OidType::Sha1.raw()) };
+        let r = unsafe {
+            crate::grafts::ffi::git_grafts_new(
+                crate::util::cabi::Out::from(&mut g),
+                OidType::Sha1.raw(),
+            )
+        };
         assert_eq!(r, 0);
         // SAFETY: the grafts just made, ours.
         unsafe { crate::repository::GraftsBox::from_raw(g) }.unwrap()

@@ -59,8 +59,9 @@ fn match_code(code: Option<CodeRef<'_>>, s: &[u8]) -> Result<()> {
     let Some(code) = code else {
         return Err(ErrorCode::INVALID_SPEC);
     };
-    let rc = pcre2::pcre2_match(code, s, &mut md);
-    if rc < 0 { Err(match_error(rc)) } else { Ok(()) }
+    pcre2::pcre2_match(code, s, &mut md)
+        .map(drop)
+        .map_err(match_error)
 }
 
 /// `git_regexp_search` on a borrowed pattern.
@@ -81,15 +82,10 @@ fn search_code(
     let Some(code) = code else {
         return Err(ErrorCode::INVALID_SPEC);
     };
-    let rc = pcre2::pcre2_match(code, s, &mut md);
-    if rc < 0 {
-        return Err(match_error(rc));
-    }
-    let mut captures = rc as usize;
-    if captures == 0 || captures > n {
-        captures = n;
-    }
-    let ovec = pcre2::ovector(&md);
+    // The pairs PCRE2 set: `rc`, or all `n` for 0 (C's `captures`, capped
+    // at `n` as C's loop is).
+    let ovec = pcre2::pcre2_match(code, s, &mut md).map_err(match_error)?;
+    let captures = (ovec.len() / 2).min(n);
     let off = |o: usize| if o == PCRE2_UNSET { -1 } else { o as isize };
     for i in 0..n {
         set(

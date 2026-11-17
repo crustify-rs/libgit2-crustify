@@ -789,7 +789,9 @@ pub(crate) fn load_grafts(repo: &GitRepository) -> Result<()> {
 fn new_grafts(oid_type: git_oid_t) -> Result<super::GraftsBox> {
     let mut g = ptr::null_mut();
     // SAFETY: a local out-parameter.
-    check(unsafe { crate::grafts::ffi::git_grafts_new(&raw mut g, oid_type) })?;
+    check(unsafe {
+        crate::grafts::ffi::git_grafts_new(crate::util::cabi::Out::from(&mut g), oid_type)
+    })?;
     // SAFETY: the grafts just made, ours.
     unsafe { super::GraftsBox::from_raw(g) }.ok_or(ErrorCode::GENERIC)
 }
@@ -806,7 +808,7 @@ fn open_or_refresh_grafts(
     // SAFETY: a local slot holding NULL or the repository's live grafts;
     // a NUL-terminated path.
     check(unsafe {
-        crate::grafts::ffi::git_grafts_open_or_refresh(&raw mut g, cs(path).as_ptr(), oid_type)
+        crate::grafts::ffi::git_grafts_open_or_refresh(Some(&mut g), (&*cs(path)).into(), oid_type)
     })?;
     if cur.is_null() {
         // SAFETY: the grafts just opened, ours.

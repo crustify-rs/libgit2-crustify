@@ -439,7 +439,9 @@ pub(crate) unsafe fn find_graft(
         let mut g = ptr::null_mut();
         // SAFETY: `grafts` is the repository's (the C asserts it is not
         // NULL); `g` is writable.
-        if unsafe { pend::git_grafts_get(&raw mut g, grafts, id) } == 0 {
+        if unsafe { pend::git_grafts_get(crate::util::cabi::Out::from(&mut g), grafts, Some(id)) }
+            == 0
+        {
             return Some(g);
         }
     }

@@ -40,12 +40,36 @@ use crate::util::errors::{ErrorClass, ErrorCode};
 use crate::util::str::GitStr;
 
 /// Run the C ABI's option `key` with `args`.
-fn call(key: c_int, args: OptArgs) -> Result<()> {
+///
+/// # Safety
+///
+/// `args` holds what [`settings::opts`](crate::settings::opts) requires
+/// for `key`: each pointer NULL or valid for the option's use of it.
+unsafe fn call(key: c_int, args: OptArgs) -> Result<()> {
     crate::libgit2::ensure_init()?;
-    // SAFETY: the callers pass only integer arguments and, for getters,
-    // `p1`/`p2` pointing at a local of the option's out type, writable for
-    // the call (`settings::opts`'s contract per option).
+    // SAFETY: this function's contract is `opts`'.
     Ok(unsafe { crate::settings::opts(key, &args) }?)
+}
+
+/// [`call`] with integer arguments only (`p1` and `p2` NULL).
+///
+/// # Panics
+///
+/// For `GIT_OPT_SET_ALLOCATOR`, whose NULL resets the allocator (unsound
+/// under live allocations of another one).
+fn call_ints(key: c_int, args: OptArgs) -> Result<()> {
+    assert_ne!(key, opt::SET_ALLOCATOR, "not an integer option");
+    let args = OptArgs {
+        p1: ptr::null_mut(),
+        p2: ptr::null_mut(),
+        ..args
+    };
+    // SAFETY: both pointers are NULL, which every option but
+    // `SET_ALLOCATOR` (refused above) rejects (`out`, `buf`, `strarray`
+    // arguments: an invalid-argument error) or reads as "none / the
+    // default" (the strings, the X509 certificate, and the extensions,
+    // which are none for NULL whatever `sz` is).
+    unsafe { call(key, args) }
 }
 
 fn args() -> OptArgs {
@@ -59,19 +83,27 @@ fn args() -> OptArgs {
 }
 
 /// A getter of a `T` out-parameter.
-fn get<T: Copy>(key: c_int, init: T) -> T {
+///
+/// # Safety
+///
+/// `T` is the type `key` writes through its pointer (`size_t` is `usize`,
+/// `int` is `c_int`, `ssize_t` is `isize`).
+unsafe fn get<T: Copy>(key: c_int, init: T) -> T {
     let mut v = init;
     let a = OptArgs {
         p1: (&raw mut v).cast::<c_void>(),
         ..args()
     };
     // Integer getters cannot fail once the library is initialized.
-    let _ = call(key, a);
+    // SAFETY: `p1` points at a local `T`, aligned and writable for the
+    // call and not otherwise referenced, which is the type `key` writes
+    // (this function's contract).
+    let _ = unsafe { call(key, a) };
     v
 }
 
 fn set_bool(key: c_int, on: bool) {
-    let _ = call(
+    let _ = call_ints(
         key,
         OptArgs {
             i: c_int::from(on),
@@ -81,7 +113,7 @@ fn set_bool(key: c_int, on: bool) {
 }
 
 fn set_size(key: c_int, v: usize) {
-    let _ = call(key, OptArgs { sz: v, ..args() });
+    let _ = call_ints(key, OptArgs { sz: v, ..args() });
 }
 
 fn nul_error(what: &str) -> Error {
@@ -280,7 +312,8 @@ pub fn set_owner_validation(on: bool) {
 /// `GIT_OPT_GET_PACK_MAX_OBJECTS`: the most objects a fetched pack may
 /// have (0: no limit).
 pub fn pack_max_objects() -> usize {
-    get(opt::GET_PACK_MAX_OBJECTS, 0usize)
+    // SAFETY: the option writes a `size_t`.
+    unsafe { get(opt::GET_PACK_MAX_OBJECTS, 0usize) }
 }
 
 /// `GIT_OPT_SET_PACK_MAX_OBJECTS`.
@@ -291,7 +324,8 @@ pub fn set_pack_max_objects(n: usize) {
 /// `GIT_OPT_GET_PACK_MAX_OBJECT_SIZE`: the largest object a fetched pack
 /// may have.
 pub fn pack_max_object_size() -> usize {
-    get(opt::GET_PACK_MAX_OBJECT_SIZE, 0usize)
+    // SAFETY: the option writes a `size_t`.
+    unsafe { get(opt::GET_PACK_MAX_OBJECT_SIZE, 0usize) }
 }
 
 /// `GIT_OPT_SET_PACK_MAX_OBJECT_SIZE`.
@@ -385,8 +419,9 @@ pub fn set_ssl_ciphers(ciphers: Option<impl AsRef<[u8]>>) -> Result<()> {
     if let Some(c) = &c {
         a.p1 = c.as_ptr().cast_mut().cast();
     }
-    // `p1` is NULL or the NUL-terminated list, copied by the option.
-    call(opt::SET_SSL_CIPHERS, a)
+    // SAFETY: `p1` is NULL or the NUL-terminated list `c`, alive and
+    // unwritten for the call, which copies it.
+    unsafe { call(opt::SET_SSL_CIPHERS, a) }
 }
 
 /// `GIT_OPT_ENABLE_OFS_DELTA`: ask servers for offset deltas.
@@ -411,24 +446,26 @@ fn timeout_ms(d: Duration, what: &str) -> Result<c_int> {
 
 /// `GIT_OPT_GET_SERVER_CONNECT_TIMEOUT` (`Duration::ZERO`: the system's).
 pub fn server_connect_timeout() -> Duration {
-    let ms = get(opt::GET_SERVER_CONNECT_TIMEOUT, 0 as c_int);
+    // SAFETY: the option writes an `int`.
+    let ms = unsafe { get(opt::GET_SERVER_CONNECT_TIMEOUT, 0 as c_int) };
     Duration::from_millis(u64::try_from(ms).unwrap_or(0))
 }
 
 /// `GIT_OPT_SET_SERVER_CONNECT_TIMEOUT` (in milliseconds, as C).
 pub fn set_server_connect_timeout(timeout: Duration) -> Result<()> {
     let i = timeout_ms(timeout, "connect timeout")?;
-    call(opt::SET_SERVER_CONNECT_TIMEOUT, OptArgs { i, ..args() })
+    call_ints(opt::SET_SERVER_CONNECT_TIMEOUT, OptArgs { i, ..args() })
 }
 
 /// `GIT_OPT_GET_SERVER_TIMEOUT` (`Duration::ZERO`: none).
 pub fn server_timeout() -> Duration {
-    let ms = get(opt::GET_SERVER_TIMEOUT, 0 as c_int);
+    // SAFETY: the option writes an `int`.
+    let ms = unsafe { get(opt::GET_SERVER_TIMEOUT, 0 as c_int) };
     Duration::from_millis(u64::try_from(ms).unwrap_or(0))
 }
 
 /// `GIT_OPT_SET_SERVER_TIMEOUT` (in milliseconds, as C).
 pub fn set_server_timeout(timeout: Duration) -> Result<()> {
     let i = timeout_ms(timeout, "timeout")?;
-    call(opt::SET_SERVER_TIMEOUT, OptArgs { i, ..args() })
+    call_ints(opt::SET_SERVER_TIMEOUT, OptArgs { i, ..args() })
 }

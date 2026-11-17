@@ -20,6 +20,7 @@ use core::sync::atomic::{AtomicPtr, Ordering};
 use crate::buf::GitBuf;
 use crate::git_error_set;
 use crate::util::alloc;
+use crate::util::cabi::CStrArg;
 use crate::util::errors::{self, ErrorClass, ErrorCode, Result};
 use crate::util::str::GitStr;
 
@@ -88,20 +89,12 @@ fn copy(g: &AtomicPtr<c_char>, default: &CStr) -> Vec<u8> {
     unsafe { CStr::from_ptr(p) }.to_bytes().to_vec()
 }
 
-/// The string global (or `default`), as C reads it.
-///
-/// # Safety
-///
-/// The result is used only until the next options call that replaces the
-/// global or the last `git_libgit2_shutdown` (C's rule).
-unsafe fn read(g: &AtomicPtr<c_char>, default: &'static CStr) -> &'static CStr {
+/// The string global (or `default`), as C reads it: the pointer only (C
+/// may use it until the next options call that replaces the global, or
+/// the last `git_libgit2_shutdown`).
+fn read(g: &AtomicPtr<c_char>, default: &'static CStr) -> *const c_char {
     let p = g.load(Ordering::Acquire);
-    if p.is_null() {
-        default
-    } else {
-        // SAFETY: the caller's contract.
-        unsafe { CStr::from_ptr(p) }
-    }
+    if p.is_null() { default.as_ptr() } else { p }
 }
 
 /// `git_settings__user_agent`: the user agent (a copy).
@@ -214,19 +207,15 @@ pub mod opt {
 }
 
 /// Write a `git_buf` as C's options do: `git_buf_tostr`, fill, then
-/// `git_buf_fromstr`.
+/// `git_buf_fromstr` (C's `GIT_BUF_WRAP_PRIVATE`).
 ///
 /// # Safety
 ///
-/// `out` is a valid `git_buf` (or NULL, rejected).
+/// `out` is NULL (rejected) or a valid `git_buf` that nothing else
+/// accesses during the call.
 unsafe fn buf_out(out: *mut GitBuf, f: impl FnOnce(&mut GitStr) -> Result<()>) -> Result<()> {
-    let mut s = GitStr::new();
-    // SAFETY: the caller's contract; `s` is local.
-    ErrorCode::check(unsafe { crate::buf::ffi::git_buf_tostr(&raw mut s, out) })?;
-    f(&mut s)?;
-    // SAFETY: as above.
-    ErrorCode::check(unsafe { crate::buf::ffi::git_buf_fromstr(out, Some(&mut s)) })?;
-    Ok(())
+    // SAFETY: this function's contract is `wrap_private`'s.
+    ErrorCode::check(unsafe { crate::buf::wrap_private(out, f) }).map(drop)
 }
 
 /// The globals of other modules the options read and write. Each is a C
@@ -242,200 +231,266 @@ mod globals {
     };
 }
 
-macro_rules! g {
-    ($name:ident) => {
-        // SAFETY: a C global defined (with this layout) by its module;
-        // reaching it as an atomic is sound however C accesses it.
-        unsafe { &globals::$name }
-    };
+/// `git_indexer__max_objects` (declared in `sys::indexer`).
+fn indexer_max_objects() -> &'static core::sync::atomic::AtomicUsize {
+    // SAFETY: a `size_t` that `indexer.c` defines, always initialized,
+    // reached as the `AtomicUsize` of the same layout: every bit pattern is
+    // valid, and atomic accesses do not race with C's as Rust data races.
+    unsafe { &globals::git_indexer__max_objects }
 }
 
-/// Write `v` to a C out-pointer.
+/// `git_indexer__max_object_size` (declared in `sys::indexer`).
+fn indexer_max_object_size() -> &'static core::sync::atomic::AtomicUsize {
+    // SAFETY: as in `indexer_max_objects`.
+    unsafe { &globals::git_indexer__max_object_size }
+}
+
+/// Write `v` to a C out-pointer (C's `*(va_arg(ap, T *)) = v`), rejecting
+/// NULL (where C crashes).
 ///
 /// # Safety
 ///
-/// `p` is NULL or writable for a `T`.
+/// `p` is NULL, or aligned and valid for writes of a `T`, with no
+/// reference to the pointee live.
 unsafe fn out<T>(p: *mut c_void, v: T) -> Result<()> {
     if p.is_null() {
         return Err(errors::assert_arg_failed("out"));
     }
-    // SAFETY: the caller's contract.
+    // SAFETY: non-null here, so aligned and writable for a `T` with no
+    // reference to it live (this function's contract).
     unsafe { p.cast::<T>().write(v) };
     Ok(())
 }
 
-/// An options call's arguments, with the contract of [`opts`].
-struct Args<'a>(&'a OptArgs);
-
-impl Args<'_> {
-    fn put1<T>(&self, v: T) -> Result<()> {
-        // SAFETY: `opts`' contract: `p1` is the option's out-pointer.
-        unsafe { out(self.0.p1, v) }
-    }
-    fn put2<T>(&self, v: T) -> Result<()> {
-        // SAFETY: as `put1`, for `p2`.
-        unsafe { out(self.0.p2, v) }
-    }
-    fn buf1(&self, f: impl FnOnce(&mut GitStr) -> Result<()>) -> Result<()> {
-        // SAFETY: `opts`' contract: `p1` is the option's `git_buf *`.
-        unsafe { buf_out(self.0.p1.cast(), f) }
-    }
-    fn cstr1(&self) -> Option<&CStr> {
-        // SAFETY: `opts`' contract: `p1` is NULL or the option's string.
-        unsafe { crate::util::export::cstr(self.0.p1.cast()) }
-    }
-    fn cstr2(&self) -> Option<&CStr> {
-        // SAFETY: as `cstr1`, for `p2`.
-        unsafe { crate::util::export::cstr(self.0.p2.cast()) }
-    }
+/// The string argument `p` (NULL is `None`).
+///
+/// # Safety
+///
+/// `p` is NULL or a NUL-terminated string that stays readable, and
+/// unwritten, for `'a`.
+unsafe fn cstr<'a>(p: *mut c_void) -> Option<&'a CStr> {
+    // SAFETY: this function's contract is `CStrArg::from_ptr`'s.
+    unsafe { CStrArg::from_ptr(p.cast()) }.get()
 }
 
 /// `git_libgit2_opts(key, …)` with the arguments read.
 ///
 /// # Safety
 ///
-/// `a` holds the arguments C's `git_libgit2_opts` documents for `key`
-/// (pointers valid for what the option does with them).
+/// `args` holds the arguments C's `git_libgit2_opts` documents for `key`,
+/// read by the shim into the fields it reads for `key`: each pointer is
+/// NULL or valid for what the option does with it for the call (an out
+/// pointer aligned and writable for the option's type — `size_t`,
+/// `ssize_t` or `int` — with no reference to it live; a `git_buf *` a
+/// valid buffer; a `const char *` a NUL-terminated string; an `X509 *`, a
+/// `git_allocator *`, a `git_strarray *` or `len` strings as the option
+/// says).
 pub unsafe fn opts(key: c_int, args: &OptArgs) -> Result<()> {
+    use crate::sys::sysdir::{self, GIT_SYSDIR_HOME, GIT_SYSDIR_TEMPLATE};
     use opt::*;
     let r = Ordering::Relaxed;
-    let a = Args(args);
-    {
-        match key {
-            SET_MWINDOW_SIZE => crate::mwindow::git_mwindow__window_size.store(a.0.sz, r),
-            GET_MWINDOW_SIZE => a.put1(crate::mwindow::git_mwindow__window_size.load(r))?,
-            SET_MWINDOW_MAPPED_LIMIT => crate::mwindow::git_mwindow__mapped_limit.store(a.0.sz, r),
-            GET_MWINDOW_MAPPED_LIMIT => {
-                a.put1(crate::mwindow::git_mwindow__mapped_limit.load(r))?
-            }
-            SET_MWINDOW_FILE_LIMIT => crate::mwindow::git_mwindow__file_limit.store(a.0.sz, r),
-            GET_MWINDOW_FILE_LIMIT => a.put1(crate::mwindow::git_mwindow__file_limit.load(r))?,
-            GET_SEARCH_PATH => a.buf1(|s| {
-                let level = config_level_to_sysdir(a.0.i)?;
-                crate::sys::sysdir::get_into(s, level)
-            })?,
-            SET_SEARCH_PATH => {
-                let level = config_level_to_sysdir(a.0.i)?;
-                crate::sys::sysdir::set(level, a.cstr1())?;
-            }
-            SET_CACHE_OBJECT_LIMIT => {
-                crate::cache::set_max_object_size(a.0.i, a.0.sz)?;
-            }
-            SET_CACHE_MAX_SIZE => crate::cache::git_cache__max_storage.store(a.0.ssz, r),
-            ENABLE_CACHING => crate::cache::git_cache__enabled.store(a.0.i != 0, r),
-            GET_CACHED_MEMORY => {
-                a.put1(crate::cache::git_cache__current_storage.load(Ordering::SeqCst))?;
-                a.put2(crate::cache::git_cache__max_storage.load(r))?;
-            }
-            GET_TEMPLATE_PATH => a.buf1(|s| {
-                crate::sys::sysdir::get_into(s, crate::sys::sysdir::GIT_SYSDIR_TEMPLATE)
-            })?,
-            SET_TEMPLATE_PATH => {
-                crate::sys::sysdir::set(crate::sys::sysdir::GIT_SYSDIR_TEMPLATE, a.cstr1())?
-            }
-            SET_SSL_CERT_LOCATIONS => {
-                crate::sys::streams::openssl_set_cert_location(a.cstr1(), a.cstr2())?
-            }
-            ADD_SSL_X509_CERT => {
-                // SAFETY: the caller passes an `X509 *` (the option's contract).
-                unsafe { crate::sys::streams::openssl_add_x509_cert(a.0.p1) }?
-            }
-            SET_USER_AGENT => replace(&git__user_agent, a.cstr1())?,
-            GET_USER_AGENT => a.buf1(|s| s.puts(&user_agent()))?,
-            SET_USER_AGENT_PRODUCT => replace(&git__user_agent_product, a.cstr1())?,
-            GET_USER_AGENT_PRODUCT => a.buf1(|s| s.puts(&user_agent_product()))?,
-            ENABLE_STRICT_OBJECT_CREATION => {
-                crate::object::git_object__strict_input_validation.store(a.0.i != 0, r)
-            }
-            ENABLE_STRICT_SYMBOLIC_REF_CREATION => {
-                crate::refs::git_reference__enable_symbolic_ref_target_validation
-                    .store(a.0.i != 0, r)
-            }
-            SET_SSL_CIPHERS => {
-                // C copies with `git__strdup` and reports its failure as
-                // out-of-memory; a NULL list (which crashes the C) clears
-                // the setting.
-                if replace(&git__ssl_ciphers, a.cstr1()).is_err() {
-                    return Err(errors::oom());
-                }
-            }
-            ENABLE_OFS_DELTA => g!(git_smart__ofs_delta_enabled).store(a.0.i != 0, r),
-            ENABLE_FSYNC_GITDIR => {
-                crate::repository::git_repository__fsync_gitdir.store(a.0.i != 0, r)
-            }
-            GET_WINDOWS_SHAREMODE | SET_WINDOWS_SHAREMODE => {}
-            ENABLE_STRICT_HASH_VERIFICATION => {
-                crate::odb::git_odb__strict_hash_verification.store(a.0.i != 0, r)
-            }
-            SET_ALLOCATOR => {
-                // SAFETY: NULL or a valid `git_allocator` (the option's contract).
-                ErrorCode::check(unsafe {
-                    crate::util::alloc::ffi::git_allocator_setup(a.0.p1.cast())
-                })?;
-            }
-            ENABLE_UNSAVED_INDEX_SAFETY => {
-                crate::index::git_index__enforce_unsaved_safety.store(a.0.i != 0, r)
-            }
-            SET_PACK_MAX_OBJECTS => g!(git_indexer__max_objects).store(a.0.sz, r),
-            GET_PACK_MAX_OBJECTS => a.put1(g!(git_indexer__max_objects).load(r))?,
-            SET_PACK_MAX_OBJECT_SIZE => g!(git_indexer__max_object_size).store(a.0.sz, r),
-            GET_PACK_MAX_OBJECT_SIZE => a.put1(g!(git_indexer__max_object_size).load(r))?,
-            DISABLE_PACK_KEEP_FILE_CHECKS => {
-                crate::pack::git_disable_pack_keep_file_checks.store(a.0.i != 0, r)
-            }
-            ENABLE_HTTP_EXPECT_CONTINUE => g!(git_http__expect_continue).store(a.0.i != 0, r),
-            SET_ODB_PACKED_PRIORITY => crate::odb::git_odb__packed_priority.store(a.0.i, r),
-            SET_ODB_LOOSE_PRIORITY => crate::odb::git_odb__loose_priority.store(a.0.i, r),
-            SET_EXTENSIONS => {
-                // SAFETY: `len` strings at `extensions` (the option's contract).
-                ErrorCode::check(unsafe {
-                    crate::repository::ffi::git_repository__set_extensions(a.0.p1.cast(), a.0.sz)
-                })?;
-            }
-            GET_EXTENSIONS => {
-                let arr = a.0.p1.cast::<crate::strarray::GitStrArray>();
-                if arr.is_null() {
-                    return Err(errors::assert_arg_failed("out"));
-                }
-                // SAFETY: a writable `git_strarray` (the option's contract).
-                // SAFETY: a field projection of a valid struct.
-                let strings = unsafe { &raw mut (*arr).strings };
-                // SAFETY: as above.
-                let count = unsafe { &raw mut (*arr).count };
-                // SAFETY: two writable fields.
-                ErrorCode::check(unsafe {
-                    crate::repository::ffi::git_repository__extensions(strings, count)
-                })?;
-            }
-            GET_OWNER_VALIDATION => a.put1(c_int::from(
-                crate::repository::git_repository__validate_ownership.load(r),
-            ))?,
-            SET_OWNER_VALIDATION => {
-                crate::repository::git_repository__validate_ownership.store(a.0.i != 0, r)
-            }
-            GET_HOMEDIR => {
-                a.buf1(|s| crate::sys::sysdir::get_into(s, crate::sys::sysdir::GIT_SYSDIR_HOME))?
-            }
-            SET_HOMEDIR => crate::sys::sysdir::set(crate::sys::sysdir::GIT_SYSDIR_HOME, a.cstr1())?,
-            GET_SERVER_CONNECT_TIMEOUT => a.put1(g!(git_socket_stream__connect_timeout).load(r))?,
-            SET_SERVER_CONNECT_TIMEOUT => {
-                if a.0.i < 0 {
-                    return Err(git_error_set!(
-                        ErrorClass::INVALID,
-                        "invalid connect timeout"
-                    ));
-                }
-                g!(git_socket_stream__connect_timeout).store(a.0.i, r);
-            }
-            GET_SERVER_TIMEOUT => a.put1(g!(git_socket_stream__timeout).load(r))?,
-            SET_SERVER_TIMEOUT => {
-                if a.0.i < 0 {
-                    return Err(git_error_set!(ErrorClass::INVALID, "invalid timeout"));
-                }
-                g!(git_socket_stream__timeout).store(a.0.i, r);
-            }
-            _ => return Err(git_error_set!(ErrorClass::INVALID, "invalid option key")),
+    let a = args;
+    // Every `unsafe` block below reads or writes a pointer argument of
+    // `key`, which this function's contract makes NULL or valid for that
+    // use: the SAFETY comments name the C type the option documents.
+    match key {
+        SET_MWINDOW_SIZE => crate::mwindow::git_mwindow__window_size.store(a.sz, r),
+        GET_MWINDOW_SIZE => {
+            let v = crate::mwindow::git_mwindow__window_size.load(r);
+            // SAFETY: `p1` is NULL or a `size_t *` for this key.
+            unsafe { out(a.p1, v) }?
         }
+        SET_MWINDOW_MAPPED_LIMIT => crate::mwindow::git_mwindow__mapped_limit.store(a.sz, r),
+        GET_MWINDOW_MAPPED_LIMIT => {
+            let v = crate::mwindow::git_mwindow__mapped_limit.load(r);
+            // SAFETY: `p1` is NULL or a `size_t *` for this key.
+            unsafe { out(a.p1, v) }?
+        }
+        SET_MWINDOW_FILE_LIMIT => crate::mwindow::git_mwindow__file_limit.store(a.sz, r),
+        GET_MWINDOW_FILE_LIMIT => {
+            let v = crate::mwindow::git_mwindow__file_limit.load(r);
+            // SAFETY: `p1` is NULL or a `size_t *` for this key.
+            unsafe { out(a.p1, v) }?
+        }
+        GET_SEARCH_PATH => {
+            let f = |s: &mut GitStr| {
+                let level = config_level_to_sysdir(a.i)?;
+                sysdir::get_into(s, level)
+            };
+            // SAFETY: `p1` is NULL or a valid `git_buf *` for this key.
+            unsafe { buf_out(a.p1.cast(), f) }?
+        }
+        SET_SEARCH_PATH => {
+            let level = config_level_to_sysdir(a.i)?;
+            // SAFETY: for a valid level (checked just above, as the shim
+            // did before reading it) `p1` is NULL or a string.
+            sysdir::set(level, unsafe { cstr(a.p1) })?;
+        }
+        SET_CACHE_OBJECT_LIMIT => {
+            crate::cache::set_max_object_size(a.i, a.sz)?;
+        }
+        SET_CACHE_MAX_SIZE => crate::cache::git_cache__max_storage.store(a.ssz, r),
+        ENABLE_CACHING => crate::cache::git_cache__enabled.store(a.i != 0, r),
+        GET_CACHED_MEMORY => {
+            let v = crate::cache::git_cache__current_storage.load(Ordering::SeqCst);
+            // SAFETY: `p1` and `p2` are NULL or `ssize_t *` for this key.
+            unsafe { out(a.p1, v) }?;
+            let v = crate::cache::git_cache__max_storage.load(r);
+            // SAFETY: as above.
+            unsafe { out(a.p2, v) }?;
+        }
+        GET_TEMPLATE_PATH => {
+            let f = |s: &mut GitStr| sysdir::get_into(s, GIT_SYSDIR_TEMPLATE);
+            // SAFETY: `p1` is NULL or a valid `git_buf *` for this key.
+            unsafe { buf_out(a.p1.cast(), f) }?
+        }
+        SET_TEMPLATE_PATH => {
+            // SAFETY: `p1` is NULL or a string for this key.
+            sysdir::set(GIT_SYSDIR_TEMPLATE, unsafe { cstr(a.p1) })?
+        }
+        SET_SSL_CERT_LOCATIONS => {
+            // SAFETY: `p1` is NULL or a string for this key.
+            let file = unsafe { cstr(a.p1) };
+            // SAFETY: `p2` is NULL or a string for this key.
+            let path = unsafe { cstr(a.p2) };
+            crate::sys::streams::openssl_set_cert_location(file, path)?
+        }
+        ADD_SSL_X509_CERT => {
+            // SAFETY: `p1` is NULL or an `X509 *` for this key.
+            unsafe { crate::sys::streams::openssl_add_x509_cert(a.p1) }?
+        }
+        SET_USER_AGENT => {
+            // SAFETY: `p1` is NULL or a string for this key.
+            replace(&git__user_agent, unsafe { cstr(a.p1) })?
+        }
+        GET_USER_AGENT => {
+            let f = |s: &mut GitStr| s.puts(&user_agent());
+            // SAFETY: `p1` is NULL or a valid `git_buf *` for this key.
+            unsafe { buf_out(a.p1.cast(), f) }?
+        }
+        SET_USER_AGENT_PRODUCT => {
+            // SAFETY: `p1` is NULL or a string for this key.
+            replace(&git__user_agent_product, unsafe { cstr(a.p1) })?
+        }
+        GET_USER_AGENT_PRODUCT => {
+            let f = |s: &mut GitStr| s.puts(&user_agent_product());
+            // SAFETY: `p1` is NULL or a valid `git_buf *` for this key.
+            unsafe { buf_out(a.p1.cast(), f) }?
+        }
+        ENABLE_STRICT_OBJECT_CREATION => {
+            crate::object::git_object__strict_input_validation.store(a.i != 0, r)
+        }
+        ENABLE_STRICT_SYMBOLIC_REF_CREATION => {
+            crate::refs::git_reference__enable_symbolic_ref_target_validation.store(a.i != 0, r)
+        }
+        SET_SSL_CIPHERS => {
+            // C copies with `git__strdup` and reports its failure as
+            // out-of-memory; a NULL list (which crashes the C) clears
+            // the setting.
+            // SAFETY: `p1` is NULL or a string for this key.
+            if replace(&git__ssl_ciphers, unsafe { cstr(a.p1) }).is_err() {
+                return Err(errors::oom());
+            }
+        }
+        ENABLE_OFS_DELTA => globals::git_smart__ofs_delta_enabled.store(a.i != 0, r),
+        ENABLE_FSYNC_GITDIR => crate::repository::git_repository__fsync_gitdir.store(a.i != 0, r),
+        GET_WINDOWS_SHAREMODE | SET_WINDOWS_SHAREMODE => {}
+        ENABLE_STRICT_HASH_VERIFICATION => {
+            crate::odb::git_odb__strict_hash_verification.store(a.i != 0, r)
+        }
+        SET_ALLOCATOR => {
+            // SAFETY: `p1` is NULL or a valid `git_allocator *` for this
+            // key, which is what the export requires.
+            ErrorCode::check(unsafe { crate::util::alloc::ffi::git_allocator_setup(a.p1.cast()) })?;
+        }
+        ENABLE_UNSAVED_INDEX_SAFETY => {
+            crate::index::git_index__enforce_unsaved_safety.store(a.i != 0, r)
+        }
+        SET_PACK_MAX_OBJECTS => indexer_max_objects().store(a.sz, r),
+        GET_PACK_MAX_OBJECTS => {
+            let v = indexer_max_objects().load(r);
+            // SAFETY: `p1` is NULL or a `size_t *` for this key.
+            unsafe { out(a.p1, v) }?
+        }
+        SET_PACK_MAX_OBJECT_SIZE => indexer_max_object_size().store(a.sz, r),
+        GET_PACK_MAX_OBJECT_SIZE => {
+            let v = indexer_max_object_size().load(r);
+            // SAFETY: `p1` is NULL or a `size_t *` for this key.
+            unsafe { out(a.p1, v) }?
+        }
+        DISABLE_PACK_KEEP_FILE_CHECKS => {
+            crate::pack::git_disable_pack_keep_file_checks.store(a.i != 0, r)
+        }
+        ENABLE_HTTP_EXPECT_CONTINUE => globals::git_http__expect_continue.store(a.i != 0, r),
+        SET_ODB_PACKED_PRIORITY => crate::odb::git_odb__packed_priority.store(a.i, r),
+        SET_ODB_LOOSE_PRIORITY => crate::odb::git_odb__loose_priority.store(a.i, r),
+        SET_EXTENSIONS => {
+            // SAFETY: for this key `p1` is a `const char **` of `sz`
+            // strings (or NULL with 0), what the export requires.
+            ErrorCode::check(unsafe {
+                crate::repository::ffi::git_repository__set_extensions(a.p1.cast(), a.sz)
+            })?;
+        }
+        GET_EXTENSIONS => {
+            let arr = a.p1.cast::<crate::strarray::GitStrArray>();
+            if arr.is_null() {
+                return Err(errors::assert_arg_failed("out"));
+            }
+            // SAFETY: `arr` is non-null, so a writable `git_strarray *` for
+            // this key: the projection stays in its allocation (and forms
+            // no reference).
+            let strings = unsafe { &raw mut (*arr).strings };
+            // SAFETY: as above.
+            let count = unsafe { &raw mut (*arr).count };
+            // SAFETY: two writable, aligned, distinct fields of `*arr`,
+            // which nothing else references during the call.
+            ErrorCode::check(unsafe {
+                crate::repository::ffi::git_repository__extensions(strings, count)
+            })?;
+        }
+        GET_OWNER_VALIDATION => {
+            let v = c_int::from(crate::repository::git_repository__validate_ownership.load(r));
+            // SAFETY: `p1` is NULL or an `int *` for this key.
+            unsafe { out(a.p1, v) }?
+        }
+        SET_OWNER_VALIDATION => {
+            crate::repository::git_repository__validate_ownership.store(a.i != 0, r)
+        }
+        GET_HOMEDIR => {
+            let f = |s: &mut GitStr| sysdir::get_into(s, GIT_SYSDIR_HOME);
+            // SAFETY: `p1` is NULL or a valid `git_buf *` for this key.
+            unsafe { buf_out(a.p1.cast(), f) }?
+        }
+        SET_HOMEDIR => {
+            // SAFETY: `p1` is NULL or a string for this key.
+            sysdir::set(GIT_SYSDIR_HOME, unsafe { cstr(a.p1) })?
+        }
+        GET_SERVER_CONNECT_TIMEOUT => {
+            let v = globals::git_socket_stream__connect_timeout.load(r);
+            // SAFETY: `p1` is NULL or an `int *` for this key.
+            unsafe { out(a.p1, v) }?
+        }
+        SET_SERVER_CONNECT_TIMEOUT => {
+            if a.i < 0 {
+                return Err(git_error_set!(
+                    ErrorClass::INVALID,
+                    "invalid connect timeout"
+                ));
+            }
+            globals::git_socket_stream__connect_timeout.store(a.i, r);
+        }
+        GET_SERVER_TIMEOUT => {
+            let v = globals::git_socket_stream__timeout.load(r);
+            // SAFETY: `p1` is NULL or an `int *` for this key.
+            unsafe { out(a.p1, v) }?
+        }
+        SET_SERVER_TIMEOUT => {
+            if a.i < 0 {
+                return Err(git_error_set!(ErrorClass::INVALID, "invalid timeout"));
+            }
+            globals::git_socket_stream__timeout.store(a.i, r);
+        }
+        _ => return Err(git_error_set!(ErrorClass::INVALID, "invalid option key")),
     }
     Ok(())
 }
@@ -477,8 +532,7 @@ pub mod ffi {
     /// The result is valid until the next `GIT_OPT_SET_USER_AGENT`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_settings__user_agent() -> *const c_char {
-        // SAFETY: the caller's contract is `read`'s.
-        unsafe { read(&git__user_agent, DEFAULT_USER_AGENT) }.as_ptr()
+        read(&git__user_agent, DEFAULT_USER_AGENT)
     }
 
     /// `git_settings__user_agent_product`.
@@ -488,8 +542,7 @@ pub mod ffi {
     /// As [`git_settings__user_agent`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_settings__user_agent_product() -> *const c_char {
-        // SAFETY: the caller's contract is `read`'s.
-        unsafe { read(&git__user_agent_product, c"git/2.0") }.as_ptr()
+        read(&git__user_agent_product, c"git/2.0")
     }
 
     /// `git_libgit2_opts`' body: the shim in `rust_shims.c` read the
@@ -503,9 +556,10 @@ pub mod ffi {
     pub unsafe extern "C" fn git_libgit2__opts(key: c_int, args: Option<&OptArgs>) -> c_int {
         barrier(|| {
             let args = git_arg!(args, "args", -1);
-            let a = args;
-            // SAFETY: the caller's contract.
-            status(unsafe { opts(key, a) })
+            // SAFETY: `args` holds what C documents for `key` (this
+            // export's contract, which the shim's `va_arg` reads keep),
+            // which is `opts`' contract.
+            status(unsafe { opts(key, args) })
         })
     }
 }

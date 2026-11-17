@@ -715,7 +715,7 @@ pub(crate) fn shallow_roots(repo: &GitRepository) -> Result<(*mut Oid, usize)> {
     // SAFETY: as above, and local outs.
     check(unsafe {
         crate::grafts::ffi::git_grafts_oids(
-            &raw mut out,
+            Out::from(&mut out),
             Out::from(&mut len),
             repo.shallow_grafts_ptr(),
         )
