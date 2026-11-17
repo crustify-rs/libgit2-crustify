@@ -101,12 +101,17 @@ pub struct GitStr {
     size: usize,
 }
 
-// SAFETY: an owned buffer belongs to the `GitStr` alone and
-// `git__allocator` frees from any thread; a borrowed one is readable from
-// any thread for as long as the string borrows it (`borrowed`'s lifetime,
-// `attach_notowned`'s contract); `&GitStr` only reads.
+// SAFETY: `asize` and `size` are plain integers. `ptr` is one of: a
+// sentinel (`git_str__initstr`/`git_str__oom`, statics never written by
+// Rust), NULL, an owned buffer that belongs to this `GitStr` alone (moving
+// the string moves the ownership; `git__allocator` frees from any thread),
+// or borrowed bytes that are readable from any thread for as long as the
+// string borrows them (`borrowed`'s lifetime, `attach_notowned`'s
+// contract). Nothing is tied to the creating thread.
 unsafe impl Send for GitStr {}
-// SAFETY: as above: shared access only reads.
+// SAFETY: through `&GitStr` the buffer is only read (`as_bytes`,
+// `as_c_str`, comparisons); every write takes `&mut GitStr`, so shared
+// access from several threads reads unchanging bytes.
 unsafe impl Sync for GitStr {}
 
 /// `git_str_bom_t`.
@@ -345,8 +350,10 @@ impl GitStr {
             };
         }
         let n = self.size.min(self.asize - 1);
-        // SAFETY: an owned buffer's bytes `0..=size` are initialized (the
-        // contents and the NUL), within the allocation.
+        // SAFETY: an owned buffer is an allocation of `asize` bytes whose
+        // bytes `0..=size` are initialized (the contents and the NUL); `n +
+        // 1 <= asize` of them are read, and nothing writes them while
+        // `&self` lives.
         let b = unsafe { core::slice::from_raw_parts(self.ptr.cast::<u8>(), n + 1) };
         CStr::from_bytes_until_nul(b).ok()
     }
@@ -1464,8 +1471,10 @@ impl GitStr {
         let base = self.ptr.cast::<u8>();
         match a {
             Some(Seg::Ext(a)) => {
-                // SAFETY: `a` (outside the allocation) is readable for
-                // `strlen_a <= total` bytes, written at the start.
+                // SAFETY: `a` is readable for `strlen_a <= total < asize`
+                // bytes; it does not overlap the allocation, which `&mut
+                // self` owns exclusively (the exports copy C data that
+                // lies in it, `ffi::seg_of`/`src`).
                 unsafe { ptr::copy_nonoverlapping(a.as_ptr(), base, strlen_a) };
             }
             Some(Seg::Own { off, len }) if off != 0 => {
@@ -1479,8 +1488,9 @@ impl GitStr {
             // SAFETY: `strlen_a < total < asize`.
             unsafe { base.wrapping_add(strlen_a).write(separator) };
         }
-        // SAFETY: `b` (outside the allocation) is readable for its length,
-        // written at `strlen_a + need_sep`, ending at `total < asize`.
+        // SAFETY: `b` is readable for its length and, as `a`, outside the
+        // allocation; it is written at `strlen_a + need_sep`, ending at
+        // `total < asize`.
         unsafe {
             ptr::copy_nonoverlapping(b.as_ptr(), base.wrapping_add(strlen_a + need_sep), b.len())
         };
@@ -2057,10 +2067,15 @@ const fn base85_decode_table() -> [i8; 256] {
 /// [`git_str__vprintf_written`] and [`git_str__join_n`].
 ///
 /// Every export takes `git_str *` arguments that are valid `git_str`s (in
-/// any of the states of the [module documentation](super)), that no other
-/// thread accesses during the call; data arguments may point into the
-/// string's own buffer where C allowed it (they are copied first, or
-/// handled in place).
+/// any of the states of the [module documentation](super)), that nothing
+/// else (no other thread, no other argument) accesses during the call. The
+/// exports take such a string as `Option<&mut GitStr>`: the reference
+/// covers the three-word struct only, not the buffer it points to, so data
+/// arguments may point into the string's own buffer where C allowed it
+/// (they are copied first, or handled in place, through raw pointers). A
+/// NULL string, which C dereferences unchecked, fails as an invalid
+/// argument. Exports with two `git_str *` that C allows to be the same
+/// (`git_str_swap`, `git_str_crlf_to_lf`, ...) keep the raw pointer.
 ///
 /// A data argument "readable for `n` bytes" must also be *initialized* for
 /// those bytes. In particular, `git_str_set(buf, buf->ptr, len)` with `len >
@@ -2070,46 +2085,26 @@ const fn base85_decode_table() -> [i8; 256] {
 pub mod ffi {
     use super::*;
     use crate::git_arg;
-    use crate::util::cabi::{CStrArg, Out};
+    use crate::util::cabi::{self, CStrArg, Out};
     use crate::util::export::{barrier, bytes, cstr_bytes, status};
     use std::borrow::Cow;
 
-    /// The string at `buf`, for the call.
-    ///
-    /// # Safety
-    ///
-    /// `buf` is a valid `git_str` that nothing else accesses for `'a`.
+    /// `data` as the source of an operation on `buf`: borrowed if it lies
+    /// outside `buf`'s allocation, else copied, so that the operation may
+    /// write or move the buffer. Only addresses are compared.
     #[inline(always)]
-    unsafe fn s<'a>(buf: *mut GitStr) -> &'a mut GitStr {
-        // SAFETY: the caller's contract.
-        unsafe { &mut *buf }
-    }
-
-    /// The `len` bytes at `data` as a segment of `buf`: its own contents
-    /// if they lie within them, else a slice; copied if they overlap the
-    /// allocation some other way.
-    ///
-    /// # Safety
-    ///
-    /// `data` is readable for `len` bytes (when `len > 0`), and nothing
-    /// writes them during the call except through `buf`.
-    #[inline(always)]
-    unsafe fn seg<'a>(buf: &GitStr, data: *const c_char, len: usize) -> Cow<'a, [u8]> {
-        if len == 0 || data.is_null() {
-            return Cow::Borrowed(&[]);
-        }
-        // SAFETY: forwarded: `len` readable bytes at `data`.
-        let ext = unsafe { bytes(data, len) };
-        if buf.owned() {
+    fn seg_of<'a>(buf: &GitStr, data: &'a [u8]) -> Cow<'a, [u8]> {
+        if !data.is_empty() && buf.owned() {
             let start = buf.ptr as usize;
-            let end = start + buf.asize;
-            let (d0, d1) = (data as usize, data as usize + len);
+            let end = start.wrapping_add(buf.asize);
+            let d0 = data.as_ptr() as usize;
+            let d1 = d0.wrapping_add(data.len());
             if d0 < end && d1 > start {
                 // Within the buffer: copy before the buffer is touched.
-                return Cow::Owned(ext.to_vec());
+                return Cow::Owned(data.to_vec());
             }
         }
-        Cow::Borrowed(ext)
+        Cow::Borrowed(data)
     }
 
     /// Where the `len` bytes at `data` lie, for an operation that appends
@@ -2130,11 +2125,16 @@ pub mod ffi {
         }
     }
 
-    /// Classify the `len` bytes at `data` against `buf` (see [`Src`]).
+    /// Classify the `len` bytes at `data` against `buf` (see [`Src`]): no
+    /// reference to bytes within the buffer's contents is formed.
     ///
     /// # Safety
     ///
-    /// As [`seg`].
+    /// When `len > 0` and `data` is not NULL, `data` is readable and
+    /// initialized for `len` bytes, and nothing writes them for `'a` except
+    /// through `buf`; bytes outside `buf`'s allocation are not written
+    /// through `buf` either (the bytes inside it are copied, or kept as
+    /// offsets into the contents).
     #[inline(always)]
     unsafe fn src<'a>(buf: &GitStr, data: *const c_char, len: usize) -> Src<'a> {
         if len == 0 || data.is_null() {
@@ -2151,12 +2151,15 @@ pub mod ffi {
                         len,
                     });
                 }
-                // SAFETY: the caller passes `len` readable bytes.
+                // SAFETY: `data` is non-null and readable, initialized and
+                // unwritten for `len` bytes (this fn's contract); the slice
+                // lives only for the copy.
                 return Src::Copy(unsafe { bytes(data, len) }.to_vec());
             }
         }
-        // SAFETY: the caller passes `len` readable bytes, which lie outside
-        // the buffer's allocation.
+        // SAFETY: `data` is non-null and readable and initialized for `len`
+        // bytes, which lie outside the buffer's allocation, so nothing
+        // writes them for `'a` (this fn's contract).
         Src::Seg(Seg::Ext(unsafe { bytes(data, len) }))
     }
 
@@ -2164,16 +2167,17 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `buf` is valid for writes of a `git_str` (its old contents are
-    /// overwritten, not freed, as in C).
+    /// `buf` is NULL or valid for writes of a `git_str` (its old contents
+    /// are overwritten, not freed, as in C), and nothing else accesses it
+    /// during the call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_init(buf: *mut GitStr, initial_size: usize) -> c_int {
+    pub unsafe extern "C" fn git_str_init(
+        buf: Option<&mut MaybeUninit<GitStr>>,
+        initial_size: usize,
+    ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller passes a writable `git_str`; C does not free
-            // what was there.
-            unsafe { buf.write(GitStr::new()) };
-            // SAFETY: just initialized.
-            status(unsafe { s(buf) }.ensure(initial_size))
+            let buf = git_arg!(buf, "buf", -1);
+            status(buf.write(GitStr::new()).ensure(initial_size))
         })
     }
 
@@ -2184,12 +2188,11 @@ pub mod ffi {
     /// See the [module](self).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_try_grow(
-        buf: *mut GitStr,
+        buf: Option<&mut GitStr>,
         target_size: usize,
         mark_oom: bool,
     ) -> c_int {
-        // SAFETY: the module's contract.
-        barrier(|| status(unsafe { s(buf) }.try_grow(target_size, mark_oom)))
+        barrier(|| status(git_arg!(buf, "buf", -1).try_grow(target_size, mark_oom)))
     }
 
     /// `git_str_grow`.
@@ -2198,9 +2201,8 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_grow(buf: *mut GitStr, target_size: usize) -> c_int {
-        // SAFETY: the module's contract.
-        barrier(|| status(unsafe { s(buf) }.grow(target_size)))
+    pub unsafe extern "C" fn git_str_grow(buf: Option<&mut GitStr>, target_size: usize) -> c_int {
+        barrier(|| status(git_arg!(buf, "buf", -1).grow(target_size)))
     }
 
     /// `git_str_grow_by`.
@@ -2209,9 +2211,11 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_grow_by(buf: *mut GitStr, additional_size: usize) -> c_int {
-        // SAFETY: the module's contract.
-        barrier(|| status(unsafe { s(buf) }.grow_by(additional_size)))
+    pub unsafe extern "C" fn git_str_grow_by(
+        buf: Option<&mut GitStr>,
+        additional_size: usize,
+    ) -> c_int {
+        barrier(|| status(git_arg!(buf, "buf", -1).grow_by(additional_size)))
     }
 
     /// `git_str_dispose` (NULL is allowed).
@@ -2220,11 +2224,10 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_dispose(buf: *mut GitStr) {
+    pub unsafe extern "C" fn git_str_dispose(buf: Option<&mut GitStr>) {
         barrier(|| {
-            if !buf.is_null() {
-                // SAFETY: the module's contract.
-                unsafe { s(buf) }.dispose()
+            if let Some(b) = buf {
+                b.dispose()
             }
         })
     }
@@ -2235,43 +2238,49 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_clear(buf: *mut GitStr) {
-        // SAFETY: the module's contract.
-        barrier(|| unsafe { s(buf) }.clear())
+    pub unsafe extern "C" fn git_str_clear(buf: Option<&mut GitStr>) {
+        barrier(|| git_arg!(buf, "buf", ()).clear())
     }
 
     /// `git_str_set`.
     ///
     /// # Safety
     ///
-    /// See the [module](self); `data` is readable for `len` bytes (it may be
-    /// the buffer's own `ptr`).
+    /// See the [module](self); `data` is NULL or readable for `len` bytes
+    /// (it may lie within the buffer, its own `ptr` included).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_set(
-        buf: *mut GitStr,
+        mut buf: Option<&mut GitStr>,
         data: *const libc::c_void,
         len: usize,
     ) -> c_int {
-        // SAFETY: the module's contract.
-        let b = unsafe { s(buf) };
-        // Hot path (no panic is possible): room enough, no aliasing.
-        // SAFETY: a non-null `data` is readable for `len` bytes.
-        if !data.is_null() && unsafe { b.try_set_fast(data.cast(), len) } {
+        // Hot path (no panic is possible): room enough.
+        if let Some(b) = buf.as_deref_mut()
+            && !data.is_null()
+            // SAFETY: a non-null `data` is readable and initialized for `len`
+            // bytes (this export's contract), and no reference covers them:
+            // `b` covers the struct only.
+            && unsafe { b.try_set_fast(data.cast(), len) }
+        {
             return 0;
         }
-        // SAFETY: forwarded.
-        unsafe { set_slow(b, data, len) }
+        // SAFETY: `data` is NULL or readable and initialized for `len`
+        // bytes, which nothing writes except through `buf` (this export's
+        // contract): what `set_slow` requires.
+        unsafe { set_slow(buf, data, len) }
     }
 
     /// `git_str_set` when the fast path does not apply (out of line).
     ///
     /// # Safety
     ///
-    /// As `git_str_set`.
+    /// `data` is NULL or readable and initialized for `len` bytes, which
+    /// nothing writes during the call except through `buf`.
     #[cold]
     #[inline(never)]
-    unsafe fn set_slow(b: &mut GitStr, data: *const libc::c_void, len: usize) -> c_int {
+    unsafe fn set_slow(buf: Option<&mut GitStr>, data: *const libc::c_void, len: usize) -> c_int {
         barrier(|| {
+            let b = git_arg!(buf, "buf", -1);
             if len == 0 || data.is_null() {
                 b.clear();
                 return 0;
@@ -2279,14 +2288,15 @@ pub mod ffi {
             let data = data.cast::<c_char>();
             if data == b.ptr.cast_const() {
                 // C's `data == buf->ptr`: the first `len` bytes are in
-                // place (the caller guarantees they are readable).
+                // place (the caller guarantees they are initialized).
                 b.size = len;
                 if b.asize > len {
                     b.write_byte(len, 0);
                 }
                 return 0;
             }
-            // SAFETY: the caller passes `len` readable bytes.
+            // SAFETY: `data` is non-null, readable and initialized for `len`
+            // bytes, written by nothing but `b` (this fn's contract).
             let d = unsafe { src(b, data, len) };
             status(b.set_seg(d.seg()))
         })
@@ -2296,23 +2306,34 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the [module](self); `string` is NULL or NUL-terminated.
+    /// See the [module](self); `string` is NULL or NUL-terminated (it may
+    /// lie within the buffer).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_sets(buf: *mut GitStr, string: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_str_sets(
+        mut buf: Option<&mut GitStr>,
+        string: *const c_char,
+    ) -> c_int {
+        // (A raw pointer, not `CStrArg`: the string may lie in the buffer,
+        // which the call writes.)
         let len = if string.is_null() {
             0
         } else {
-            // SAFETY: a non-null `string` is NUL-terminated.
+            // SAFETY: a non-null `string` is NUL-terminated (this export's
+            // contract).
             unsafe { libc::strlen(string) }
         };
-        // SAFETY: the module's contract.
-        let b = unsafe { s(buf) };
-        // SAFETY: a non-null `string` is readable for `len` bytes.
-        if !string.is_null() && unsafe { b.try_set_fast(string.cast(), len) } {
+        if let Some(b) = buf.as_deref_mut()
+            && !string.is_null()
+            // SAFETY: a non-null `string` is readable for `len` bytes (just
+            // measured), and no reference covers them: `b` covers the
+            // struct only.
+            && unsafe { b.try_set_fast(string.cast(), len) }
+        {
             return 0;
         }
-        // SAFETY: forwarded.
-        unsafe { set_slow(b, string.cast(), len) }
+        // SAFETY: `string` is NULL or readable for `len` bytes (just
+        // measured), written by nothing but `buf` during the call.
+        unsafe { set_slow(buf, string.cast(), len) }
     }
 
     /// `git_str_putc`.
@@ -2321,21 +2342,21 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_putc(buf: *mut GitStr, c: c_char) -> c_int {
+    pub unsafe extern "C" fn git_str_putc(mut buf: Option<&mut GitStr>, c: c_char) -> c_int {
         let ch = c as u8;
-        // SAFETY: the module's contract.
-        let b = unsafe { s(buf) };
         // Hot path (no panic is possible).
-        if b.try_putc_fast(ch) {
+        if let Some(b) = buf.as_deref_mut()
+            && b.try_putc_fast(ch)
+        {
             return 0;
         }
-        putc_slow(b, ch)
+        putc_slow(buf, ch)
     }
 
     #[cold]
     #[inline(never)]
-    fn putc_slow(b: &mut GitStr, ch: u8) -> c_int {
-        barrier(|| status(b.putc(ch)))
+    fn putc_slow(buf: Option<&mut GitStr>, ch: u8) -> c_int {
+        barrier(|| status(git_arg!(buf, "buf", -1).putc(ch)))
     }
 
     /// `git_str_putcn`.
@@ -2344,35 +2365,43 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_putcn(buf: *mut GitStr, c: c_char, len: usize) -> c_int {
-        // SAFETY: the module's contract.
-        barrier(|| status(unsafe { s(buf) }.putcn(c as u8, len)))
+    pub unsafe extern "C" fn git_str_putcn(
+        buf: Option<&mut GitStr>,
+        c: c_char,
+        len: usize,
+    ) -> c_int {
+        barrier(|| status(git_arg!(buf, "buf", -1).putcn(c as u8, len)))
     }
 
     /// `git_str_put`.
     ///
     /// # Safety
     ///
-    /// See the [module](self); `data` is readable for `len` bytes (it may
-    /// lie within the buffer).
+    /// See the [module](self); `data` is NULL or readable for `len` bytes
+    /// (it may lie within the buffer).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_put(
-        buf: *mut GitStr,
+        mut buf: Option<&mut GitStr>,
         data: *const c_char,
         len: usize,
     ) -> c_int {
         if len == 0 {
             return 0;
         }
-        // SAFETY: the module's contract.
-        let b = unsafe { s(buf) };
-        // Hot path (no panic is possible): room enough, no aliasing.
-        // SAFETY: a non-null `data` is readable for `len` bytes.
-        if !data.is_null() && unsafe { b.try_put_fast(data.cast(), len) } {
+        // Hot path (no panic is possible): room enough.
+        if let Some(b) = buf.as_deref_mut()
+            && !data.is_null()
+            // SAFETY: a non-null `data` is readable and initialized for `len`
+            // bytes (this export's contract), and no reference covers them:
+            // `b` covers the struct only.
+            && unsafe { b.try_put_fast(data.cast(), len) }
+        {
             return 0;
         }
-        // SAFETY: forwarded.
-        unsafe { put_slow(b, data, len) }
+        // SAFETY: `data` is NULL or readable and initialized for `len`
+        // bytes, which nothing writes except through `buf` (this export's
+        // contract): what `put_slow` requires.
+        unsafe { put_slow(buf, data, len) }
     }
 
     /// `git_str_put` when the fast path does not apply: out of line, so
@@ -2380,16 +2409,19 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// As `git_str_put`.
+    /// `data` is NULL or readable and initialized for `len` bytes, which
+    /// nothing writes during the call except through `buf`.
     #[cold]
     #[inline(never)]
-    unsafe fn put_slow(b: &mut GitStr, data: *const c_char, len: usize) -> c_int {
+    unsafe fn put_slow(buf: Option<&mut GitStr>, data: *const c_char, len: usize) -> c_int {
         barrier(|| {
             if data.is_null() {
                 let _ = errors::assert_arg_failed("data");
                 return -1;
             }
-            // SAFETY: the caller passes `len` readable bytes.
+            let b = git_arg!(buf, "buf", -1);
+            // SAFETY: `data` is non-null, readable and initialized for `len`
+            // bytes, written by nothing but `b` (this fn's contract).
             let d = unsafe { src(b, data, len) };
             status(b.put_seg(d.seg()))
         })
@@ -2399,25 +2431,33 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the [module](self); `string` is NUL-terminated.
+    /// See the [module](self); `string` is NULL or NUL-terminated (it may
+    /// lie within the buffer).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_puts(buf: *mut GitStr, string: *const c_char) -> c_int {
+    pub unsafe extern "C" fn git_str_puts(
+        mut buf: Option<&mut GitStr>,
+        string: *const c_char,
+    ) -> c_int {
         if string.is_null() {
             return barrier(|| errors::assert_arg_failed("string").raw());
         }
-        // SAFETY: `string` is NUL-terminated.
+        // (A raw pointer, not `CStrArg`: the string may lie in the buffer.)
+        // SAFETY: a non-null `string` is NUL-terminated (this export's
+        // contract).
         let len = unsafe { libc::strlen(string) };
         if len == 0 {
             return 0;
         }
-        // SAFETY: the module's contract.
-        let b = unsafe { s(buf) };
-        // SAFETY: `string` is readable for `len` bytes.
-        if unsafe { b.try_put_fast(string.cast(), len) } {
+        if let Some(b) = buf.as_deref_mut()
+            // SAFETY: `string` is readable for `len` bytes (just measured),
+            // and no reference covers them: `b` covers the struct only.
+            && unsafe { b.try_put_fast(string.cast(), len) }
+        {
             return 0;
         }
-        // SAFETY: forwarded.
-        unsafe { put_slow(b, string, len) }
+        // SAFETY: `string` is readable for `len` bytes (just measured),
+        // written by nothing but `buf` during the call.
+        unsafe { put_slow(buf, string, len) }
     }
 
     macro_rules! encode {
@@ -2426,14 +2466,21 @@ pub mod ffi {
             ///
             /// # Safety
             ///
-            /// See the [module](self); `data` is readable for `len` bytes.
+            /// See the [module](self); `data` is NULL or readable for `len`
+            /// bytes (it may lie within the buffer: it is copied first).
             #[unsafe(no_mangle)]
-            pub unsafe extern "C" fn $name(buf: *mut GitStr, data: *const c_char, len: usize) -> c_int {
+            pub unsafe extern "C" fn $name(
+                buf: Option<&mut GitStr>,
+                data: *const c_char,
+                len: usize,
+            ) -> c_int {
                 barrier(|| {
-                    // SAFETY: the module's contract: a valid, unaliased string.
-                    let b = unsafe { s(buf) };
-                    // SAFETY: the caller passes `len` readable bytes.
-                    let d = unsafe { seg(b, data, len) };
+                    let b = git_arg!(buf, "buf", -1);
+                    // SAFETY: a non-null `data` is readable for `len` bytes,
+                    // which nothing writes during the call except `b`
+                    // (this export's contract); `seg_of` copies them if
+                    // they lie in `b`'s allocation, before `b` changes.
+                    let d = seg_of(b, unsafe { bytes(data, len) });
                     status(b.$method(&d))
                 })
             }
@@ -2470,19 +2517,23 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the [module](self); `base85` is readable for `base85_len` bytes.
+    /// See the [module](self); `base85` is NULL or readable for
+    /// `base85_len` bytes (it may lie within the buffer: it is copied
+    /// first).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_decode_base85(
-        buf: *mut GitStr,
+        buf: Option<&mut GitStr>,
         base85: *const c_char,
         base85_len: usize,
         output_len: usize,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the module's contract: a valid, unaliased string.
-            let b = unsafe { s(buf) };
-            // SAFETY: the caller passes `base85_len` readable bytes.
-            let d = unsafe { seg(b, base85, base85_len) };
+            let b = git_arg!(buf, "buf", -1);
+            // SAFETY: a non-null `base85` is readable for `base85_len`
+            // bytes, which nothing writes during the call except `b` (this
+            // export's contract); `seg_of` copies them if they lie in `b`'s
+            // allocation, before `b` changes.
+            let d = seg_of(b, unsafe { bytes(base85, base85_len) });
             status(b.decode_base85(&d, output_len))
         })
     }
@@ -2493,9 +2544,11 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str__vprintf_begin(buf: *mut GitStr, format_len: usize) -> c_int {
-        // SAFETY: the module's contract.
-        barrier(|| status(unsafe { s(buf) }.vprintf_begin(format_len)))
+    pub unsafe extern "C" fn git_str__vprintf_begin(
+        buf: Option<&mut GitStr>,
+        format_len: usize,
+    ) -> c_int {
+        barrier(|| status(git_arg!(buf, "buf", -1).vprintf_begin(format_len)))
     }
 
     /// The second half of the `git_str_vprintf` shim: 0 when done, 1 to
@@ -2506,12 +2559,15 @@ pub mod ffi {
     /// See the [module](self); `vsnprintf` returned `len` for a write of at
     /// most `asize - size` bytes at `ptr + size`.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str__vprintf_written(buf: *mut GitStr, len: c_int) -> c_int {
+    pub unsafe extern "C" fn git_str__vprintf_written(
+        buf: Option<&mut GitStr>,
+        len: c_int,
+    ) -> c_int {
         barrier(|| {
-            // SAFETY: the module's contract: a valid, unaliased string.
-            let b = unsafe { s(buf) };
-            // SAFETY: `len` is what `vsnprintf` returned for the room at
-            // `ptr + size` (this function's contract).
+            let b = git_arg!(buf, "buf", -1);
+            // SAFETY: `len` is what `vsnprintf` returned for its write of at
+            // most `asize - size` bytes at `ptr + size` (this export's
+            // contract): when it fit, it wrote `len` bytes and a NUL there.
             match unsafe { b.vprintf_written(len) } {
                 Ok(true) => 0,
                 Ok(false) => 1,
@@ -2524,38 +2580,40 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `data` is writable for `datasize` bytes; `buf` is NULL or a valid
-    /// `git_str`.
+    /// `data` is NULL or writable for `datasize` bytes (it may overlap the
+    /// string's contents, not the `git_str` itself); `buf` is NULL or a
+    /// valid `git_str` that nothing writes during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_copy_cstr(
         data: *mut c_char,
         datasize: usize,
-        buf: *const GitStr,
+        buf: Option<&GitStr>,
     ) -> c_int {
         barrier(|| {
             crate::git_assert_arg!(!data.is_null(), "data", -1);
             crate::git_assert_arg!(datasize != 0, "datasize", -1);
-            crate::git_assert_arg!(!buf.is_null(), "buf", -1);
+            let g = git_arg!(buf, "buf", -1);
             // C: `data[0] = 0`, then (unless the string is empty or not
             // allocated) `memmove` of `min(size, datasize - 1)` bytes and a
             // NUL. `data` may overlap the contents, so this is done with
-            // raw copies: no reference to either, no allocation.
-            // SAFETY: `buf` is a valid `git_str`; the reference covers the
-            // struct only, which `data` does not overlap.
-            let g = unsafe { &*buf };
+            // raw copies: no reference to either, no allocation. (`g`
+            // covers the struct only, which `data` does not overlap.)
             let (ptr, asize, size) = (g.ptr, g.asize, g.size);
             let d = data.cast::<u8>();
             // First, as C (which matters when `data` is the contents).
-            // SAFETY: `data` is writable for `datasize >= 1` bytes.
+            // SAFETY: `data` is non-null (checked) and writable for
+            // `datasize >= 1` bytes (checked; this export's contract).
             unsafe { d.write(0) };
             if size == 0 || asize == 0 || ptr == oomstr() || ptr.is_null() {
                 return 0;
             }
             let n = size.min(asize).min(datasize - 1);
-            // SAFETY: the contents are readable for `size` bytes and `data`
-            // writable for `datasize`; `copy` allows them to overlap.
+            // SAFETY: the string is allocated (`asize > 0`, not the OOM
+            // sentinel), so its first `min(size, asize) >= n` bytes are
+            // readable; `data` is writable for `datasize > n` bytes; `copy`
+            // allows the two to overlap.
             unsafe { ptr::copy(ptr.cast::<u8>(), d, n) };
-            // SAFETY: `n < datasize`.
+            // SAFETY: `n < datasize`: within `data`.
             unsafe { d.wrapping_add(n).write(0) };
             0
         })
@@ -2567,9 +2625,8 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_consume_bytes(buf: *mut GitStr, len: usize) {
-        // SAFETY: the module's contract.
-        barrier(|| unsafe { s(buf) }.consume_bytes(len))
+    pub unsafe extern "C" fn git_str_consume_bytes(buf: Option<&mut GitStr>, len: usize) {
+        barrier(|| git_arg!(buf, "buf", ()).consume_bytes(len))
     }
 
     /// `git_str_consume`: drop the bytes before `end`, a pointer into the
@@ -2577,12 +2634,11 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the [module](self).
+    /// See the [module](self); `end` is only compared.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_consume(buf: *mut GitStr, end: *const c_char) {
+    pub unsafe extern "C" fn git_str_consume(buf: Option<&mut GitStr>, end: *const c_char) {
         barrier(|| {
-            // SAFETY: the module's contract.
-            let b = unsafe { s(buf) };
+            let b = git_arg!(buf, "buf", ());
             let start = b.ptr as usize;
             let e = end as usize;
             if e > start && e <= start + b.size {
@@ -2597,9 +2653,8 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_truncate(buf: *mut GitStr, len: usize) {
-        // SAFETY: the module's contract.
-        barrier(|| unsafe { s(buf) }.truncate(len))
+    pub unsafe extern "C" fn git_str_truncate(buf: Option<&mut GitStr>, len: usize) {
+        barrier(|| git_arg!(buf, "buf", ()).truncate(len))
     }
 
     /// `git_str_shorten`.
@@ -2608,9 +2663,8 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_shorten(buf: *mut GitStr, amount: usize) {
-        // SAFETY: the module's contract.
-        barrier(|| unsafe { s(buf) }.shorten(amount))
+    pub unsafe extern "C" fn git_str_shorten(buf: Option<&mut GitStr>, amount: usize) {
+        barrier(|| git_arg!(buf, "buf", ()).shorten(amount))
     }
 
     /// `git_str_truncate_at_char`.
@@ -2619,9 +2673,8 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_truncate_at_char(buf: *mut GitStr, separator: c_char) {
-        // SAFETY: the module's contract.
-        barrier(|| unsafe { s(buf) }.truncate_at_char(separator as u8))
+    pub unsafe extern "C" fn git_str_truncate_at_char(buf: Option<&mut GitStr>, separator: c_char) {
+        barrier(|| git_arg!(buf, "buf", ()).truncate_at_char(separator as u8))
     }
 
     /// `git_str_rtruncate_at_char`.
@@ -2630,20 +2683,25 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_rtruncate_at_char(buf: *mut GitStr, separator: c_char) {
-        // SAFETY: the module's contract.
-        barrier(|| unsafe { s(buf) }.rtruncate_at_char(separator as u8))
+    pub unsafe extern "C" fn git_str_rtruncate_at_char(
+        buf: Option<&mut GitStr>,
+        separator: c_char,
+    ) {
+        barrier(|| git_arg!(buf, "buf", ()).rtruncate_at_char(separator as u8))
     }
 
     /// `git_str_swap`.
     ///
     /// # Safety
     ///
-    /// Both are valid `git_str`s (they may be the same one).
+    /// Both are valid `git_str`s (they may be the same one) that nothing
+    /// else accesses during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_swap(str_a: *mut GitStr, str_b: *mut GitStr) {
         barrier(|| {
-            // SAFETY: both are valid; `ptr::swap` allows them to be equal.
+            // SAFETY: both are aligned, valid for reads and writes, and
+            // unaccessed by anything else (this export's contract);
+            // `ptr::swap` allows them to be equal.
             unsafe { ptr::swap(str_a, str_b) }
         })
     }
@@ -2654,26 +2712,28 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_detach(buf: *mut GitStr) -> *mut c_char {
-        // SAFETY: the module's contract.
-        barrier(|| unsafe { s(buf) }.detach_raw())
+    pub unsafe extern "C" fn git_str_detach(buf: Option<&mut GitStr>) -> *mut c_char {
+        barrier(|| git_arg!(buf, "buf", ptr::null_mut()).detach_raw())
     }
 
     /// `git_str_attach`.
     ///
     /// # Safety
     ///
-    /// See the [module](self) and [`GitStr::attach`].
+    /// See the [module](self); `ptr` and `asize` are as [`GitStr::attach`]
+    /// requires.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_attach(
-        buf: *mut GitStr,
+        buf: Option<&mut GitStr>,
         ptr: *mut c_char,
         asize: usize,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the module's contract: a valid, unaliased string.
-            let b = unsafe { s(buf) };
-            // SAFETY: `attach`'s contract, forwarded to the caller.
+            let b = git_arg!(buf, "buf", -1);
+            // SAFETY: `ptr` is NULL or a NUL-terminated string in a
+            // `git__allocator` allocation of `max(asize, strlen + 1)` bytes
+            // whose ownership passes to the string (this export's
+            // contract, `attach`'s).
             status(unsafe { b.attach(ptr, asize) })
         })
     }
@@ -2682,17 +2742,19 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the [module](self) and [`GitStr::attach_notowned`].
+    /// See the [module](self); `ptr` and `size` are as
+    /// [`GitStr::attach_notowned`] requires.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_attach_notowned(
-        buf: *mut GitStr,
+        buf: Option<&mut GitStr>,
         ptr: *const c_char,
         size: usize,
     ) {
         barrier(|| {
-            // SAFETY: the module's contract: a valid, unaliased string.
-            let b = unsafe { s(buf) };
-            // SAFETY: `attach_notowned`'s contract, forwarded to the caller.
+            let b = git_arg!(buf, "buf", ());
+            // SAFETY: for `size > 0`, `ptr` is readable for `size` bytes,
+            // from any thread, unwritten until the string lets go of it
+            // (this export's contract, `attach_notowned`'s).
             unsafe { b.attach_notowned(ptr, size) }
         })
     }
@@ -2702,19 +2764,24 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the [module](self); `segments` holds `nbuf` such pointers.
+    /// See the [module](self); `segments` is readable for `nbuf` such
+    /// pointers, and nothing writes the strings during the call except
+    /// through `buf`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str__join_n(
-        buf: *mut GitStr,
+        mut buf: Option<&mut GitStr>,
         separator: c_char,
         nbuf: c_int,
         segments: *const *const c_char,
     ) -> c_int {
-        // SAFETY: the module's contract.
-        if unsafe { join_n_fast(buf, separator as u8, nbuf, segments) } {
+        if let Some(b) = buf.as_deref_mut()
+            // SAFETY: `segments` is as `join_n_fast` requires (this
+            // export's contract).
+            && unsafe { join_n_fast(b, separator as u8, nbuf, segments) }
+        {
             return 0;
         }
-        // SAFETY: forwarded.
+        // SAFETY: as above, for `join_n_slow`.
         unsafe { join_n_slow(buf, separator, nbuf, segments) }
     }
 
@@ -2726,10 +2793,13 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// As `git_str__join_n`.
+    /// For `nbuf > 0`, `segments` is readable for `nbuf` pointers, each
+    /// NULL or a NUL-terminated string (or, if it starts within `b`'s
+    /// contents, readable up to their end) that nothing writes during the
+    /// call except through `b`.
     #[inline(always)]
     unsafe fn join_n_fast(
-        buf: *mut GitStr,
+        b: &mut GitStr,
         sep: u8,
         nbuf: c_int,
         segments: *const *const c_char,
@@ -2741,24 +2811,28 @@ pub mod ffi {
         if n == 0 || n > MAX {
             return false;
         }
-        // SAFETY: the module's contract.
-        let b = unsafe { s(buf) };
         if !b.owned() || b.size >= b.asize {
             return false;
         }
+        // SAFETY: `segments` is readable for `nbuf = n` pointers (this
+        // fn's contract), which nothing writes.
+        let segments = unsafe { cabi::slice(segments, n) };
         let (base, asize, size) = (b.ptr.cast::<u8>(), b.asize, b.size);
         let (lo, hi) = (base as usize, base as usize + asize);
+        // The contents' last byte (0 if empty).
+        let last_of_contents = if size > 0 {
+            // SAFETY: `b` owns `asize > size` bytes at `base`, of which the
+            // first `size` are its initialized contents.
+            unsafe { base.wrapping_add(size - 1).read() }
+        } else {
+            0
+        };
         // Pass 1: lengths (`usize::MAX` for NULL) and the total.
         let mut ptrs = [core::ptr::null::<u8>(); MAX];
         let mut lens = [usize::MAX; MAX];
-        let last_of = |p: *const u8, len: usize| {
-            // SAFETY: `p` is readable for `len > 0` bytes (callers).
-            unsafe { p.wrapping_add(len - 1).read() }
-        };
-        let mut total = usize::from(size > 0 && last_of(base, size) != sep);
-        for i in 0..n {
-            // SAFETY: the caller passes `nbuf` pointers.
-            let p = unsafe { segments.wrapping_add(i).read() }.cast::<u8>();
+        let mut total = usize::from(size > 0 && last_of_contents != sep);
+        for (i, &p) in segments.iter().enumerate() {
+            let p = p.cast::<u8>();
             if p.is_null() {
                 continue;
             }
@@ -2767,7 +2841,8 @@ pub mod ffi {
                 // C: the rest of the original contents.
                 size - (pa - lo)
             } else {
-                // SAFETY: a non-null segment is NUL-terminated.
+                // SAFETY: a non-null segment outside the contents is
+                // NUL-terminated (this fn's contract).
                 let len = unsafe { libc::strlen(p.cast()) };
                 if pa < hi && pa + len + 1 > lo {
                     return false;
@@ -2776,7 +2851,11 @@ pub mod ffi {
             };
             ptrs[i] = p;
             lens[i] = len;
-            total += len + usize::from(len == 0 || last_of(p, len) != sep);
+            let ends_in_sep = len > 0
+                // SAFETY: `p` is readable for `len > 0` bytes (the rest of
+                // the contents, or the string just measured).
+                && unsafe { p.wrapping_add(len - 1).read() } == sep;
+            total += len + usize::from(!ends_in_sep);
         }
         if total == 0 {
             return true;
@@ -2788,9 +2867,9 @@ pub mod ffi {
         // read below `size`, so they are not overwritten.
         let limit = asize - 1;
         let mut out = size;
-        let mut last = if size > 0 { last_of(base, size) } else { 0 };
+        let mut last = last_of_contents;
         if size > 0 && last != sep {
-            // SAFETY: `out = size < limit`.
+            // SAFETY: `out = size < limit`: within the allocation.
             unsafe { base.wrapping_add(out).write(sep) };
             out += 1;
             last = sep;
@@ -2801,7 +2880,7 @@ pub mod ffi {
                 continue;
             }
             if out > 0 && last == sep {
-                // SAFETY: `p` is readable for `len` bytes.
+                // SAFETY: `p` stays within its `len` readable bytes.
                 while len > 0 && unsafe { p.read() } == sep {
                     p = p.wrapping_add(1);
                     len -= 1;
@@ -2810,20 +2889,22 @@ pub mod ffi {
             let len = len.min(limit - out);
             if len > 0 {
                 // SAFETY: `p` is readable for `len` bytes; the target lies
-                // within `out..limit`; `copy` allows a contents segment to
-                // overlap (it does not: it lies below `size <= out`).
+                // within `out..limit`, inside the allocation; `copy` allows
+                // a contents segment to overlap (it does not: it lies below
+                // `size <= out`).
                 unsafe { ptr::copy(p, base.wrapping_add(out), len) };
                 out += len;
-                last = last_of(base, out);
+                // SAFETY: the byte just written, at `out - 1 < limit`.
+                last = unsafe { base.wrapping_add(out - 1).read() };
             }
             if i + 1 < n && out > 0 && last != sep && out < limit {
-                // SAFETY: `out < limit`.
+                // SAFETY: `out < limit`: within the allocation.
                 unsafe { base.wrapping_add(out).write(sep) };
                 out += 1;
                 last = sep;
             }
         }
-        // SAFETY: `out <= limit < asize`.
+        // SAFETY: `out <= limit < asize`: within the allocation.
         unsafe { base.wrapping_add(out).write(0) };
         b.size = out;
         true
@@ -2833,25 +2914,21 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// As `git_str__join_n`.
+    /// As [`join_n_fast`], for `buf`'s string.
     #[cold]
     #[inline(never)]
     unsafe fn join_n_slow(
-        buf: *mut GitStr,
+        buf: Option<&mut GitStr>,
         separator: c_char,
         nbuf: c_int,
         segments: *const *const c_char,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the module's contract.
-            let b = unsafe { s(buf) };
+            let b = git_arg!(buf, "buf", -1);
             let n = usize::try_from(nbuf).unwrap_or(0);
-            let ptrs: &[*const c_char] = if n == 0 {
-                &[]
-            } else {
-                // SAFETY: the caller passes `nbuf` pointers.
-                unsafe { core::slice::from_raw_parts(segments, n) }
-            };
+            // SAFETY: `segments` is readable for `nbuf` pointers (this fn's
+            // contract), which nothing writes.
+            let ptrs: &[*const c_char] = unsafe { cabi::slice(segments, n) };
             // A segment that starts within the contents is the rest of the
             // original contents from there (C's special case).
             let contents = b.as_bytes();
@@ -2887,9 +2964,10 @@ pub mod ffi {
                     });
                     continue;
                 }
-                // SAFETY: a non-null segment is NUL-terminated and readable
-                // for the call (one that overlaps the allocation outside
-                // the contents is copied below, before the buffer changes).
+                // SAFETY: a non-null segment outside the contents is
+                // NUL-terminated and unwritten except through `b` (this fn's
+                // contract); one that overlaps the allocation is copied
+                // below, before `b` changes, and the slice is not used after.
                 let x = unsafe { cstr_bytes(p) };
                 let (d0, d1) = (x.as_ptr() as usize, x.as_ptr() as usize + x.len() + 1);
                 overlap |= d0 < a1 && d1 > a0;
@@ -2938,19 +3016,23 @@ pub mod ffi {
     ///
     /// See the [module](self); `str_a` is NULL or NUL-terminated (it may
     /// lie within the buffer); `str_b` is NUL-terminated and must not lie
-    /// within the buffer's contents.
+    /// within the buffer's contents. Nothing writes them during the call
+    /// except through `buf`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_join(
-        buf: *mut GitStr,
+        mut buf: Option<&mut GitStr>,
         separator: c_char,
         str_a: *const c_char,
         str_b: *const c_char,
     ) -> c_int {
-        // SAFETY: the module's contract; NULL or NUL-terminated strings.
-        if unsafe { join_fast(buf, separator as u8, str_a, str_b) } {
+        if let Some(b) = buf.as_deref_mut()
+            // SAFETY: `str_a` and `str_b` are as `join_fast` requires (this
+            // export's contract).
+            && unsafe { join_fast(b, separator as u8, str_a, str_b) }
+        {
             return 0;
         }
-        // SAFETY: forwarded.
+        // SAFETY: as above, for `join_slow`.
         unsafe { join_slow(buf, separator, str_a, str_b) }
     }
 
@@ -2961,22 +3043,21 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// As `git_str_join`.
+    /// `str_a` and `str_b` are NULL or NUL-terminated strings that nothing
+    /// writes during the call except through `b`.
     #[inline(always)]
     unsafe fn join_fast(
-        buf: *mut GitStr,
+        b: &mut GitStr,
         sep: u8,
         str_a: *const c_char,
         str_b: *const c_char,
     ) -> bool {
-        // SAFETY: the module's contract.
-        let b = unsafe { s(buf) };
         if !b.owned() || b.size >= b.asize || str_b.is_null() {
             return false;
         }
         let (base, asize, size) = (b.ptr.cast::<u8>(), b.asize, b.size);
         let (lo, hi) = (base as usize, base as usize + asize);
-        // SAFETY: `str_b` is NUL-terminated.
+        // SAFETY: a non-null `str_b` is NUL-terminated (this fn's contract).
         let mut lb = unsafe { libc::strlen(str_b) };
         let pb = str_b as usize;
         if pb < hi && pb + lb + 1 > lo {
@@ -2985,7 +3066,8 @@ pub mod ffi {
         let (la, a_off) = if str_a.is_null() {
             (0, None)
         } else {
-            // SAFETY: a non-null `str_a` is NUL-terminated.
+            // SAFETY: a non-null `str_a` is NUL-terminated (this fn's
+            // contract).
             let la = unsafe { libc::strlen(str_a) };
             let pa = str_a as usize;
             if pa < hi && pa + la + 1 > lo {
@@ -3001,7 +3083,7 @@ pub mod ffi {
         let mut from_b = str_b.cast::<u8>();
         let mut need_sep = 0usize;
         if sep != 0 && la > 0 {
-            // SAFETY: `from_b` stays within `str_b`'s `lb` bytes.
+            // SAFETY: `from_b` stays within `str_b`'s `lb` readable bytes.
             while lb > 0 && unsafe { from_b.read() } == sep {
                 from_b = from_b.wrapping_add(1);
                 lb -= 1;
@@ -3010,7 +3092,8 @@ pub mod ffi {
                 Some(off) => base.wrapping_add(off + la - 1),
                 None => str_a.cast::<u8>().wrapping_add(la - 1),
             };
-            // SAFETY: the last byte of `str_a` (contents or external).
+            // SAFETY: the last of `la > 0` readable bytes of `str_a`
+            // (within the contents, or the external string).
             if unsafe { last_a.read() } != sep {
                 need_sep = 1;
             }
@@ -3038,7 +3121,7 @@ pub mod ffi {
             unsafe { base.wrapping_add(la).write(sep) };
         }
         // SAFETY: `from_b` (outside the allocation) is readable for `lb`
-        // bytes, written below `total < asize`.
+        // bytes, written at `la + need_sep..total`, below `asize`.
         unsafe { ptr::copy_nonoverlapping(from_b, base.wrapping_add(la + need_sep), lb) };
         // SAFETY: `total < asize`.
         unsafe { base.wrapping_add(total).write(0) };
@@ -3050,18 +3133,17 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// As `git_str_join`.
+    /// As [`join_fast`], for `buf`'s string.
     #[cold]
     #[inline(never)]
     unsafe fn join_slow(
-        buf: *mut GitStr,
+        buf: Option<&mut GitStr>,
         separator: c_char,
         str_a: *const c_char,
         str_b: *const c_char,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the module's contract.
-            let b = unsafe { s(buf) };
+            let b = git_arg!(buf, "buf", -1);
             if b.size > 0 {
                 let start = b.ptr as usize;
                 let p = str_b as usize;
@@ -3071,9 +3153,11 @@ pub mod ffi {
                     -1
                 );
             }
-            // SAFETY: `str_a` is NULL or NUL-terminated.
+            // SAFETY: `str_a` is NULL or NUL-terminated, unwritten except
+            // through `b` (this fn's contract); used before `b` changes
+            // only, unless it lies outside the allocation (below).
             let a_bytes = unsafe { cstr_bytes(str_a) };
-            // SAFETY: `str_b` is NUL-terminated.
+            // SAFETY: as for `str_a`.
             let b_bytes = unsafe { cstr_bytes(str_b) };
             let (a_len, b_len) = (a_bytes.len(), b_bytes.len());
             // The usual case: neither lies in the buffer's allocation.
@@ -3103,9 +3187,10 @@ pub mod ffi {
             }
             // `str_a` within the contents is C's `offset_a` case; either is
             // copied if it overlaps the allocation otherwise.
-            // SAFETY: `a_len` readable bytes, as just measured.
+            // SAFETY: `str_a` is readable for `a_len` bytes, as just
+            // measured, unwritten except through `b`.
             let a = (!str_a.is_null()).then(|| unsafe { src(b, str_a, a_len) });
-            // SAFETY: `b_len` readable bytes, as just measured.
+            // SAFETY: as for `str_a`, `b_len` bytes.
             let bb = unsafe { src(b, str_b, b_len) };
             let bb_copy;
             let bb: &[u8] = match bb.seg() {
@@ -3126,19 +3211,19 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the [module](self); the three are NUL-terminated and must not
-    /// lie within the buffer's contents.
+    /// See the [module](self); the three are NULL or NUL-terminated, must
+    /// not lie within the buffer's contents, and nothing writes them
+    /// during the call except through `buf`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_join3(
-        buf: *mut GitStr,
+        buf: Option<&mut GitStr>,
         separator: c_char,
         str_a: *const c_char,
         str_b: *const c_char,
         str_c: *const c_char,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the module's contract.
-            let b = unsafe { s(buf) };
+            let b = git_arg!(buf, "buf", -1);
             let start = b.ptr as usize;
             let outside = |p: *const c_char| (p as usize) < start || (p as usize) >= start + b.size;
             git_assert!(
@@ -3156,16 +3241,17 @@ pub mod ffi {
                 "str_c < buf->ptr || str_c >= buf->ptr + buf->size",
                 -1
             );
-            // The three are NUL-terminated strings outside the contents
-            // (copied if they overlap the rest of the allocation).
-            // SAFETY: NUL-terminated strings.
-            let (la, lb, lc) = unsafe { strlen3(str_a, str_b, str_c) };
-            // SAFETY: `la` readable bytes, as just measured.
-            let a = unsafe { seg(b, str_a, la) };
-            // SAFETY: as for `a`.
-            let bb = unsafe { seg(b, str_b, lb) };
-            // SAFETY: as for `a`.
-            let c = unsafe { seg(b, str_c, lc) };
+            // The three are strings outside the contents, copied by
+            // `seg_of` if they overlap the rest of the allocation, before
+            // `b` changes. (C's NULL, which it would pass to `strlen`, is
+            // empty.)
+            // SAFETY: `str_a` is NULL or NUL-terminated, unwritten except
+            // through `b` (this export's contract).
+            let a = seg_of(b, unsafe { cstr_bytes(str_a) });
+            // SAFETY: as for `str_a`.
+            let bb = seg_of(b, unsafe { cstr_bytes(str_b) });
+            // SAFETY: as for `str_a`.
+            let c = seg_of(b, unsafe { cstr_bytes(str_c) });
             status(b.join3(separator as u8, &a, &bb, &c))
         })
     }
@@ -3176,16 +3262,15 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_rtrim(buf: *mut GitStr) {
-        // SAFETY: the module's contract.
-        barrier(|| unsafe { s(buf) }.rtrim())
+    pub unsafe extern "C" fn git_str_rtrim(buf: Option<&mut GitStr>) {
+        barrier(|| git_arg!(buf, "buf", ()).rtrim())
     }
 
     /// `git_str_cmp`.
     ///
     /// # Safety
     ///
-    /// Both are valid `git_str`s.
+    /// Both are valid `git_str`s that nothing writes during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_cmp(a: Option<&GitStr>, b: Option<&GitStr>) -> c_int {
         barrier(|| {
@@ -3199,22 +3284,27 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// See the [module](self); `data` is readable for `nb_to_insert` bytes
-    /// (it may lie within the buffer: it is copied first).
+    /// See the [module](self); `data` is NULL or readable for
+    /// `nb_to_insert` bytes (it may lie within the buffer: it is copied
+    /// first).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_splice(
-        buf: *mut GitStr,
+        buf: Option<&mut GitStr>,
         where_: usize,
         nb_to_remove: usize,
         data: *const c_char,
         nb_to_insert: usize,
     ) -> c_int {
         barrier(|| {
-            git_assert!(!buf.is_null(), "buf", -1);
-            // SAFETY: the module's contract: a valid, unaliased string.
-            let b = unsafe { s(buf) };
-            // SAFETY: the caller passes `nb_to_insert` readable bytes.
-            let d = unsafe { seg(b, data, nb_to_insert) };
+            // C's `GIT_ASSERT(buf)`.
+            let Some(b) = buf else {
+                return errors::assert_failed("buf").raw();
+            };
+            // SAFETY: a non-null `data` is readable for `nb_to_insert`
+            // bytes, which nothing writes during the call except `b` (this
+            // export's contract); `seg_of` copies them if they lie in `b`'s
+            // allocation, before `b` changes.
+            let d = seg_of(b, unsafe { bytes(data, nb_to_insert) });
             status(b.splice(where_, nb_to_remove, &d))
         })
     }
@@ -3225,9 +3315,8 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_quote(buf: *mut GitStr) -> c_int {
-        // SAFETY: the module's contract.
-        barrier(|| status(unsafe { s(buf) }.quote()))
+    pub unsafe extern "C" fn git_str_quote(buf: Option<&mut GitStr>) -> c_int {
+        barrier(|| status(git_arg!(buf, "buf", -1).quote()))
     }
 
     /// `git_str_unquote`.
@@ -3236,20 +3325,21 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_unquote(buf: *mut GitStr) -> c_int {
-        // SAFETY: the module's contract.
-        barrier(|| status(unsafe { s(buf) }.unquote()))
+    pub unsafe extern "C" fn git_str_unquote(buf: Option<&mut GitStr>) -> c_int {
+        barrier(|| status(git_arg!(buf, "buf", -1).unquote()))
     }
 
     /// `git_str_puts_escaped`.
     ///
     /// # Safety
     ///
-    /// See the [module](self); `string`, `esc_prefix` and `esc_suffix` are
-    /// NULL or NUL-terminated, `esc_chars` NUL-terminated.
+    /// See the [module](self); `string` is NULL or NUL-terminated (it may
+    /// lie within the buffer: it is copied first), `esc_prefix` and
+    /// `esc_suffix` NULL or NUL-terminated, `esc_chars` NUL-terminated;
+    /// the last three do not lie in the buffer.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_puts_escaped(
-        buf: *mut GitStr,
+        buf: Option<&mut GitStr>,
         string: *const c_char,
         esc_chars: CStrArg<'_>,
         esc_prefix: CStrArg<'_>,
@@ -3259,12 +3349,11 @@ pub mod ffi {
             if string.is_null() {
                 return 0;
             }
-            // SAFETY: the module's contract: a valid, unaliased string.
-            let b = unsafe { s(buf) };
-            // SAFETY: `string` is NUL-terminated (and not NULL here).
-            let l = unsafe { libc::strlen(string) };
-            // SAFETY: `l` readable bytes, as just measured.
-            let st = unsafe { seg(b, string, l) };
+            let b = git_arg!(buf, "buf", -1);
+            // SAFETY: `string` is non-null, NUL-terminated and unwritten
+            // except through `b` (this export's contract); `seg_of` copies
+            // it if it lies in `b`'s allocation, before `b` changes.
+            let st = seg_of(b, unsafe { cstr_bytes(string) });
             let ec = esc_chars.to_bytes();
             let ep = esc_prefix.to_bytes();
             let es = esc_suffix.to_bytes();
@@ -3278,55 +3367,55 @@ pub mod ffi {
     ///
     /// See the [module](self).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_unescape(buf: *mut GitStr) {
-        // SAFETY: the module's contract.
-        barrier(|| unsafe { s(buf) }.unescape())
+    pub unsafe extern "C" fn git_str_unescape(buf: Option<&mut GitStr>) {
+        barrier(|| git_arg!(buf, "buf", ()).unescape())
     }
 
-    /// The lengths of three NUL-terminated strings.
+    /// The `tgt` of `git_str_crlf_to_lf` / `git_str_lf_to_crlf`, once it is
+    /// known not to be `src` (C's `GIT_ASSERT(tgt != src)`), and `src`'s
+    /// contents (copied if they lie in `tgt`'s allocation).
     ///
     /// # Safety
     ///
-    /// Each is NUL-terminated.
-    unsafe fn strlen3(
-        a: *const c_char,
-        b: *const c_char,
-        c: *const c_char,
-    ) -> (usize, usize, usize) {
-        // SAFETY: the caller passes NUL-terminated strings.
-        let la = unsafe { libc::strlen(a) };
-        // SAFETY: as above.
-        let lb = unsafe { libc::strlen(b) };
-        // SAFETY: as above.
-        let lc = unsafe { libc::strlen(c) };
-        (la, lb, lc)
-    }
-
-    /// The contents of `src` for an operation on another string `tgt`.
-    ///
-    /// # Safety
-    ///
-    /// `src` is a valid `git_str`.
-    unsafe fn src_bytes<'a>(tgt: &GitStr, src: *const GitStr) -> Cow<'a, [u8]> {
-        // SAFETY: `src` is valid; its contents are readable for the call.
-        let sb = unsafe { (*src).as_bytes() };
-        // SAFETY: as above.
-        unsafe { seg(tgt, sb.as_ptr().cast(), sb.len()) }
+    /// `tgt` is NULL or a valid `git_str` that nothing else (`src`
+    /// included, unless they are equal) accesses during `'t`.
+    unsafe fn convert_args<'t, 's>(
+        tgt: *mut GitStr,
+        src: Option<&'s GitStr>,
+    ) -> Option<(&'t mut GitStr, Cow<'s, [u8]>)> {
+        if core::ptr::eq(tgt, src.map_or(ptr::null(), ptr::from_ref)) {
+            let _ = errors::assert_failed("tgt != src");
+            return None;
+        }
+        // SAFETY: `tgt` is NULL or a valid `git_str` that nothing else
+        // accesses for `'t` (this fn's contract): not `src`, checked.
+        let Some(t) = (unsafe { tgt.as_mut() }) else {
+            let _ = errors::assert_arg_failed("tgt");
+            return None;
+        };
+        let Some(src) = src else {
+            let _ = errors::assert_arg_failed("src");
+            return None;
+        };
+        let sb = seg_of(t, src.as_bytes());
+        Some((t, sb))
     }
 
     /// `git_str_crlf_to_lf`.
     ///
     /// # Safety
     ///
-    /// Both are valid `git_str`s.
+    /// Both are valid `git_str`s (`src` unwritten during the call); they
+    /// may be the same one (an error).
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_crlf_to_lf(tgt: *mut GitStr, src: *const GitStr) -> c_int {
+    pub unsafe extern "C" fn git_str_crlf_to_lf(tgt: *mut GitStr, src: Option<&GitStr>) -> c_int {
         barrier(|| {
-            git_assert!(!core::ptr::eq(tgt, src), "tgt != src", -1);
-            // SAFETY: a valid string, distinct from `src` (checked).
-            let t = unsafe { s(tgt) };
-            // SAFETY: `src` is a valid string.
-            let sb = unsafe { src_bytes(t, src) };
+            // SAFETY: `tgt` is a valid `git_str` that nothing else accesses
+            // during the call, `src` aside if equal (this export's
+            // contract).
+            let Some((t, sb)) = (unsafe { convert_args(tgt, src) }) else {
+                return -1;
+            };
             status(t.crlf_to_lf(&sb))
         })
     }
@@ -3335,15 +3424,14 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// Both are valid `git_str`s.
+    /// As [`git_str_crlf_to_lf`].
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_str_lf_to_crlf(tgt: *mut GitStr, src: *const GitStr) -> c_int {
+    pub unsafe extern "C" fn git_str_lf_to_crlf(tgt: *mut GitStr, src: Option<&GitStr>) -> c_int {
         barrier(|| {
-            git_assert!(!core::ptr::eq(tgt, src), "tgt != src", -1);
-            // SAFETY: a valid string, distinct from `src` (checked).
-            let t = unsafe { s(tgt) };
-            // SAFETY: `src` is a valid string.
-            let sb = unsafe { src_bytes(t, src) };
+            // SAFETY: as in `git_str_crlf_to_lf`.
+            let Some((t, sb)) = (unsafe { convert_args(tgt, src) }) else {
+                return -1;
+            };
             status(t.lf_to_crlf(&sb))
         })
     }
@@ -3353,17 +3441,16 @@ pub mod ffi {
     /// # Safety
     ///
     /// See the [module](self); `strings` is NULL or holds `count` pointers
-    /// to NUL-terminated strings, of which only those up to the point where
-    /// the prefix becomes empty are read (as C reads them).
+    /// to NULL or NUL-terminated strings, of which only those up to the
+    /// point where the prefix becomes empty are read (as C reads them).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_common_prefix(
-        buf: *mut GitStr,
+        buf: Option<&mut GitStr>,
         strings: *const *const c_char,
         count: usize,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the module's contract.
-            let b = unsafe { s(buf) };
+            let b = git_arg!(buf, "buf", -1);
             b.clear();
             if strings.is_null() || count == 0 {
                 return 0;
@@ -3372,14 +3459,14 @@ pub mod ffi {
                 if i > 0 && b.size == 0 {
                     break;
                 }
-                // SAFETY: entry `i < count` is readable (and, as C reads
-                // them one by one, only those reached are).
+                // SAFETY: entry `i < count` is readable (this export's
+                // contract; as C reads them one by one, only those reached
+                // are).
                 let p = unsafe { strings.wrapping_add(i).read() };
-                // SAFETY: NULL (read as empty) or NUL-terminated.
-                let l = unsafe { cstr_bytes(p) }.len();
-                // SAFETY: `l` readable bytes, as just measured; copied if
-                // they overlap the buffer.
-                let sb = unsafe { seg(b, p, l) };
+                // SAFETY: `p` is NULL (read as empty) or NUL-terminated and
+                // unwritten except through `b` (this export's contract);
+                // `seg_of` copies it if it lies in `b`'s allocation.
+                let sb = seg_of(b, unsafe { cstr_bytes(p) });
                 if i == 0 {
                     if let Err(e) = b.sets(&sb) {
                         return e.raw();
@@ -3396,7 +3483,7 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `buf` is a valid `git_str`.
+    /// `buf` is a valid `git_str` that nothing writes during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_is_binary(buf: Option<&GitStr>) -> c_int {
         let buf = git_arg!(buf, "buf", -1);
@@ -3407,7 +3494,7 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `buf` is a valid `git_str`.
+    /// `buf` is a valid `git_str` that nothing writes during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_contains_nul(buf: Option<&GitStr>) -> c_int {
         let buf = git_arg!(buf, "buf", -1);
@@ -3418,7 +3505,8 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `bom` is writable; `buf` is a valid `git_str`.
+    /// `bom` is NULL or writable; `buf` is a valid `git_str` that nothing
+    /// writes during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_detect_bom(
         mut bom: Out<'_, Bom>,
@@ -3436,7 +3524,8 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `stats` is writable; `buf` is a valid `git_str`.
+    /// `stats` is NULL or writable; `buf` is a valid `git_str` that nothing
+    /// writes during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_str_gather_text_stats(
         mut stats: Out<'_, TextStats>,
