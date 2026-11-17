@@ -3,7 +3,7 @@
 //! Miri).
 
 use super::*;
-use crate::util::cabi::Out;
+use crate::util::cabi::{CStrArg, Out};
 use crate::util::test_support;
 
 fn sha1() -> git_oid_t {
@@ -304,6 +304,38 @@ fn builder_serialize_and_filter() {
         assert_eq!(ffi::git_treebuilder_entrycount(p.as_ref()), 1);
         assert_eq!(ffi::git_treebuilder_clear(p.as_mut()), 0);
         assert_eq!(ffi::git_treebuilder_entrycount(p.as_ref()), 0);
+    }
+}
+
+/// `git_treebuilder_remove` by the entry's own name (`git_tree_entry_name`
+/// of the entry it removes): the call frees the block holding the name, so
+/// no `&CStr` argument of it may be live at the free (Miri).
+#[test]
+fn builder_remove_by_own_name() {
+    let _g = test_support::init();
+    let mut b = GitTreebuilder::empty(ptr::null_mut());
+    let id = Oid::from_bytes(&[3; 20], OidType::Sha1).unwrap();
+    // SAFETY: NUL-terminated names; no validation, so no repository is used.
+    unsafe {
+        b.append_entry(c"x".as_ptr(), &id, FILEMODE_BLOB, false)
+            .unwrap();
+        b.append_entry(c"y".as_ptr(), &id, FILEMODE_BLOB, false)
+            .unwrap();
+    }
+    let p = &raw mut b;
+    // SAFETY: a live builder used by nothing else; `name` is the entry's
+    // own NUL-terminated name, live until the entry is freed (by the call,
+    // after its last read).
+    unsafe {
+        let e = ffi::git_treebuilder_get(p.as_ref(), c"x".into());
+        assert!(!e.is_null());
+        let name = ffi::git_tree_entry_name(e.as_ref());
+        assert_eq!(
+            ffi::git_treebuilder_remove(p.as_mut(), CStrArg::from_ptr(name)),
+            0
+        );
+        assert!(ffi::git_treebuilder_get(p.as_ref(), c"x".into()).is_null());
+        assert_eq!(ffi::git_treebuilder_entrycount(p.as_ref()), 1);
     }
 }
 

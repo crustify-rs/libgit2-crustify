@@ -690,11 +690,20 @@ impl GitTreebuilder {
 
     /// `git_treebuilder_remove` (once found).
     fn remove_found(&mut self, filename: &CStr) {
-        if let Some((_, e)) = self.map.remove(&probe_key(filename)) {
-            // SAFETY: the builder's `alloc_entry` block, which left the map
-            // with its key: nothing uses it afterwards, freed once.
+        if let Some(e) = self.take(filename) {
+            // SAFETY: an `alloc_entry` block that `take` gave up (it left
+            // the map with its key): ours, used by nothing else, freed once.
+            // `filename` borrows nothing of the builder's (`&mut self`).
             unsafe { alloc::free(e.cast()) };
         }
+    }
+
+    /// Take the entry of `filename` out of the map: its `alloc_entry`
+    /// block, now the caller's to free. (`filename` may be that entry's own
+    /// name when it comes from C: the caller frees the block only after
+    /// its last use of `filename`, which is why this does not free it.)
+    fn take(&mut self, filename: &CStr) -> Option<*mut GitTreeEntry> {
+        self.map.remove(&probe_key(filename)).map(|(_, e)| e)
     }
 
     /// `git_treebuilder_clear`.
@@ -2129,8 +2138,15 @@ pub mod ffi {
                 let name = filename.get().map(CStr::to_bytes);
                 return tree_error("failed to remove entry: file isn't in the tree", name).raw();
             };
-            // Not NULL: the get above found an entry for it.
-            bld.remove_found(filename.or_empty());
+            // Not NULL: the get above found an entry for it. (Taken, then
+            // freed here: `filename` may be the entry's own name, e.g.
+            // `git_tree_entry_name(git_treebuilder_get(bld, "x"))`, so no
+            // `&CStr` argument of it may be live at the free.)
+            if let Some(e) = bld.take(filename.or_empty()) {
+                // SAFETY: the `alloc_entry` block `take` gave up: ours,
+                // freed once; `filename` is not read again.
+                unsafe { alloc::free(e.cast()) };
+            }
             0
         })
     }
