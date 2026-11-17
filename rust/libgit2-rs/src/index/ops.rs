@@ -13,9 +13,9 @@ use super::{
     GIT_FILEMODE_LINK, GIT_INDEX_ADD_CHECK_PATHSPEC, GIT_INDEX_ADD_DISABLE_PATHSPEC_MATCH,
     GIT_INDEX_ADD_FORCE, GIT_INDEX_CAPABILITY_FROM_OWNER, GIT_INDEX_CAPABILITY_IGNORE_CASE,
     GIT_INDEX_CAPABILITY_NO_FILEMODE, GIT_INDEX_CAPABILITY_NO_SYMLINKS, GIT_INDEX_ENTRY_UPTODATE,
-    GIT_INDEX_FILE_MODE, GitIndex, GitIndexEntry, GitIndexWriter, IndexPtr, as_entry, create_mode,
-    entry_alloc, entry_cmp, entry_cpy, entry_cpy_nocache, entry_free, epath, find_in_entries,
-    init_from_stat, s_isgitlink, sort_entries,
+    GIT_INDEX_FILE_MODE, GitIndex, GitIndexEntry, GitIndexWriter, IndexPtr, NewEntry, as_entry,
+    create_mode, entry_alloc, entry_cmp, entry_free, epath, find_in_entries, init_from_stat,
+    s_isgitlink, sort_entries,
 };
 use crate::git_error_set;
 use crate::oid::OidType;
@@ -93,7 +93,7 @@ pub(crate) fn entry_create(
     path: &[u8],
     st_mode: Option<u32>,
     from_workdir: bool,
-) -> Result<EntryPtr> {
+) -> Result<NewEntry> {
     let mut flags = GIT_PATH_REJECT_INDEX_DEFAULTS;
     if from_workdir {
         flags |= GIT_PATH_REJECT_WORKDIR_DEFAULTS;
@@ -115,10 +115,9 @@ pub(crate) fn entry_dup(
     repo: Option<Repo>,
     src: &GitIndexEntry,
     src_path: &[u8],
-) -> Result<EntryPtr> {
-    let e = entry_create(repo, src_path, None, false)?;
-    // SAFETY: a fresh entry of ours.
-    unsafe { entry_cpy(e, src) };
+) -> Result<NewEntry> {
+    let mut e = entry_create(repo, src_path, None, false)?;
+    e.copy_from(src);
     Ok(e)
 }
 
@@ -136,39 +135,37 @@ pub(crate) unsafe fn src_path<'a>(e: &GitIndexEntry) -> &'a [u8] {
 /// when it replaces an existing one); the entry now in the index.
 pub(crate) fn insert(
     ix: IndexPtr,
-    entry: EntryPtr,
+    mut entry: NewEntry,
     replace: bool,
     trust_path: bool,
     trust_mode: bool,
     trust_id: bool,
 ) -> Result<EntryPtr> {
     let (mode, id) = {
-        // SAFETY: no foreign call in this block.
+        // SAFETY: no reference into the index is live (`IndexPtr`'s use:
+        // no caller holds one across this call), and this block calls no
+        // foreign code.
         let index = unsafe { ix.get() };
-        // SAFETY: `entry` is ours, not in the index.
-        let e = unsafe { &mut (*entry.as_ptr()).entry };
-        // SAFETY: as above.
-        let pathlen = unsafe { (*entry.as_ptr()).pathlen };
-        super::adjust_namemask(e, pathlen);
-        // This entry is now up-to-date and should not be checked for
-        // raciness
-        e.flags_extended |= GIT_INDEX_ENTRY_UPTODATE;
-        let stage = e.stage();
-        // SAFETY: as above.
-        let path = unsafe { epath(entry) };
-        let (_existing, _pos, best) = index.existing_and_best(path, stage);
-        // SAFETY: as above (`e` was re-borrowed by `epath`).
-        let e = unsafe { &mut (*entry.as_ptr()).entry };
-        e.mode = if trust_mode {
-            create_mode(e.mode)
+        let pathlen = entry.pathlen();
+        let stage = entry.update(|e| {
+            super::adjust_namemask(e, pathlen);
+            // This entry is now up-to-date and should not be checked for
+            // raciness
+            e.flags_extended |= GIT_INDEX_ENTRY_UPTODATE;
+            e.stage()
+        });
+        let (_existing, _pos, best) = index.existing_and_best(entry.path(), stage);
+        let mode = entry.entry().mode;
+        let mode = if trust_mode {
+            create_mode(mode)
         } else {
-            index.merge_mode(best, e.mode)
+            index.merge_mode(best, mode)
         };
-        let (mode, id) = (e.mode, e.id);
+        entry.update(|e| e.mode = mode);
         if !trust_path {
-            index.canonicalize_directory_path(entry, best);
+            index.canonicalize_directory_path(&mut entry, best);
         }
-        (mode, id)
+        (mode, entry.entry().id)
     };
     // Ensure that the given id exists (unless it's a submodule)
     if !trust_id
@@ -176,11 +173,10 @@ pub(crate) fn insert(
         && (mode & GIT_FILEMODE_COMMIT) != GIT_FILEMODE_COMMIT
         && !foreign::object_is_valid(repo, &id, foreign::type_from_filemode(mode))
     {
-        // SAFETY: ours, not in the index.
-        unsafe { entry_free(entry) };
+        // (`entry` is freed: dropped)
         return Err(ErrorCode::GENERIC);
     }
-    // SAFETY: no foreign call in `insert_finish`.
+    // SAFETY: as above: `insert_finish` calls no foreign code.
     unsafe { ix.get() }.insert_finish(entry, replace, trust_path)
 }
 
@@ -250,19 +246,13 @@ pub(crate) fn add_from_buffer(
         Ok(b) if b.len() <= u32::MAX as usize => b,
         _ => return Err(git_error_set!(ErrorClass::INDEX, "buffer is too large")),
     };
-    let entry = entry_dup(Some(repo), source, path)?;
-    let id = match foreign::blob_from_buffer(repo, buf) {
-        Ok(id) => id,
-        Err(e) => {
-            // SAFETY: ours, not in the index.
-            unsafe { entry_free(entry) };
-            return Err(e);
-        }
-    };
-    // SAFETY: ours, not in the index.
-    let h = unsafe { super::ehead(entry) };
-    h.entry.id = id;
-    h.entry.file_size = buf.len() as u32;
+    let mut entry = entry_dup(Some(repo), source, path)?;
+    // (on failure, `entry` is freed: dropped)
+    let id = foreign::blob_from_buffer(repo, buf)?;
+    entry.update(|e| {
+        e.id = id;
+        e.file_size = buf.len() as u32;
+    });
     let entry = insert(ix, entry, true, true, true, true)?;
     // SAFETY: no foreign call below; `entry` is live until the conflict
     // removal (which may remove it, when the source had a stage: the path
@@ -281,7 +271,7 @@ pub(crate) fn add_from_buffer(
 
 /// `index_entry_init`: the entry for the working-directory file at
 /// `rel_path`, its blob written.
-fn entry_init(ix: IndexPtr, rel_path: &CStr) -> Result<EntryPtr> {
+fn entry_init(ix: IndexPtr, rel_path: &CStr) -> Result<NewEntry> {
     let Some(repo) = owner(ix) else {
         return Err(index_error(
             "could not initialize index entry. Index is not backed up by an existing repository.",
@@ -292,28 +282,23 @@ fn entry_init(ix: IndexPtr, rel_path: &CStr) -> Result<EntryPtr> {
     let st = crate::util::fs_path::lstat(full.as_c_str().unwrap_or(c""));
     drop(full);
     let mut st = st?;
-    let entry = entry_create(Some(repo), rel_path.to_bytes(), Some(st.st_mode), true)
+    let mut entry = entry_create(Some(repo), rel_path.to_bytes(), Some(st.st_mode), true)
         .map_err(|_| ErrorCode::GENERIC)?;
-    // write the blob to disk and get the oid and stat info
-    let id = match foreign::blob_from_workdir(repo, rel_path, &mut st) {
-        Ok(id) => id,
-        Err(e) => {
-            // SAFETY: ours.
-            unsafe { entry_free(entry) };
-            return Err(e);
-        }
-    };
-    // SAFETY: no foreign call; `entry` is ours.
-    let trust = !unsafe { ix.get() }.distrust_filemode();
-    // SAFETY: as above.
-    let e = unsafe { &mut (*entry.as_ptr()).entry };
-    e.id = id;
-    init_from_stat(e, &st, trust);
+    // write the blob to disk and get the oid and stat info (on failure,
+    // `entry` is freed: dropped)
+    let id = foreign::blob_from_workdir(repo, rel_path, &mut st)?;
+    // SAFETY: no reference into the index is live, and the statement calls
+    // no foreign code (shared, for one bit).
+    let trust = !unsafe { ix.get_ref() }.distrust_filemode();
+    entry.update(|e| {
+        e.id = id;
+        init_from_stat(e, &st, trust);
+    });
     Ok(entry)
 }
 
 /// `add_repo_as_submodule`.
-fn add_repo_as_submodule(ix: IndexPtr, path: &CStr) -> Result<EntryPtr> {
+fn add_repo_as_submodule(ix: IndexPtr, path: &CStr) -> Result<NewEntry> {
     let repo = owner(ix).ok_or(ErrorCode::GENERIC)?;
     let abspath = foreign::workdir_path(repo, path)?;
     let abs = abspath.as_c_str().unwrap_or(c"");
@@ -326,24 +311,18 @@ fn add_repo_as_submodule(ix: IndexPtr, path: &CStr) -> Result<EntryPtr> {
             ));
         }
     };
-    let entry = entry_create(Some(repo), path.to_bytes(), Some(st.st_mode), true)
+    let mut entry = entry_create(Some(repo), path.to_bytes(), Some(st.st_mode), true)
         .map_err(|_| ErrorCode::GENERIC)?;
-    // SAFETY: no foreign call; `entry` is ours.
-    let trust = !unsafe { ix.get() }.distrust_filemode();
-    // SAFETY: as above.
-    init_from_stat(unsafe { &mut (*entry.as_ptr()).entry }, &st, trust);
-    let id = match foreign::head_target_of(abs) {
-        Ok(id) => id,
-        Err(e) => {
-            // SAFETY: ours (C leaked it).
-            unsafe { entry_free(entry) };
-            return Err(e);
-        }
-    };
-    // SAFETY: as above.
-    let h = unsafe { super::ehead(entry) };
-    h.entry.id = id;
-    h.entry.mode = GIT_FILEMODE_COMMIT;
+    // SAFETY: no reference into the index is live, and the statement calls
+    // no foreign code (shared, for one bit).
+    let trust = !unsafe { ix.get_ref() }.distrust_filemode();
+    entry.update(|e| init_from_stat(e, &st, trust));
+    // (on failure, `entry` is freed: dropped; C leaked it)
+    let id = foreign::head_target_of(abs)?;
+    entry.update(|e| {
+        e.id = id;
+        e.mode = GIT_FILEMODE_COMMIT;
+    });
     Ok(entry)
 }
 
@@ -415,12 +394,19 @@ pub(crate) fn remove_bypath(index: &mut GitIndex, path: &[u8]) -> Result<()> {
 
 /// `git_index__fill`: add copies of `source` entries (no checks of
 /// collisions or duplicates).
-pub(crate) fn fill(ix: IndexPtr, source: &[*const GitIndexEntry]) -> Result<()> {
+///
+/// # Safety
+///
+/// Every pointer of `source` is a live `git_index_entry` whose `path` is
+/// NUL-terminated, none of them `ix`'s, and nothing writes or frees them
+/// (or their paths) during the call (the path checks run C).
+pub(crate) unsafe fn fill(ix: IndexPtr, source: &[*const GitIndexEntry]) -> Result<()> {
     if source.is_empty() {
         return Ok(());
     }
     {
-        // SAFETY: no foreign call in this block.
+        // SAFETY: no reference into the index is live (`IndexPtr`'s use),
+        // and this block calls no foreign code.
         let index = unsafe { ix.get() };
         index.entries.size_hint(source.len())?;
         index
@@ -430,33 +416,38 @@ pub(crate) fn fill(ix: IndexPtr, source: &[*const GitIndexEntry]) -> Result<()> 
     let repo = owner(ix);
     let mut error = Ok(());
     for &src in source {
-        // SAFETY: the caller passes live entries with string paths.
+        // SAFETY: a live entry, unwritten and not freed during the call
+        // (this fn's contract).
         let src = unsafe { &*src };
-        // SAFETY: as above.
+        // SAFETY: as above: its path is NUL-terminated, and lives
+        // unwritten during the call.
         let path = unsafe { src_path(src) };
-        let entry = match entry_dup(repo, src, path) {
+        let mut entry = match entry_dup(repo, src, path) {
             Ok(e) => e,
             Err(e) => {
                 error = Err(e);
                 break;
             }
         };
-        // SAFETY: no foreign call in this block; `entry` is ours.
+        // SAFETY: as above: no foreign call from here to the end of the
+        // iteration.
         let index = unsafe { ix.get() };
-        // SAFETY: as above.
-        let h = unsafe { super::ehead(entry) };
-        let n = h.pathlen;
-        let e = &mut h.entry;
-        super::adjust_namemask(e, n);
-        e.flags_extended |= GIT_INDEX_ENTRY_UPTODATE;
-        e.mode = create_mode(e.mode);
-        if let Err(e) = index.entries.insert(entry.as_ptr().cast()) {
-            // SAFETY: not inserted; ours (C leaked it).
-            unsafe { entry_free(entry) };
+        let n = entry.pathlen();
+        entry.update(|e| {
+            super::adjust_namemask(e, n);
+            e.flags_extended |= GIT_INDEX_ENTRY_UPTODATE;
+            e.mode = create_mode(e.mode);
+        });
+        if let Err(e) = index.entries.insert(entry.as_raw().as_ptr().cast()) {
+            // not inserted: `entry` is freed (dropped; C leaked it)
             error = Err(e);
             break;
         }
-        // SAFETY: the entry is now the index's.
+        // the vector holds it now
+        let entry = entry.into_raw();
+        // SAFETY: the entry is now the index's: live while the map holds
+        // it (the index frees an entry only after taking it out of the
+        // map).
         if let Err(e) = unsafe { index.entries_map.put(entry) } {
             error = Err(e);
             break;
@@ -476,32 +467,17 @@ pub(crate) fn conflict_add(
     sides: [Option<(&GitIndexEntry, &[u8])>; 3],
 ) -> Result<()> {
     let repo = owner(ix);
-    let mut entries: [Option<EntryPtr>; 3] = [None; 3];
-    let free_all = |entries: &mut [Option<EntryPtr>; 3]| {
-        for e in entries.iter_mut().filter_map(Option::take) {
-            // SAFETY: ours, not in the index.
-            unsafe { entry_free(e) };
-        }
-    };
+    // (on every failure below, the entries not inserted yet are freed:
+    // dropped)
+    let mut entries: [Option<NewEntry>; 3] = [None, None, None];
     for i in 0..3 {
         if let Some((src, path)) = sides[i] {
-            match entry_dup(repo, src, path) {
-                Ok(e) => entries[i] = Some(e),
-                Err(err) => {
-                    free_all(&mut entries);
-                    return Err(err);
-                }
-            }
+            entries[i] = Some(entry_dup(repo, src, path)?);
         }
     }
     // Validate entries
-    for i in 0..3 {
-        let bad = entries[i].is_some_and(|e| {
-            // SAFETY: ours.
-            !valid_filemode(unsafe { (*e.as_ptr()).entry.mode })
-        });
-        if bad {
-            free_all(&mut entries);
+    for (i, e) in entries.iter().enumerate() {
+        if e.as_ref().is_some_and(|e| !valid_filemode(e.entry().mode)) {
             return Err(git_error_set!(
                 ErrorClass::INDEX,
                 "invalid filemode for stage {} entry",
@@ -510,28 +486,23 @@ pub(crate) fn conflict_add(
         }
     }
     // Remove existing index entries for each path
-    for i in 0..3 {
-        let Some(e) = entries[i] else { continue };
-        // SAFETY: no foreign call; `e` is ours.
-        let r = unsafe { ix.get() }.remove(unsafe { epath(e) }, 0);
+    for e in entries.iter().flatten() {
+        // SAFETY: no reference into the index is live (`IndexPtr`'s use),
+        // and `remove` calls no foreign code; `e` is not the index's.
+        let r = unsafe { ix.get() }.remove(e.path(), 0);
         if r.is_err() {
             if !not_found(&r) {
-                free_all(&mut entries);
                 return r;
             }
             errors::clear();
         }
     }
     // Add the conflict entries
-    for i in 0..3 {
-        let Some(e) = entries[i].take() else { continue };
+    for (i, e) in entries.into_iter().enumerate() {
+        let Some(mut e) = e else { continue };
         // Make sure stage is correct
-        // SAFETY: ours.
-        unsafe { (*e.as_ptr()).entry.set_stage(i as c_int + 1) };
-        if let Err(err) = insert(ix, e, true, true, true, false) {
-            free_all(&mut entries);
-            return Err(err);
-        }
+        e.update(|x| x.set_stage(i as c_int + 1));
+        insert(ix, e, true, true, true, false)?;
     }
     Ok(())
 }
@@ -979,38 +950,41 @@ pub(crate) fn read_tree(ix: IndexPtr, tree: foreign::TreeRef<'_>) -> Result<()> 
         if path.joinpath(root, te.name).is_err() {
             return -1;
         }
-        let Ok(entry) = entry_create(repo, path.as_bytes(), None, false) else {
+        let Ok(mut entry) = entry_create(repo, path.as_bytes(), None, false) else {
             return -1;
         };
-        // SAFETY: ours.
-        let e = unsafe { &mut (*entry.as_ptr()).entry };
-        e.mode = te.attr;
-        e.id = te.id;
+        entry.update(|e| {
+            e.mode = te.attr;
+            e.id = te.id;
+        });
         {
             // look for corresponding old entry and copy data to new entry
             // SAFETY: no foreign call in this block (the walk is paused
             // in this callback, holding no reference).
-            let index = unsafe { ix.get() };
-            if let Ok(pos) = find_in_entries(&index.entries, path.as_bytes(), 0, icase)
+            let index = unsafe { ix.get_ref() };
+            // SAFETY: the index's entries are live (its invariant), and
+            // unwritten while it is borrowed.
+            let found = unsafe { find_in_entries(&index.entries, path.as_bytes(), 0, icase) };
+            if let Ok(pos) = found
                 && let Some(old) = index.entry_at(pos)
             {
-                // SAFETY: a live entry of the index, distinct from ours.
-                let old = unsafe { (*old.as_ptr()).entry };
-                if e.mode == old.mode && e.id == old.id {
-                    // SAFETY: ours.
-                    unsafe { entry_cpy(entry, &old) };
-                    // SAFETY: as above.
-                    unsafe { (*entry.as_ptr()).entry.flags_extended = 0 };
+                // SAFETY: a live entry of the index (its invariant),
+                // unwritten during the copy; distinct from ours.
+                let old = unsafe { old.as_ref() }.entry;
+                if te.attr == old.mode && te.id == old.id {
+                    entry.copy_from(&old);
+                    entry.update(|e| e.flags_extended = 0);
                 }
             }
         }
-        // SAFETY: ours.
-        super::adjust_namemask(unsafe { &mut (*entry.as_ptr()).entry }, path.len());
-        if entries.insert(entry.as_ptr().cast()).is_err() {
-            // SAFETY: not inserted; ours.
-            unsafe { entry_free(entry) };
+        entry.update(|e| super::adjust_namemask(e, path.len()));
+        if entries.insert(entry.as_raw().as_ptr().cast()).is_err() {
+            // not inserted: `entry` is freed (dropped)
             return -1;
         }
+        // the local vector holds it now (freed by `free_entries` on
+        // failure)
+        let _ = entry.into_raw();
         0
     });
     let free_entries = |v: &mut GitVector| {
@@ -1043,7 +1017,9 @@ pub(crate) fn read_tree(ix: IndexPtr, tree: foreign::TreeRef<'_>) -> Result<()> 
         free_entries(&mut entries);
         return Err(err);
     }
-    sort_entries(&mut entries, icase);
+    // SAFETY: the entries the walk made (`entry_create`), live until
+    // freed below, unwritten meanwhile.
+    unsafe { sort_entries(&mut entries, icase) };
     let mut pool = {
         // SAFETY: no foreign call in this block.
         let index = unsafe { ix.get() };
@@ -1176,19 +1152,17 @@ pub(crate) fn read_index(ix: IndexPtr, new_ix: IndexPtr) -> Result<()> {
             // SAFETY: as above.
             let path = unsafe { epath(dup) }.to_vec();
             match entry_create(repo, &path, None, false) {
-                Ok(e) => {
-                    // SAFETY: ours.
-                    unsafe { entry_cpy_nocache(e, &src) };
-                    // SAFETY: as above.
-                    let n = unsafe { (*e.as_ptr()).pathlen };
-                    // SAFETY: as above.
-                    super::adjust_namemask(unsafe { &mut (*e.as_ptr()).entry }, n);
+                Ok(mut e) => {
+                    e.copy_from_nocache(&src);
+                    let n = e.pathlen();
+                    e.update(|x| super::adjust_namemask(x, n));
                     if created.try_reserve(1).is_err() {
-                        // SAFETY: ours.
-                        unsafe { entry_free(e) };
+                        // (`e` is freed: dropped)
                         result = Err(errors::oom());
                         break;
                     }
+                    // `created` holds it now (freed below on failure)
+                    let e = e.into_raw();
                     created.push(e);
                     add_entry = Some(e);
                 }

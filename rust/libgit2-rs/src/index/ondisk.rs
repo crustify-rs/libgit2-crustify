@@ -21,8 +21,8 @@ use super::{
     EntryPtr, Extension, GIT_INDEX_ENTRY_EXTENDED, GIT_INDEX_ENTRY_EXTENDED_FLAGS,
     GIT_INDEX_ENTRY_NAMEMASK, GitIndex, GitIndexEntry, GitIndexNameEntry,
     INDEX_VERSION_NUMBER_COMP, INDEX_VERSION_NUMBER_EXT, INDEX_VERSION_NUMBER_LB,
-    INDEX_VERSION_NUMBER_UB, as_entry, entry_alloc, entry_cpy, entry_free, epath, name_free,
-    reuc_alloc, reuc_free, sig_cmp, sort_entries,
+    INDEX_VERSION_NUMBER_UB, NewEntry, as_entry, entry_alloc, epath, name_free, reuc_alloc,
+    reuc_free, sig_cmp, sort_entries,
 };
 use crate::oid::{Oid, OidType};
 use crate::tree_cache::{self, GitTreeCache};
@@ -170,7 +170,9 @@ impl GitIndex {
             // if in-memory index is supposed to be case-insensitive
             let icase = self.ignore_case();
             self.entries.set_sorted(!icase);
-            sort_entries(&mut self.entries, icase);
+            // SAFETY: the index's entries, which the parse just made: live
+            // (the invariant), and only the sort touches them.
+            unsafe { sort_entries(&mut self.entries, icase) };
             self.set_dirty(false);
         }
     }
@@ -238,24 +240,23 @@ pub fn parse(
             let _ = git_error_set!(ErrorClass::INDEX, "invalid path: '{}'", Bytes(&path));
             return Err(invalid("invalid entry"));
         }
-        let entry = match entry_alloc(&path) {
+        let mut entry = match entry_alloc(&path) {
             Ok(e) => e,
             Err(_) => return Err(invalid("invalid entry")),
         };
-        // SAFETY: a fresh entry of ours.
-        unsafe { entry_cpy(entry, &raw.entry) };
-        if let Err(e) = st.entries.insert(entry.as_ptr().cast()) {
-            // SAFETY: not inserted; ours.
-            unsafe { entry_free(entry) };
-            return Err(e);
-        }
+        entry.copy_from(&raw.entry);
+        // not inserted: `entry` is freed (dropped)
+        st.entries.insert(entry.as_raw().as_ptr().cast())?;
+        // the vector holds it now
+        let entry = entry.into_raw();
         // SAFETY: the entry stays live while the state (then the index)
-        // holds it.
+        // holds it in the map: it is freed only after leaving the map.
         if let Err(e) = unsafe { st.map.put(entry) } {
             // C freed the entry the vector still held (see DEFECTS.md)
             st.entries.pop();
-            // SAFETY: taken out again; ours.
-            unsafe { entry_free(entry) };
+            // SAFETY: taken out of the vector again (the last element,
+            // just pushed), in no map: ours alone.
+            drop(unsafe { NewEntry::from_raw(entry) });
             return Err(e);
         }
         if compressed {
@@ -661,7 +662,9 @@ fn write_entries(ix: &mut GitIndex, file: &mut GitFilebuf) -> Result<()> {
     let case_sorted;
     let entries: &GitVector = if ix.ignore_case() {
         let mut v = ix.entries.dup(Some(super::ffi::git_index_entry_cmp))?;
-        sort_entries(&mut v, false);
+        // SAFETY: a copy of the index's vector: its live entries (the
+        // invariant), unwritten while `ix` is borrowed.
+        unsafe { sort_entries(&mut v, false) };
         case_sorted = v;
         &case_sorted
     } else {

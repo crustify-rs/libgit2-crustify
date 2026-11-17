@@ -817,8 +817,9 @@ pub unsafe extern "C" fn git_index_remove_bypath(
 ///
 /// # Safety
 ///
-/// `index` NULL or a live index; `source_entries` a vector of readable
-/// entries with string paths.
+/// `index` NULL or a live index; `source_entries` NULL or a vector of live
+/// entries with string paths, none of them `index`'s, that nothing writes
+/// or frees during the call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index__fill(
     index: Option<IndexPtr>,
@@ -831,7 +832,9 @@ pub unsafe extern "C" fn git_index__fill(
             .iter()
             .map(|p| p.cast::<GitIndexEntry>().cast_const())
             .collect();
-        status(ops::fill(ix, &v))
+        // SAFETY: live entries with string paths, not the index's,
+        // unwritten during the call (this export's contract).
+        status(unsafe { ops::fill(ix, &v) })
     })
 }
 
@@ -1304,10 +1307,11 @@ pub unsafe extern "C" fn git_index_snapshot_release(
 ///
 /// # Safety
 ///
-/// `out` NULL or writable; `snap` a snapshot (or another vector of index
-/// entries with a sound comparison); `entry_srch` sound on them with an
-/// `entry_srch_key`; `path` readable for `path_len` bytes (a string when
-/// 0).
+/// `out` NULL or writable; `snap` NULL or a snapshot (or another vector of
+/// live index entries, `entry_internal`s, with a sound comparison), which
+/// nothing else uses, and whose entries nothing writes, during the call;
+/// `entry_srch` sound on them with an `entry_srch_key`; `path` readable
+/// for `path_len` bytes (a string when 0).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_snapshot_find(
     mut out: Out<'_, usize>,
@@ -1337,8 +1341,12 @@ pub unsafe extern "C" fn git_index_snapshot_find(
             // the C function pointers
             let sort_icase =
                 v.cmp_fn().map(|c| c as usize) == Some(git_index_entry_icmp as VectorCmp as usize);
-            super::sort_entries(v, sort_icase);
-            super::find_in_entries(v, p, stage, f == Some(ours.1))
+            // SAFETY: the snapshot's elements are live index entries
+            // (`entry_internal`, as C's search functions require), unwritten
+            // during the call (this export's contract).
+            unsafe { super::sort_entries(v, sort_icase) };
+            // SAFETY: as above.
+            unsafe { super::find_in_entries(v, p, stage, f == Some(ours.1)) }
         } else {
             let Some(srch) = entry_srch_fn else {
                 let _ = errors::assert_failed("key_lookup");

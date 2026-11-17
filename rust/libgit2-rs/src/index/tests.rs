@@ -19,13 +19,13 @@ fn oid(b: u8) -> Oid {
 /// Insert a stage-`stage` entry at `path` as `git_index_add` would after
 /// its checks.
 fn add(ix: &mut GitIndex, path: &[u8], stage: c_int, id: u8) -> Result<EntryPtr> {
-    let e = entry_alloc(path).unwrap();
-    // SAFETY: a fresh entry of ours.
-    let h = unsafe { ehead(e) };
-    h.entry.mode = GIT_FILEMODE_BLOB;
-    h.entry.id = oid(id);
-    h.entry.set_stage(stage);
-    adjust_namemask(&mut h.entry, path.len());
+    let mut e = entry_alloc(path).unwrap();
+    e.update(|x| {
+        x.mode = GIT_FILEMODE_BLOB;
+        x.id = oid(id);
+        x.set_stage(stage);
+        adjust_namemask(x, path.len());
+    });
     ix.sort();
     ix.insert_finish(e, true, true)
 }
@@ -202,12 +202,11 @@ fn case_insensitive_index() {
     assert!(ix.get_bypath(b"dir/file", 0).is_some());
     assert_eq!(ix.find_path(b"DIR/FILE"), Some(0));
     // a new file in the directory takes its case
-    let e = entry_alloc(b"dir/other").unwrap();
+    let mut e = entry_alloc(b"dir/other").unwrap();
     ix.sort();
     let (_, _, best) = ix.existing_and_best(b"dir/other", 0);
-    ix.canonicalize_directory_path(e, best);
-    // SAFETY: ours.
-    assert_eq!(unsafe { epath(e) }, b"Dir/other");
+    ix.canonicalize_directory_path(&mut e, best);
+    assert_eq!(e.path(), b"Dir/other");
     ix.insert_finish(e, true, false).unwrap();
     // the same path in another case replaces
     add(&mut ix, b"DIR/FILE", 0, 2).unwrap();
