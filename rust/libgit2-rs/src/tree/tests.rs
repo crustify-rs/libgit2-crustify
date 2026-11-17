@@ -3,6 +3,7 @@
 //! Miri).
 
 use super::*;
+use crate::util::cabi::Out;
 use crate::util::test_support;
 
 fn sha1() -> git_oid_t {
@@ -224,18 +225,21 @@ fn entries_alloc_dup() {
         assert_eq!((*e).name(), b"name.txt");
         assert_eq!(CStr::from_ptr((*e).filename).to_bytes(), b"name.txt");
         let mut d = ptr::null_mut();
-        assert_eq!(ffi::git_tree_entry_dup(Out::from(&mut d), e), 0);
+        assert_eq!(ffi::git_tree_entry_dup(Out::from(&mut d), e.as_ref()), 0);
         assert_eq!(
             ((*d).attr, (*d).oid, (*d).name()),
             (0o100755, id, &b"name.txt"[..])
         );
         assert_eq!(ffi::git_tree_entry_cmp(e.as_ref(), d.as_ref()), 0);
-        assert_eq!(ffi::git_tree_entry_filemode(d), FILEMODE_BLOB_EXECUTABLE);
+        assert_eq!(
+            ffi::git_tree_entry_filemode(d.as_ref()),
+            FILEMODE_BLOB_EXECUTABLE
+        );
         assert_eq!(ffi::git_tree_entry_type(d), OBJ_BLOB);
         ffi::git_tree_entry_free(d);
         ffi::git_tree_entry_free(e);
         ffi::git_tree_entry_free(ptr::null_mut());
-        assert!(ffi::git_tree_entry_name(ptr::null()).is_null());
+        assert!(ffi::git_tree_entry_name(None).is_null());
         assert_eq!(
             errors::last_message().unwrap(),
             b"invalid argument: 'entry'"
@@ -275,28 +279,31 @@ fn builder_serialize_and_filter() {
 
     // Through the C ABI: get, filter, remove, clear.
     let p = &raw mut b;
+    /// # Safety
+    ///
+    /// `e` is a live entry (the filter's).
     unsafe extern "C" fn drop_trees(e: *const GitTreeEntry, _: *mut c_void) -> c_int {
         // SAFETY: a live entry, given by the filter.
         c_int::from(unsafe { (*e).is_tree() })
     }
     // SAFETY: a live builder used by nothing else; NUL-terminated names.
     unsafe {
-        assert!(!ffi::git_treebuilder_get(p, c"a".into()).is_null());
+        assert!(!ffi::git_treebuilder_get(p.as_ref(), c"a".into()).is_null());
         assert_eq!(
             ffi::git_treebuilder_filter(p, Some(drop_trees), ptr::null_mut()),
             0
         );
-        assert!(ffi::git_treebuilder_get(p, c"a".into()).is_null());
-        assert_eq!(ffi::git_treebuilder_entrycount(p), 2);
-        assert_eq!(ffi::git_treebuilder_remove(p, c"nope".into()), -1);
+        assert!(ffi::git_treebuilder_get(p.as_ref(), c"a".into()).is_null());
+        assert_eq!(ffi::git_treebuilder_entrycount(p.as_ref()), 2);
+        assert_eq!(ffi::git_treebuilder_remove(p.as_mut(), c"nope".into()), -1);
         assert_eq!(
             errors::last_message().unwrap(),
             b"failed to remove entry: file isn't in the tree - nope"
         );
-        assert_eq!(ffi::git_treebuilder_remove(p, c"b".into()), 0);
-        assert_eq!(ffi::git_treebuilder_entrycount(p), 1);
-        assert_eq!(ffi::git_treebuilder_clear(p), 0);
-        assert_eq!(ffi::git_treebuilder_entrycount(p), 0);
+        assert_eq!(ffi::git_treebuilder_remove(p.as_mut(), c"b".into()), 0);
+        assert_eq!(ffi::git_treebuilder_entrycount(p.as_ref()), 1);
+        assert_eq!(ffi::git_treebuilder_clear(p.as_mut()), 0);
+        assert_eq!(ffi::git_treebuilder_entrycount(p.as_ref()), 0);
     }
 }
 
@@ -394,7 +401,7 @@ fn walks() {
         assert_eq!(r, 0);
         for (i, p) in saved.iter().enumerate() {
             // SAFETY: a live tree.
-            assert_eq!(*p, unsafe { ffi::git_tree_entry_byindex(root, i) });
+            assert_eq!(*p, unsafe { ffi::git_tree_entry_byindex(root.as_ref(), i) });
         }
         assert_eq!(saved.len(), 3);
     }
@@ -435,16 +442,19 @@ fn walks() {
     }
     // SAFETY: live trees; NUL-terminated names.
     unsafe {
-        assert_eq!(ffi::git_tree_entrycount(root), 3);
-        let e = ffi::git_tree_entry_byname(root, c"z".into());
-        assert_eq!(e, ffi::git_tree_entry_byindex(root, 2));
-        assert!(ffi::git_tree_entry_byindex(root, 3).is_null());
+        assert_eq!(ffi::git_tree_entrycount(root.as_ref()), 3);
+        let e = ffi::git_tree_entry_byname(root.as_ref(), c"z".into());
+        assert_eq!(e, ffi::git_tree_entry_byindex(root.as_ref(), 2));
+        assert!(ffi::git_tree_entry_byindex(root.as_ref(), 3).is_null());
         let id = Oid::from_bytes(&[0xab; 20], OidType::Sha1).unwrap();
         assert_eq!(
-            ffi::git_tree_entry_byid(root, Some(&id)),
-            ffi::git_tree_entry_byindex(root, 1)
+            ffi::git_tree_entry_byid(root.as_ref(), Some(&id)),
+            ffi::git_tree_entry_byindex(root.as_ref(), 1)
         );
-        assert_eq!(ffi::git_tree_walk(root, 5, None, ptr::null_mut()), -1);
+        assert_eq!(
+            ffi::git_tree_walk(root.as_ref(), 5, None, ptr::null_mut()),
+            -1
+        );
         assert_eq!(
             errors::last_message().unwrap(),
             b"invalid walking mode for tree walk"
@@ -482,6 +492,9 @@ fn filter_reentrant_callback() {
         bld: *mut GitTreebuilder,
         calls: usize,
     }
+    /// # Safety
+    ///
+    /// `payload` is the `Ctx` below and `e` a live entry (the filter's).
     unsafe extern "C" fn cb(e: *const GitTreeEntry, payload: *mut c_void) -> c_int {
         // SAFETY: the context passed below, live during the filter.
         let ctx = unsafe { &mut *payload.cast::<Ctx>() };
@@ -491,13 +504,13 @@ fn filter_reentrant_callback() {
         let n: usize = String::from_utf8_lossy(&name[1..]).parse().unwrap();
         // SAFETY: the builder, re-entered through the C ABI only.
         unsafe {
-            assert!(ffi::git_treebuilder_entrycount(ctx.bld) > 0);
+            assert!(ffi::git_treebuilder_entrycount(ctx.bld.as_ref()) > 0);
             match n % 4 {
                 // remove itself, then ask to remove it again
                 0 => {
                     let own = std::ffi::CString::new(name).unwrap();
                     assert_eq!(
-                        ffi::git_treebuilder_remove(ctx.bld, own.as_c_str().into()),
+                        ffi::git_treebuilder_remove(ctx.bld.as_mut(), own.as_c_str().into()),
                         0
                     );
                     1
@@ -505,7 +518,7 @@ fn filter_reentrant_callback() {
                 // remove the next one (which may already have been visited)
                 1 => {
                     let next = std::ffi::CString::new(format!("n{}", n + 1)).unwrap();
-                    let _ = ffi::git_treebuilder_remove(ctx.bld, next.as_c_str().into());
+                    let _ = ffi::git_treebuilder_remove(ctx.bld.as_mut(), next.as_c_str().into());
                     0
                 }
                 // plain removal by the filter

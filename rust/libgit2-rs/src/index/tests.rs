@@ -19,24 +19,22 @@ fn oid(b: u8) -> Oid {
 /// Insert a stage-`stage` entry at `path` as `git_index_add` would after
 /// its checks.
 fn add(ix: &mut GitIndex, path: &[u8], stage: c_int, id: u8) -> Result<EntryPtr> {
-    let e = entry_alloc(path).unwrap();
-    // SAFETY: a fresh entry of ours.
-    let h = unsafe { ehead(e) };
-    h.entry.mode = GIT_FILEMODE_BLOB;
-    h.entry.id = oid(id);
-    h.entry.set_stage(stage);
-    adjust_namemask(&mut h.entry, path.len());
+    let mut e = entry_alloc(path).unwrap();
+    e.update(|x| {
+        x.mode = GIT_FILEMODE_BLOB;
+        x.id = oid(id);
+        x.set_stage(stage);
+        adjust_namemask(x, path.len());
+    });
     ix.sort();
     ix.insert_finish(e, true, true)
 }
 
 fn paths(ix: &mut GitIndex) -> Vec<(Vec<u8>, c_int)> {
     ix.sort();
-    // SAFETY: live entries of the index.
-    ix.entries
-        .iter()
-        .map(|e| unsafe { eps(as_entry(e)) })
-        .map(|(p, s)| (p.to_vec(), s))
+    (0..ix.entries.len())
+        .filter_map(|i| ix.entry_ref(i))
+        .map(|e| (e.path().to_vec(), e.stage()))
         .collect()
 }
 
@@ -53,8 +51,8 @@ fn insert_find_remove() {
     add(&mut ix, b"a/y", 0, 3).unwrap();
     // replacing keeps one entry, with the new id
     let e = add(&mut ix, b"b", 0, 9).unwrap();
-    // SAFETY: live.
-    assert_eq!(unsafe { (*e.as_ptr()).entry.id }, oid(9));
+    assert_eq!(ix.get_bypath(b"b", 0).map(EntryRef::as_ptr), Some(e));
+    assert_eq!(ix.get_bypath(b"b", 0).unwrap().entry().id, oid(9));
     assert_eq!(
         paths(&mut ix),
         vec![
@@ -146,10 +144,7 @@ fn names_and_extensions() {
     ix.name_add(Some(c"b"), Some(c"o"), None).unwrap();
     ix.name_add(Some(c"a"), None, Some(c"t")).unwrap();
     ix.sort_names();
-    // SAFETY: a name entry of the index.
-    let first = unsafe { &*ix.names.get(0).unwrap().cast::<GitIndexNameEntry>() };
-    // SAFETY: a string the entry owns.
-    assert_eq!(unsafe { opt_cstr(first.ancestor) }, Some(&b"a"[..]));
+    assert_eq!(ix.name_at(0).unwrap()[0], Some(c"a"));
     ix.name_clear();
     assert!(ix.names.is_empty());
 
@@ -180,7 +175,8 @@ fn removal_is_deferred_while_a_snapshot_reads() {
     ix.remove(b"x", 0).unwrap();
     assert_eq!(ix.deleted.len(), 1);
     // the snapshot's entries are still readable
-    // SAFETY: deferred, so live.
+    // SAFETY: a deferred entry (the snapshot is a reader), so live and
+    // unwritten.
     let p = unsafe { epath(as_entry(snap.get(0).unwrap())) };
     assert_eq!(p, b"x");
     // clear frees nothing while the reader is there
@@ -202,12 +198,11 @@ fn case_insensitive_index() {
     assert!(ix.get_bypath(b"dir/file", 0).is_some());
     assert_eq!(ix.find_path(b"DIR/FILE"), Some(0));
     // a new file in the directory takes its case
-    let e = entry_alloc(b"dir/other").unwrap();
+    let mut e = entry_alloc(b"dir/other").unwrap();
     ix.sort();
     let (_, _, best) = ix.existing_and_best(b"dir/other", 0);
-    ix.canonicalize_directory_path(e, best);
-    // SAFETY: ours.
-    assert_eq!(unsafe { epath(e) }, b"Dir/other");
+    ix.canonicalize_directory_path(&mut e, best);
+    assert_eq!(e.path(), b"Dir/other");
     ix.insert_finish(e, true, false).unwrap();
     // the same path in another case replaces
     add(&mut ix, b"DIR/FILE", 0, 2).unwrap();
@@ -243,11 +238,12 @@ fn tree_cache_is_invalidated_by_changes() {
     ix.tree = tree_cache::read(&data, OidType::Sha1, &mut ix.tree_pool).unwrap();
     add(&mut ix, b"top", 0, 1).unwrap();
     ix.remove(b"top", 0).unwrap();
-    // SAFETY: the index's tree.
+    // SAFETY: the index's tree cache (non-NULL here), in its pool, which
+    // nothing writes during the reads below.
     assert_eq!(unsafe { (*ix.tree).entry_count }, -1);
-    // SAFETY: as above.
+    // SAFETY: as above: a tree cache.
     let d = unsafe { tree_cache::get(ix.tree, b"d") };
-    // SAFETY: as above.
+    // SAFETY: as above: a node of it (non-NULL here).
     assert_eq!(unsafe { (*d).entry_count }, 1);
     dispose(ix);
 }
@@ -346,9 +342,7 @@ fn parses_versions_2_3_4() {
             ],
             "version {v}"
         );
-        let e = ix.get_bypath(b"a/b/d", 0).unwrap();
-        // SAFETY: live.
-        let ent = unsafe { (*e.as_ptr()).entry };
+        let ent = *ix.get_bypath(b"a/b/d", 0).unwrap().entry();
         assert_eq!(ent.flags_extended, GIT_INDEX_ENTRY_INTENT_TO_ADD);
         assert_eq!(
             (ent.ctime.seconds, ent.mtime.nanoseconds, ent.file_size),
@@ -400,8 +394,7 @@ fn parses_extensions() {
     r.unwrap();
     assert!(!ix.tree.is_null());
     assert_eq!(ix.reuc.len(), 1);
-    // SAFETY: the REUC entry.
-    let re = unsafe { &*ix.reuc.get(0).unwrap().cast::<GitIndexReucEntry>() };
+    let (re, _) = ix.reuc_at(0).unwrap();
     assert_eq!(re.mode, [0o100644, 0, 0o100755]);
     assert_eq!(re.oid[2], Oid::from_bytes(&[5; 20], OidType::Sha1).unwrap());
     assert_eq!(ix.names.len(), 1);

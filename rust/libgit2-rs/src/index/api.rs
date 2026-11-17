@@ -12,7 +12,8 @@
 //! no borrow while they run). A panic in a callback stops the operation
 //! and is resumed after it.
 
-use core::ffi::{CStr, c_char, c_int};
+use crate::util::cabi::CStrArg;
+use core::ffi::{CStr, c_int};
 use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
 use core::ptr::NonNull;
@@ -26,10 +27,10 @@ use std::path::{Path, PathBuf};
 
 use super::foreign::{GitStrArrayBuf, Paths};
 use super::{
-    EntryPtr, GIT_INDEX_ADD_CHECK_PATHSPEC, GIT_INDEX_ADD_DISABLE_PATHSPEC_MATCH,
+    EntryRef, GIT_INDEX_ADD_CHECK_PATHSPEC, GIT_INDEX_ADD_DISABLE_PATHSPEC_MATCH,
     GIT_INDEX_ADD_FORCE, GIT_INDEX_CAPABILITY_FROM_OWNER, GIT_INDEX_CAPABILITY_IGNORE_CASE,
     GIT_INDEX_CAPABILITY_NO_FILEMODE, GIT_INDEX_CAPABILITY_NO_SYMLINKS, GIT_INDEX_STAGE_ANY,
-    GitIndex, GitIndexEntry, GitIndexTime, IndexPtr, epath, ops,
+    GitIndex, GitIndexEntry, GitIndexTime, IndexPtr, ops,
 };
 use crate::oid::{Oid, OidType};
 use crate::util::errors::{Error, ErrorCode};
@@ -206,12 +207,8 @@ impl IndexEntry {
     }
 
     /// A copy of an index entry.
-    fn from_ptr(e: EntryPtr) -> IndexEntry {
-        // SAFETY: the callers pass a live entry of an index, which nothing
-        // writes during the copy (no foreign call).
-        let r = unsafe { (*e.as_ptr()).entry };
-        // SAFETY: as above.
-        let path = unsafe { epath(e) };
+    fn from_ref(e: EntryRef<'_>) -> IndexEntry {
+        let (r, path) = (*e.entry(), e.path());
         IndexEntry {
             ctime: r.ctime.into(),
             mtime: r.mtime.into(),
@@ -286,11 +283,11 @@ pub struct ConflictEntries {
 }
 
 impl ConflictEntries {
-    fn from_ptrs(s: [Option<EntryPtr>; 3]) -> ConflictEntries {
+    fn from_refs(s: [Option<EntryRef<'_>>; 3]) -> ConflictEntries {
         ConflictEntries {
-            ancestor: s[0].map(IndexEntry::from_ptr),
-            our: s[1].map(IndexEntry::from_ptr),
-            their: s[2].map(IndexEntry::from_ptr),
+            ancestor: s[0].map(IndexEntry::from_ref),
+            our: s[1].map(IndexEntry::from_ref),
+            their: s[2].map(IndexEntry::from_ref),
         }
     }
 }
@@ -318,15 +315,25 @@ pub struct NameEntry {
 }
 
 /// The next conflict from position `*cur` (`git_index_conflict_next`).
-pub(crate) fn conflict_next(
-    index: &mut GitIndex,
+pub(crate) fn conflict_next<'a>(
+    index: &'a mut GitIndex,
     cur: &mut usize,
-) -> Option<[Option<EntryPtr>; 3]> {
-    while *cur < index.entries.len() {
+) -> Option<[Option<EntryRef<'a>>; 3]> {
+    // (C sorts at each step, through `git_index_get_byindex`: once is the
+    // same, as nothing changes the index meanwhile)
+    if *cur < index.entries.len() {
         index.sort();
-        let e = index.entry_at(*cur)?;
-        // SAFETY: a live entry of the index.
-        if unsafe { super::estage(e) } > 0 {
+    }
+    conflict_next_sorted(index, cur)
+}
+
+/// [`conflict_next`] of an index already sorted (or past its end).
+pub(crate) fn conflict_next_sorted<'a>(
+    index: &'a GitIndex,
+    cur: &mut usize,
+) -> Option<[Option<EntryRef<'a>>; 3]> {
+    while *cur < index.entries.len() {
+        if index.entry_ref(*cur)?.stage() > 0 {
             let (sides, len) = index.conflict_at(*cur);
             *cur += len;
             return Some(sides);
@@ -476,7 +483,8 @@ impl<'r> Index<'r> {
     }
 
     fn from_ptr(ptr: IndexPtr) -> Index<'r> {
-        // SAFETY: `open_ext` gives up a reference to a live index.
+        // SAFETY: `open_ext` gives up a reference to a live index of
+        // `CShared`'s, which the handle takes over.
         let ix = unsafe { CShared::from_raw(ptr.as_ptr()) }.expect("non-null");
         Index::wrap(ix)
     }
@@ -506,7 +514,9 @@ impl<'r> Index<'r> {
         let lock = api_lock_of(raw);
         let ix = {
             let _g = lock.lock();
-            // SAFETY: the caller's contract.
+            // SAFETY: `raw` is a live index of this module's (`CShared`'s),
+            // live for `'r` (this fn's contract), whose count is taken
+            // under its lock.
             unsafe { CShared::from_borrowed(raw.as_ptr()) }.expect("non-null")
         };
         Index::wrap_locked(ix, lock)
@@ -612,8 +622,10 @@ impl<'r> Index<'r> {
                 "Failed to write tree. the index file is not backed up by an existing repository",
             )));
         };
-        // SAFETY: the lock is held and no reference into the index is live.
-        unsafe { super::foreign::tree_write_index(ix.as_ptr(), repo) }.map_err(err)
+        // SAFETY: the lock is held, so no other safe user reaches the index,
+        // and no reference into it is live; the C the write runs (odb,
+        // filters) does not reach it.
+        unsafe { super::foreign::tree_write_index(ix, repo) }.map_err(err)
     }
 
     /// [`write_tree`](Self::write_tree) into `repo`'s object database
@@ -624,8 +636,10 @@ impl<'r> Index<'r> {
         // SAFETY: a live repository, borrowed for the call.
         let repo = unsafe { super::foreign::Repo::new(repo.raw_ptr().cast()) }
             .ok_or_else(|| err(crate::util::errors::assert_arg_failed("repo")))?;
-        // SAFETY: the lock is held and no reference into the index is live.
-        unsafe { super::foreign::tree_write_index(ix.as_ptr(), repo) }.map_err(err)
+        // SAFETY: the lock is held, so no other safe user reaches the index,
+        // and no reference into it is live; the C the write runs (odb,
+        // filters) does not reach it.
+        unsafe { super::foreign::tree_write_index(ix, repo) }.map_err(err)
     }
 
     /// The number of entries (`git_index_entrycount`).
@@ -647,14 +661,14 @@ impl<'r> Index<'r> {
     pub fn get(&self, n: usize) -> Option<IndexEntry> {
         self.with(|i| {
             i.sort();
-            i.entry_at(n).map(IndexEntry::from_ptr)
+            i.entry_ref(n).map(IndexEntry::from_ref)
         })
     }
 
     /// The entry for `path` at `stage` (`git_index_get_bypath`).
     pub fn get_path(&self, path: impl AsRef<[u8]>, stage: Stage) -> Option<IndexEntry> {
         let path = path.as_ref();
-        self.with(|i| i.get_bypath(path, stage.raw()).map(IndexEntry::from_ptr))
+        self.with(|i| i.get_bypath(path, stage.raw()).map(IndexEntry::from_ref))
     }
 
     /// The position of `path` (`git_index_find`).
@@ -751,18 +765,15 @@ impl<'r> Index<'r> {
         let has_cb = cb.is_some();
         let mut panic = None;
         let mut stopped = false;
-        let mut adapter = |p: *const c_char, m: *const c_char| -> c_int {
+        let mut adapter = |p: CStrArg<'_>, m: CStrArg<'_>| -> c_int {
             let Some(f) = cb.as_mut() else { return 0 };
             if panic.is_some() || stopped {
                 return ErrorCode::USER.raw();
             }
             // the strings are copied before the closure runs (it may change
             // the index, and free what they point to)
-            // SAFETY: the operation passes a string and a NULL or string,
-            // live for the call.
-            let path = unsafe { crate::util::export::cstr_bytes(p) }.to_vec();
-            // SAFETY: as above.
-            let matched = unsafe { crate::util::export::cstr(m) }.map(|m| m.to_bytes().to_vec());
+            let path = p.to_bytes().to_vec();
+            let matched = m.get().map(|m| m.to_bytes().to_vec());
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 f(&path, matched.as_deref())
             })) {
@@ -906,7 +917,7 @@ impl<'r> Index<'r> {
     /// The sides of `path`'s conflict (`git_index_conflict_get`).
     pub fn conflict_get(&self, path: impl AsRef<[u8]>) -> Result<ConflictEntries> {
         let path = path.as_ref();
-        self.with(|i| i.conflict_get(path).map(ConflictEntries::from_ptrs))
+        self.with(|i| i.conflict_get(path).map(ConflictEntries::from_refs))
             .map_err(err)
     }
 
@@ -992,10 +1003,7 @@ impl<'r> Index<'r> {
 
     /// The `n`th resolve-undo record (`git_index_reuc_get_byindex`).
     pub fn reuc_get(&self, n: usize) -> Option<ReucEntry> {
-        self.with(|i| {
-            let r = i.reuc.get(n)?.cast::<super::GitIndexReucEntry>();
-            Some(reuc_entry(r))
-        })
+        self.with(|i| i.reuc_at(n).map(reuc_entry))
     }
 
     /// The resolve-undo record of `path` (`git_index_reuc_get_bypath`).
@@ -1003,8 +1011,7 @@ impl<'r> Index<'r> {
         let path = path.as_ref();
         self.with(|i| {
             let n = i.reuc_find(path).ok()?;
-            let r = i.reuc.get(n)?.cast::<super::GitIndexReucEntry>();
-            Some(reuc_entry(r))
+            i.reuc_at(n).map(reuc_entry)
         })
     }
 
@@ -1043,18 +1050,13 @@ impl<'r> Index<'r> {
     pub fn name_get(&self, n: usize) -> Option<NameEntry> {
         self.with(|i| {
             i.sort_names();
-            let ne = i.names.get(n)?.cast::<super::GitIndexNameEntry>();
-            // SAFETY: a live name entry of the index; its fields NULL or
-            // strings.
-            let n = unsafe { &*ne };
-            let f = |p| {
-                // SAFETY: as above.
-                unsafe { crate::util::export::cstr(p) }.map(|s: &CStr| s.to_bytes().to_vec())
-            };
+            let [a, o, t] = i
+                .name_at(n)?
+                .map(|s| s.map(|s: &CStr| s.to_bytes().to_vec()));
             Some(NameEntry {
-                ancestor: f(n.ancestor),
-                ours: f(n.ours),
-                theirs: f(n.theirs),
+                ancestor: a,
+                ours: o,
+                theirs: t,
             })
         })
     }
@@ -1117,15 +1119,11 @@ impl<'r> Index<'r> {
 }
 
 /// A copy of a resolve-undo record.
-fn reuc_entry(r: *const super::GitIndexReucEntry) -> ReucEntry {
-    // SAFETY: a live REUC entry of the index (the lock is held).
-    let path = unsafe { super::reuc_path(r) }.to_vec();
-    // SAFETY: as above.
-    let rr = unsafe { &*r };
+fn reuc_entry((r, path): (&super::GitIndexReucEntry, &[u8])) -> ReucEntry {
     ReucEntry {
-        path,
-        mode: rr.mode,
-        oid: rr.oid,
+        path: path.to_vec(),
+        mode: r.mode,
+        oid: r.oid,
     }
 }
 
@@ -1137,12 +1135,13 @@ pub struct IndexEntries<'r> {
     cur: usize,
 }
 
-// SAFETY: the snapshot is a vector of entry pointers into the index, read
-// only with the index's lock held (`next`) and released with it held
-// (`drop`); the index handle is `Send + Sync`.
-unsafe impl Send for IndexEntries<'_> {}
-// SAFETY: `&IndexEntries` reaches nothing (every method takes `&mut`).
-unsafe impl Sync for IndexEntries<'_> {}
+// `Send + Sync` from its fields: the handle (`Index`'s impls) and the
+// snapshot (`GitVector`'s; its entry pointers are read only with the
+// index's lock held, in `next`, and released with it held, in `drop`).
+const _: () = {
+    fn send_sync<T: Send + Sync>() {}
+    let _ = send_sync::<IndexEntries<'static>>;
+};
 
 impl Iterator for IndexEntries<'_> {
     type Item = IndexEntry;
@@ -1151,8 +1150,12 @@ impl Iterator for IndexEntries<'_> {
         let _g = self.index.api();
         let e = self.snap.as_ref()?.get(self.cur)?;
         self.cur += 1;
-        // a snapshot's entries stay live: the index defers their removal
-        Some(IndexEntry::from_ptr(super::as_entry(e)))
+        // SAFETY: a snapshot's entries stay live: the index defers their
+        // removal while it has readers (this snapshot is one); the lock is
+        // held, so no safe-API call writes them meanwhile, and the C ABI
+        // keeps C's rule (one thread at a time).
+        let e = unsafe { super::EntryRef::new(super::as_entry(e)) };
+        Some(IndexEntry::from_ref(e))
     }
 }
 
@@ -1160,7 +1163,10 @@ impl Drop for IndexEntries<'_> {
     fn drop(&mut self) {
         if let Some(snap) = self.snap.take() {
             let _g = self.index.api();
-            ops::snapshot_release(snap, self.index.ptr());
+            // SAFETY: the snapshot `iter` took (with its reader and
+            // reference) on this handle's index, released once (taken out
+            // of `self`).
+            unsafe { ops::snapshot_release(snap, self.index.ptr()) };
         }
     }
 }
@@ -1186,6 +1192,6 @@ impl Iterator for IndexConflicts<'_> {
     fn next(&mut self) -> Option<ConflictEntries> {
         let cur = &mut self.cur;
         self.index
-            .with(|i| conflict_next(i, cur).map(ConflictEntries::from_ptrs))
+            .with(|i| conflict_next(i, cur).map(ConflictEntries::from_refs))
     }
 }

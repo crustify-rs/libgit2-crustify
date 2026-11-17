@@ -18,11 +18,11 @@ use std::borrow::Cow;
 
 use super::map::EntryMap;
 use super::{
-    EntryPtr, Extension, GIT_INDEX_ENTRY_EXTENDED, GIT_INDEX_ENTRY_EXTENDED_FLAGS,
+    EntryPtr, EntryRef, Extension, GIT_INDEX_ENTRY_EXTENDED, GIT_INDEX_ENTRY_EXTENDED_FLAGS,
     GIT_INDEX_ENTRY_NAMEMASK, GitIndex, GitIndexEntry, GitIndexNameEntry,
     INDEX_VERSION_NUMBER_COMP, INDEX_VERSION_NUMBER_EXT, INDEX_VERSION_NUMBER_LB,
-    INDEX_VERSION_NUMBER_UB, as_entry, entry_alloc, entry_cpy, entry_free, epath, name_free,
-    reuc_alloc, reuc_free, sig_cmp, sort_entries,
+    INDEX_VERSION_NUMBER_UB, NewEntry, as_entry, entry_alloc, epath, name_free, reuc_alloc,
+    reuc_free, sig_cmp, sort_entries,
 };
 use crate::oid::{Oid, OidType};
 use crate::tree_cache::{self, GitTreeCache};
@@ -170,7 +170,9 @@ impl GitIndex {
             // if in-memory index is supposed to be case-insensitive
             let icase = self.ignore_case();
             self.entries.set_sorted(!icase);
-            sort_entries(&mut self.entries, icase);
+            // SAFETY: the index's entries, which the parse just made: live
+            // (the invariant), and only the sort touches them.
+            unsafe { sort_entries(&mut self.entries, icase) };
             self.set_dirty(false);
         }
     }
@@ -222,8 +224,8 @@ pub fn parse(
         let rest = &buf[pos..];
         let last_path: Option<&[u8]> = if compressed {
             Some(last.map_or(&b""[..], |e| {
-                // SAFETY: `last` is an entry the state holds, not written
-                // here.
+                // SAFETY: `last` is the previous entry, which the state's
+                // vector holds (live) and nothing writes during the parse.
                 unsafe { epath(e) }
             }))
         } else {
@@ -238,24 +240,23 @@ pub fn parse(
             let _ = git_error_set!(ErrorClass::INDEX, "invalid path: '{}'", Bytes(&path));
             return Err(invalid("invalid entry"));
         }
-        let entry = match entry_alloc(&path) {
+        let mut entry = match entry_alloc(&path) {
             Ok(e) => e,
             Err(_) => return Err(invalid("invalid entry")),
         };
-        // SAFETY: a fresh entry of ours.
-        unsafe { entry_cpy(entry, &raw.entry) };
-        if let Err(e) = st.entries.insert(entry.as_ptr().cast()) {
-            // SAFETY: not inserted; ours.
-            unsafe { entry_free(entry) };
-            return Err(e);
-        }
+        entry.copy_from(&raw.entry);
+        // not inserted: `entry` is freed (dropped)
+        st.entries.insert(entry.as_raw().as_ptr().cast())?;
+        // the vector holds it now
+        let entry = entry.into_raw();
         // SAFETY: the entry stays live while the state (then the index)
-        // holds it.
+        // holds it in the map: it is freed only after leaving the map.
         if let Err(e) = unsafe { st.map.put(entry) } {
             // C freed the entry the vector still held (see DEFECTS.md)
             st.entries.pop();
-            // SAFETY: taken out again; ours.
-            unsafe { entry_free(entry) };
+            // SAFETY: taken out of the vector again (the last element,
+            // just pushed), in no map: ours alone.
+            drop(unsafe { NewEntry::from_raw(entry) });
             return Err(e);
         }
         if compressed {
@@ -456,56 +457,69 @@ fn read_reuc(st: &mut ParseState, mut buf: &[u8]) -> Result<()> {
         if buf.len() <= len {
             return Err(invalid("reading reuc entries"));
         }
+        // (allocated before the fields are read, as C does: an allocation
+        // failure is reported first)
         let Some(lost) = reuc_alloc(&buf[..len - 1]) else {
             return Err(errors::oom());
         };
-        let fail = |msg: &str| {
-            // SAFETY: ours, not inserted.
-            unsafe { reuc_free(lost.as_ptr().cast()) };
-            Err(invalid(msg))
-        };
         buf = &buf[len..];
-        // read 3 ASCII octal numbers for stage entries
-        for i in 0..3 {
-            let parsed = crate::util::util::strntol64(buf, 8);
-            let (tmp, used) = match parsed {
-                // (at the end of the data, C read the next byte of the file
-                // for `*endptr`; whatever it is, a check fails with the
-                // same message)
-                Ok((tmp, used))
-                    if used > 0
-                        && buf.get(used) == Some(&0)
-                        && (0..=i64::from(u32::MAX)).contains(&tmp) =>
-                {
-                    (tmp, used)
+        let fields = (|| -> Result<([u32; 3], [Oid; 3])> {
+            let (mut modes, mut oids) = ([0u32; 3], [Oid::default(); 3]);
+            // read 3 ASCII octal numbers for stage entries
+            for m in &mut modes {
+                let parsed = crate::util::util::strntol64(buf, 8);
+                let (tmp, used) = match parsed {
+                    // (at the end of the data, C read the next byte of the
+                    // file for `*endptr`; whatever it is, a check fails
+                    // with the same message)
+                    Ok((tmp, used))
+                        if used > 0
+                            && buf.get(used) == Some(&0)
+                            && (0..=i64::from(u32::MAX)).contains(&tmp) =>
+                    {
+                        (tmp, used)
+                    }
+                    _ => return Err(invalid("reading reuc entry stage")),
+                };
+                *m = tmp as u32;
+                let len = used + 1;
+                if buf.len() <= len {
+                    return Err(invalid("reading reuc entry stage"));
                 }
-                _ => return fail("reading reuc entry stage"),
-            };
-            // SAFETY: ours.
-            unsafe { (*lost.as_ptr()).mode[i] = tmp as u32 };
-            let len = used + 1;
-            if buf.len() <= len {
-                return fail("reading reuc entry stage");
+                buf = &buf[len..];
             }
-            buf = &buf[len..];
-        }
-        // read up to 3 OIDs for stage entries
-        for i in 0..3 {
-            // SAFETY: ours.
-            if unsafe { (*lost.as_ptr()).mode[i] } == 0 {
-                continue;
+            // read up to 3 OIDs for stage entries
+            for i in 0..3 {
+                if modes[i] == 0 {
+                    continue;
+                }
+                if buf.len() < oid_size {
+                    return Err(invalid("reading reuc entry oid"));
+                }
+                oids[i] = Oid::from_bytes(&buf[..oid_size], st.oid_type).unwrap_or_default();
+                buf = &buf[oid_size..];
             }
-            if buf.len() < oid_size {
-                return fail("reading reuc entry oid");
+            Ok((modes, oids))
+        })();
+        let (modes, oids) = match fields {
+            Ok(f) => f,
+            Err(e) => {
+                // SAFETY: the block made above, in no vector: ours alone,
+                // freed once.
+                unsafe { reuc_free(lost.as_ptr().cast()) };
+                return Err(e);
             }
-            let oid = Oid::from_bytes(&buf[..oid_size], st.oid_type).unwrap_or_default();
-            // SAFETY: ours.
-            unsafe { (*lost.as_ptr()).oid[i] = oid };
-            buf = &buf[oid_size..];
+        };
+        {
+            // SAFETY: the fresh, valid (zeroed) and aligned block made
+            // above, only reached here.
+            let r = unsafe { &mut *lost.as_ptr() };
+            r.mode = modes;
+            r.oid = oids;
         }
         // entry was read successfully - insert into reuc vector
         if let Err(e) = st.reuc.insert(lost.as_ptr().cast()) {
-            // SAFETY: not inserted (C leaked it).
+            // SAFETY: not inserted: ours alone, freed once (C leaked it).
             unsafe { reuc_free(lost.as_ptr().cast()) };
             return Err(e);
         }
@@ -536,13 +550,15 @@ fn read_conflict_names(st: &mut ParseState, mut buf: &[u8]) -> Result<()> {
                     failure = Some(ErrorCode::GENERIC);
                     break;
                 }
-                // SAFETY: `p` has `len` bytes; `buf` has them too.
+                // SAFETY: `p` is a fresh, writable block of `len` bytes, and
+                // `buf` holds `len` bytes (checked above), distinct from it.
                 unsafe { ptr::copy_nonoverlapping(buf.as_ptr(), p, len) };
                 *f = p.cast();
             }
             buf = &buf[len..];
         }
-        // SAFETY: `ne` is fresh, zeroed and ours.
+        // SAFETY: `ne` is a fresh, zeroed (so valid: NULL pointers) and
+        // aligned (the allocator's 8) name entry, only reached here.
         let n = unsafe { &mut *ne };
         n.ancestor = fields[0];
         n.ours = fields[1];
@@ -553,7 +569,8 @@ fn read_conflict_names(st: &mut ParseState, mut buf: &[u8]) -> Result<()> {
             failure = Some(e);
         }
         if let Some(e) = failure {
-            // SAFETY: ours, not inserted.
+            // SAFETY: the entry made above (with the strings it holds), in
+            // no vector: ours alone, freed once.
             unsafe { name_free(ne) };
             return Err(e);
         }
@@ -572,7 +589,8 @@ fn read_conflict_names(st: &mut ParseState, mut buf: &[u8]) -> Result<()> {
 fn is_index_extended(ix: &mut GitIndex) -> bool {
     let mut extended = 0usize;
     for e in ix.entries.iter() {
-        // SAFETY: a live entry of the index, not otherwise borrowed.
+        // SAFETY: a live entry of the index (its invariant), which `ix`
+        // borrows exclusively: no other reference covers it.
         let ent = unsafe { &mut (*as_entry(e).as_ptr()).entry };
         ent.flags &= !GIT_INDEX_ENTRY_EXTENDED;
         if ent.flags_extended & GIT_INDEX_ENTRY_EXTENDED_FLAGS != 0 {
@@ -587,13 +605,10 @@ fn is_index_extended(ix: &mut GitIndex) -> bool {
 fn write_disk_entry(
     file: &mut GitFilebuf,
     t: OidType,
-    entry: EntryPtr,
+    entry: EntryRef<'_>,
     last: Option<&[u8]>,
 ) -> Result<()> {
-    // SAFETY: a live entry of the index, not written during the call.
-    let e = unsafe { &(*entry.as_ptr()).entry };
-    // SAFETY: as above.
-    let path = unsafe { epath(entry) };
+    let (e, path) = (entry.entry(), entry.path());
     let mut path_len = path.len();
     let mut same_len = 0;
     let mut varint_len = 0usize;
@@ -661,24 +676,21 @@ fn write_entries(ix: &mut GitIndex, file: &mut GitFilebuf) -> Result<()> {
     let case_sorted;
     let entries: &GitVector = if ix.ignore_case() {
         let mut v = ix.entries.dup(Some(super::ffi::git_index_entry_cmp))?;
-        sort_entries(&mut v, false);
+        // SAFETY: a copy of the index's vector: its live entries (the
+        // invariant), unwritten while `ix` is borrowed.
+        unsafe { sort_entries(&mut v, false) };
         case_sorted = v;
         &case_sorted
     } else {
         &ix.entries
     };
     let compressed = ix.version >= INDEX_VERSION_NUMBER_COMP;
-    let mut last: Option<EntryPtr> = None;
+    let mut last: Option<EntryRef<'_>> = None;
     for e in entries.iter() {
-        let e = as_entry(e);
-        let last_path = if compressed {
-            Some(last.map_or(&b""[..], |l| {
-                // SAFETY: `last` is a live entry of the index.
-                unsafe { epath(l) }
-            }))
-        } else {
-            None
-        };
+        // SAFETY: the index's entries (or a copy of its vector): live (the
+        // invariant), and unwritten while `ix` is borrowed.
+        let e = unsafe { EntryRef::new(as_entry(e)) };
+        let last_path = compressed.then(|| last.map_or(&b""[..], EntryRef::path));
         write_disk_entry(file, t, e, last_path)?;
         if compressed {
             last = Some(e);
@@ -698,14 +710,9 @@ fn write_extension(file: &mut GitFilebuf, signature: &[u8; 4], data: &[u8]) -> R
 
 /// `create_name_extension_data` of every NAME entry.
 fn name_extension_data(ix: &GitIndex, out: &mut GitStr) -> Result<()> {
-    for ne in ix.names.iter() {
-        let ne = ne.cast::<GitIndexNameEntry>();
-        // SAFETY: the index's name entries.
-        let n = unsafe { &*ne };
-        let fields = [n.ancestor, n.ours, n.theirs];
+    for fields in (0..ix.names.len()).filter_map(|n| ix.name_at(n)) {
         for f in fields {
-            // SAFETY: NULL or a string the entry owns.
-            match unsafe { crate::util::export::cstr(f) } {
+            match f {
                 None => out.put(b"\0")?,
                 Some(s) => out.put(s.to_bytes_with_nul())?,
             }
@@ -717,12 +724,7 @@ fn name_extension_data(ix: &GitIndex, out: &mut GitStr) -> Result<()> {
 /// `create_reuc_extension_data` of every REUC entry.
 fn reuc_extension_data(ix: &GitIndex, out: &mut GitStr) -> Result<()> {
     let oid_size = ix.oid_kind().size();
-    for r in ix.reuc.iter() {
-        let r = r.cast::<super::GitIndexReucEntry>();
-        // SAFETY: the index's REUC entries.
-        let path = unsafe { super::reuc_path(r) };
-        // SAFETY: as above.
-        let rr = unsafe { &*r };
+    for (rr, path) in (0..ix.reuc.len()).filter_map(|n| ix.reuc_at(n)) {
         let (modes, oids) = (rr.mode, rr.oid);
         out.put(path)?;
         out.put(b"\0")?;
@@ -767,7 +769,8 @@ pub(crate) fn write_index(
     // write the tree cache extension
     if !ix.tree.is_null() {
         let mut buf = GitStr::new();
-        // SAFETY: the index's invariant: a tree in its pool.
+        // SAFETY: the index's invariant: a (non-NULL, checked above) tree
+        // cache in its pool, unwritten while `ix` is borrowed.
         unsafe { tree_cache::write(&mut buf, ix.tree)? };
         write_extension(file, TREECACHE_SIG, buf.as_bytes())?;
     }

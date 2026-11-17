@@ -22,8 +22,11 @@ use crate::util::errors::{ErrorClass, Result};
 use crate::util::hashmap::GitHashSet;
 
 /// A key: an entry (or a lookup key) that outlives its use in the map.
+///
+/// Invariant (kept by [`EntryMap`]'s `unsafe` methods, the only makers):
+/// the head is live and unwritten while the key is hashed or compared.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) struct Key(pub(crate) NonNull<EntryHead>);
+struct Key(NonNull<EntryHead>);
 
 /// ASCII lower-casing, as a table.
 static LOWER: [u8; 256] = {
@@ -56,9 +59,10 @@ fn hash(k: &Key) -> u32 {
 
 /// A key's path and stage.
 #[inline(always)]
-fn parts<'a>(k: &Key) -> (&'a [u8], u32) {
-    // SAFETY: the map's invariant: a key points to a live entry or to the
-    // caller's lookup key, unwritten during the call.
+fn parts(k: &Key) -> (&[u8], u32) {
+    // SAFETY: `Key`'s invariant: a live head (an entry in the map, or the
+    // lookup key of the call), unwritten while it is hashed or compared,
+    // which the borrow of `k` spans.
     let path = unsafe { entry_path_raw(k.0.as_ptr()) };
     // SAFETY: as above.
     (path, unsafe { entry_stage_raw(k.0.as_ptr()) })
@@ -106,7 +110,8 @@ impl EntryMap {
     ///
     /// # Safety
     ///
-    /// `key` points to an entry head (with its path) readable for the call.
+    /// `key` points to an entry head (with its path) readable, and
+    /// unwritten, for the call.
     pub(crate) unsafe fn get(&self, key: NonNull<EntryHead>) -> Option<NonNull<EntryHead>> {
         let k = Key(key);
         let idx = self.set.find_with(&k, hash, self.eq())?;
@@ -117,8 +122,9 @@ impl EntryMap {
     ///
     /// # Safety
     ///
-    /// `entry` is a live entry that stays live until it is removed from the
-    /// map (or the map is cleared or disposed).
+    /// `entry` is a live entry that stays live, and is not written while the
+    /// map is used, until it is removed from the map (or the map is cleared
+    /// or disposed).
     pub(crate) unsafe fn put(&mut self, entry: NonNull<EntryHead>) -> Result<()> {
         let eq = self.eq();
         self.set.put_with(Key(entry), (), hash, eq).map(|_| ())
@@ -131,7 +137,8 @@ impl EntryMap {
     ///
     /// # Safety
     ///
-    /// `entry` points to an entry head readable for the call.
+    /// `entry` points to an entry head (with its path) readable, and
+    /// unwritten, for the call.
     pub(crate) unsafe fn remove(&mut self, entry: NonNull<EntryHead>) {
         let k = Key(entry);
         let eq = self.eq();
