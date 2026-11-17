@@ -89,12 +89,16 @@ unsafe extern "C" {
 /// An open `multi-pack-index` (`git_midx_file *`), freed on drop.
 pub struct Midx(NonNull<GitMidxFilePrefix>);
 
-// SAFETY: a `git_midx_file` is immutable once `git_midx_open` returns (a
-// read-only mapping and the tables parsed from it); `git_midx_entry_find`
-// and `git_midx_foreach_entry` only read it, and `git_midx_free` may run on
-// any thread once nothing else uses it (`Drop`, with `&mut self`).
+// SAFETY: the one field owns a `git_midx_file`, which is immutable once
+// `git_midx_open` returns (a read-only mapping, the pointers into it and
+// the `packfile_names` vector parsed from it, its path and oid type): the
+// C behind every `&self` method (`git_midx_needs_refresh`,
+// `git_midx_entry_find`, `git_midx_foreach_entry`, and the reads of
+// `packfile_names`) only reads it, and nothing in it is tied to a thread,
+// so `git_midx_free` may run on any thread once nothing else uses it
+// (`Drop`, with `&mut self`).
 unsafe impl Send for Midx {}
-// SAFETY: as above: shared use only reads.
+// SAFETY: as for `Send` just above: shared use only reads.
 unsafe impl Sync for Midx {}
 
 impl Midx {
@@ -112,33 +116,44 @@ impl Midx {
 
     /// `git_midx_needs_refresh`.
     pub fn needs_refresh(&self, path: &CStr) -> bool {
-        // SAFETY: a live midx (only read) and a NUL-terminated path.
+        // SAFETY: the live midx `self` owns, which C only reads (it opens
+        // and reads `path`, and compares the mapping's size and checksum);
+        // `path` is NUL-terminated, borrowed for the call.
         unsafe { git_midx_needs_refresh(self.0.as_ptr(), path.as_ptr()) }
     }
 
     /// `git_midx_entry_find`: the status, and the entry it filled.
     pub fn entry_find(&self, short_oid: &Oid, len: usize) -> (c_int, GitMidxEntry) {
         let mut e = GitMidxEntry::default();
-        // SAFETY: a live midx, which the lookup only reads (the `*mut` is
-        // C's signature); `e` is writable; `short_oid` is valid.
+        // SAFETY: the live midx `self` owns, which the lookup only reads
+        // (the `*mut` is C's signature); `e` is a writable local;
+        // `short_oid` is a valid id borrowed for the call (C reads its
+        // first `len` digits, at most the whole id).
         let r = unsafe { git_midx_entry_find(&raw mut e, self.0.as_ptr(), short_oid, len) };
         (r, e)
     }
 
     /// The number of pack names.
     pub fn packfile_count(&self) -> usize {
-        // SAFETY: a live midx; `packfile_names` is at the prefix's offset
-        // (layout test) and not written after `git_midx_open`.
+        // SAFETY: `self` owns a live midx; `packfile_names` is at the
+        // prefix's offset (layout test and the assertions below), and no
+        // one writes it after `git_midx_open`, so this place read races
+        // with nothing.
         unsafe { (*self.0.as_ptr()).packfile_names.len() }
     }
 
     /// The `i`th pack name (an `.idx` file name, relative to the pack
     /// directory).
     pub fn packfile_name(&self, i: usize) -> Option<&CStr> {
-        // SAFETY: as in `packfile_count`.
+        // SAFETY: as in `packfile_count`; the `&` ends with `self`'s
+        // borrow, during which nothing writes the vector.
         let names = unsafe { &(*self.0.as_ptr()).packfile_names };
-        // SAFETY: the names are NUL-terminated strings in the mapping, which
-        // lives as long as `self`.
+        // SAFETY: each name points into the PNAM chunk of the mapping,
+        // NUL-terminated within it (`midx_parse_packfile_names` checks
+        // `strnlen` against the chunk); the mapping lives as long as
+        // `self`. It is a private read-only mapping of a file git never
+        // rewrites in place (written under a lock name, renamed): the
+        // `mwindow.rs` assumption; a truncation is a `SIGBUS`.
         names
             .get(i)
             .map(|p| unsafe { CStr::from_ptr(p.cast::<c_char>()) })
@@ -151,15 +166,17 @@ impl Midx {
     /// `cb` may be called with `data` for every entry: it keeps the contract
     /// of a `git_odb_foreach_cb` with that payload.
     pub unsafe fn foreach_entry(&self, cb: OdbForeachCb, data: *mut c_void) -> c_int {
-        // SAFETY: a live midx (only read); the callback contract is the
-        // caller's.
+        // SAFETY: the live midx `self` owns, which C only reads; C calls
+        // `cb` with `data` and a local id, once per entry, which this fn's
+        // contract allows.
         unsafe { git_midx_foreach_entry(self.0.as_ptr(), cb, data) }
     }
 }
 
 impl Drop for Midx {
     fn drop(&mut self) {
-        // SAFETY: the midx `git_midx_open` gave, freed once.
+        // SAFETY: the midx `git_midx_open` gave, owned by `self`, freed once
+        // (no borrow of it can outlive `&mut self`).
         unsafe { git_midx_free(self.0.as_ptr()) }
     }
 }

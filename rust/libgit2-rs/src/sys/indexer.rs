@@ -37,9 +37,11 @@ pub fn max_object_size() -> usize {
     }
     #[cfg(not(miri))]
     {
-        // SAFETY: the C global is a `size_t`, always initialized, with the
-        // layout of `AtomicUsize`; C's plain accesses and Rust's atomic ones
-        // never race in a way C's own accesses would not.
+        // SAFETY: the C global is a `size_t` defined (and so initialized)
+        // in `indexer.c`, which lives for the program and has the size and
+        // alignment of `AtomicUsize`; C writes it only from
+        // `git_libgit2_opts` (a plain store), which a Rust atomic load may
+        // race with exactly as C's own plain loads would.
         unsafe { git_indexer__max_object_size.load(Ordering::Relaxed) }
     }
 }
@@ -103,10 +105,14 @@ unsafe extern "C" {
 /// A `git_indexer`, freed on drop.
 pub struct Indexer(NonNull<c_void>);
 
-// SAFETY: an indexer is not tied to a thread; it is used by one thread at a
-// time (its methods take `&mut self`), and freed once.
+// SAFETY: the one field owns a `git_indexer` (heap state, a pack file
+// being written, its mapped windows, the odb pointer and progress callback
+// of its options): none is tied to a thread, and `Indexer::new`'s contract
+// lets the odb be used and the callback be called from whichever thread
+// uses the indexer. Its C functions are reached only through `&mut self`
+// (or `Drop`), so one thread at a time.
 unsafe impl Send for Indexer {}
-// SAFETY: `&Indexer` gives access to nothing.
+// SAFETY: `&Indexer` gives access to nothing (no `&self` methods).
 unsafe impl Sync for Indexer {}
 
 impl Indexer {
@@ -117,12 +123,16 @@ impl Indexer {
     ///
     /// `opts.odb` is NULL or an odb that outlives the indexer;
     /// `opts.progress_cb`, if set, may be called with `progress_cb_payload`
-    /// during [`append_raw`](Self::append_raw) and [`commit`](Self::commit).
+    /// during [`append_raw`](Self::append_raw) and [`commit`](Self::commit),
+    /// on whichever thread makes those calls (the indexer is `Send`).
     pub unsafe fn new(path: Option<&CStr>, opts: &mut GitIndexerOptions) -> Result<Indexer> {
         let mut out = core::ptr::null_mut();
         let path = path.map_or(core::ptr::null(), CStr::as_ptr);
-        // SAFETY: `out` and `opts` are writable; C copies what it keeps of
-        // `opts`; the odb and callback contract is the caller's.
+        // SAFETY: `out` is a writable local; `opts` a valid options struct
+        // borrowed for the call, of which C copies what it keeps; `path` is
+        // NULL (C asserts) or NUL-terminated, borrowed for the call. C keeps
+        // `opts.odb` and the callback with its payload, which this fn's
+        // contract makes valid for the indexer's life.
         let r = unsafe { git_indexer_new(&raw mut out, path, opts) };
         ErrorCode::check(r)?;
         NonNull::new(out).map(Indexer).ok_or(ErrorCode::GENERIC)
