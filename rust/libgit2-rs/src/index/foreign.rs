@@ -464,11 +464,23 @@ pub fn tree_walk_post(
 /// it borrows the entries' paths across those calls, as C does).
 pub unsafe fn tree_write_index(index: IndexPtr, repo: Repo) -> Result<Oid> {
     let mut id = Oid::default();
-    // SAFETY: `id` writable; `repo` live (`Repo`); the index is live
-    // (`IndexPtr`), no reference covers it and nothing else uses it during
-    // the call (this fn's contract).
-    let r = unsafe { t::git_tree__write_index(Out::from(&mut id), Some(index), repo.0.as_ptr()) };
+    // SAFETY: this fn's contract; `id` a local.
+    let r = unsafe { tree_write_index_to(Out::from(&mut id), index, repo) };
     ErrorCode::check(r).map(|_| id)
+}
+
+/// `git_tree__write_index(oid, index, repo)` with C's status, writing `oid`
+/// where the C does: also when a step after the tree write fails (the tree
+/// lookup or the cache read), as `git_index_write_tree` returns it.
+///
+/// # Safety
+///
+/// As [`tree_write_index`].
+pub unsafe fn tree_write_index_to(oid: Out<'_, Oid>, index: IndexPtr, repo: Repo) -> c_int {
+    // SAFETY: `oid` an out-parameter; `repo` live (`Repo`); the index is
+    // live (`IndexPtr`), no reference covers it and nothing else uses it
+    // during the call (this fn's contract).
+    unsafe { t::git_tree__write_index(oid, Some(index), repo.0.as_ptr()) }
 }
 
 // ---------------------------------------------------------------------------

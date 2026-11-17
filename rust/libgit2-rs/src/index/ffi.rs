@@ -540,17 +540,13 @@ pub unsafe extern "C" fn git_index_write_tree(oid: *mut Oid, index: *mut GitInde
             )
             .raw();
         };
+        // SAFETY: `oid` is non-null (checked above) and writable (this
+        // export's contract), and no reference to it is live.
+        let oid = unsafe { Out::from_ptr(oid) };
         // SAFETY: this export holds no reference into the index, and
         // nothing else uses it during the call (this export's contract).
-        match unsafe { super::foreign::tree_write_index(ix, repo) } {
-            Ok(id) => {
-                // SAFETY: `oid` is non-null (checked above) and writable
-                // (this export's contract).
-                unsafe { oid.write(id) };
-                0
-            }
-            Err(e) => e.raw(),
-        }
+        // `oid` is written where C's `git_tree__write_index` writes it.
+        unsafe { super::foreign::tree_write_index_to(oid, ix, repo) }
     })
 }
 
@@ -561,7 +557,7 @@ pub unsafe extern "C" fn git_index_write_tree(oid: *mut Oid, index: *mut GitInde
 /// As [`git_index_write_tree`]; `repo` NULL or a live repository.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_index_write_tree_to(
-    mut oid: Out<'_, Oid>,
+    oid: Out<'_, Oid>,
     index: Option<IndexPtr>,
     repo: *mut c_void,
 ) -> c_int {
@@ -574,17 +570,10 @@ pub unsafe extern "C" fn git_index_write_tree_to(
             let _ = errors::assert_arg_failed("repo");
             return -1;
         };
-        // C's `git_tree__write_index` writes `oid` on its paths; so does
-        // this (through a local first).
         // SAFETY: this export holds no reference into the index, and
         // nothing else uses it during the call (this export's contract).
-        match unsafe { super::foreign::tree_write_index(ix, repo) } {
-            Ok(id) => {
-                oid.write(id);
-                0
-            }
-            Err(e) => e.raw(),
-        }
+        // `oid` is written where C's `git_tree__write_index` writes it.
+        unsafe { super::foreign::tree_write_index_to(oid, ix, repo) }
     })
 }
 

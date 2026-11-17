@@ -241,10 +241,20 @@ pub mod ffi {
         barrier(|| {
             git_assert_arg!(!tgt.is_null(), "tgt", -1);
             git_assert_arg!(!src.is_null(), "src", -1);
+            if core::ptr::eq(tgt.as_ptr().cast_const(), src) {
+                // C zeroes `tgt` first, which empties `src`: the copy is
+                // empty, and the strings are left to whoever else holds
+                // them (rust/DEFECTS.md).
+                tgt.write(GitStrArray {
+                    strings: core::ptr::null_mut(),
+                    count: 0,
+                });
+                return 0;
+            }
             // SAFETY: `src` is non-null, so a valid array whose strings are
             // NULL or NUL-terminated and unwritten during the call (this
-            // export's contract); it is read (by value) before `tgt` is
-            // written, so it may be `tgt` itself.
+            // export's contract); it is not `tgt` (checked above) and is
+            // read before `tgt` is written.
             let r = StrArray::copy_from(unsafe { StrArrayRef::from_ptr(src) });
             let (out, ret) = match r {
                 Ok(a) => (a.into_raw(), 0),
@@ -331,6 +341,24 @@ mod tests {
             assert_eq!(ffi::git_strarray_copy(Out::from(&mut tgt), &empty), 0);
             assert!(tgt.strings.is_null());
         }
+    }
+
+    #[test]
+    fn copy_onto_itself_empties_as_c() {
+        let _g = crate::util::test_support::init();
+        let mut ptrs = [c"x".as_ptr().cast_mut(), c"y".as_ptr().cast_mut()];
+        let mut arr = GitStrArray {
+            strings: ptrs.as_mut_ptr(),
+            count: 2,
+        };
+        let p = &raw mut arr;
+        // SAFETY: one valid array passed as both, as C may; `Out` and the
+        // source are the same raw pointer, no reference covers it.
+        let r = unsafe { ffi::git_strarray_copy(Out::from_ptr(p), p) };
+        assert_eq!(r, 0);
+        assert!(arr.strings.is_null() && arr.count == 0);
+        // The strings are untouched (still the caller's).
+        assert_eq!(ptrs[0], c"x".as_ptr().cast_mut());
     }
 }
 
