@@ -53,7 +53,9 @@ impl Graph {
             let arr = unsafe { &mut *g.w.prefix.commit_pool.get() }
                 .malloc(1)
                 .unwrap();
-            g.nodes[i].set_parsed(times[i], &ps, arr.as_ptr().cast());
+            // SAFETY: `arr` is a pool block of COMMIT_ALLOC bytes (room for
+            // the parents, asserted above), live with the walk.
+            unsafe { g.nodes[i].set_parsed(times[i], &ps, arr.as_ptr().cast()) };
         }
         g
     }

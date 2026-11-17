@@ -2,10 +2,11 @@
 //! `crate::commit_list`), for the walk.
 //!
 //! The nodes live in the walk's pool (`git_revwalk.commit_pool`) and C
-//! reads and writes them (`git_commit_list_parse`, `merge.c`, `graph.c`,
-//! `describe.c` set `parents`, `time`, `flags`, …), so the walk reaches
-//! them only through [`NodePtr`], a raw pointer whose accessors read or
-//! write one field at a time: no Rust reference to a node is ever formed.
+//! reads and writes them (`merge.c`, `graph.c`, `describe.c` set `flags`
+//! and read the rest; `commit_list.rs`'s parse fills them through
+//! [`NodePtr`] too), so the walk reaches them only through [`NodePtr`], a
+//! raw pointer whose accessors read or write one field at a time: no Rust
+//! reference to a node is ever formed.
 
 use core::ptr::{self, NonNull};
 
@@ -306,8 +307,18 @@ impl NodePtr {
     /// set `time`, `out_degree`, `parents` (`slots`: the node's tail for
     /// up to two parents, else an array that outlives the node) and
     /// `parsed`.
+    ///
+    /// # Safety
+    ///
+    /// For more than two parents, `slots` is writable for that many
+    /// pointers and outlives the node's use.
     #[cfg(test)]
-    pub fn set_parsed(self, time: i64, parents: &[NodePtr], slots: *mut *mut CommitListNode) {
+    pub unsafe fn set_parsed(
+        self,
+        time: i64,
+        parents: &[NodePtr],
+        slots: *mut *mut CommitListNode,
+    ) {
         let tail = self.0.as_ptr().wrapping_add(1);
         let arr = if parents.len() <= PARENTS_PER_COMMIT {
             tail.cast::<*mut CommitListNode>()
@@ -316,7 +327,7 @@ impl NodePtr {
         };
         for (i, p) in parents.iter().enumerate() {
             // SAFETY: `arr` has room for the parents (the node's tail of
-            // COMMIT_ALLOC, or the caller's array).
+            // COMMIT_ALLOC, or the caller's array: the contract).
             unsafe { arr.wrapping_add(i).write(p.as_ptr()) };
         }
         let n = self.0.as_ptr();

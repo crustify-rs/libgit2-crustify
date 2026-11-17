@@ -249,30 +249,26 @@ impl<'a> CommitRef<'a> {
         unsafe { (*self.ptr.as_ptr()).raw_header }
     }
 
-    /// A string field as a [`CStrArg`] (no `strlen`).
-    #[inline(always)]
-    fn arg(p: *const c_char) -> CStrArg<'a> {
-        // SAFETY: one of the commit's strings: NULL or NUL-terminated, live
-        // and unwritten for `'a` (the invariant).
-        unsafe { CStrArg::from_ptr(p) }
-    }
-
-    /// `raw_message`, as a string argument.
+    /// `raw_message`, as a string argument (no `strlen`).
     #[inline(always)]
     pub fn raw_message_arg(self) -> CStrArg<'a> {
-        Self::arg(self.raw_message())
+        // SAFETY: one of the commit's strings: NULL or NUL-terminated, live
+        // and unwritten for `'a` (the invariant).
+        unsafe { CStrArg::from_ptr(self.raw_message()) }
     }
 
     /// `message_encoding`, as a string argument.
     #[inline(always)]
     pub fn message_encoding_arg(self) -> CStrArg<'a> {
-        Self::arg(self.message_encoding())
+        // SAFETY: as in `raw_message_arg`.
+        unsafe { CStrArg::from_ptr(self.message_encoding()) }
     }
 
     /// `raw_header`, as a string argument.
     #[inline(always)]
     pub fn raw_header_arg(self) -> CStrArg<'a> {
-        Self::arg(self.raw_header())
+        // SAFETY: as in `raw_message_arg`.
+        unsafe { CStrArg::from_ptr(self.raw_header()) }
     }
 
     /// `git_commit_message`'s pointer: into the raw message, past its
@@ -296,7 +292,10 @@ impl<'a> CommitRef<'a> {
     /// [`message_ptr`](Self::message_ptr) as a string argument.
     #[inline(always)]
     pub fn message_arg(self) -> CStrArg<'a> {
-        Self::arg(self.message_ptr())
+        // SAFETY: NULL or a position within the commit's raw message, at or
+        // before its NUL (`message_ptr`), so a NUL-terminated string, live
+        // and unwritten for `'a` (the invariant).
+        unsafe { CStrArg::from_ptr(self.message_ptr()) }
     }
 
     /// `&commit->summary`, for `git_commit_summary` (no reference formed).

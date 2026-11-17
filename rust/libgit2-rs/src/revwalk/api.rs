@@ -69,12 +69,18 @@ struct HideState<'repo> {
 }
 
 /// The C callback over a [`HideState`].
+///
+/// # Safety
+///
+/// `payload` is the walk's live boxed `HideState`, reached by nothing else
+/// during the call; `id` points to an id valid for the call.
 unsafe extern "C" fn hide_trampoline(id: *const Oid, payload: *mut c_void) -> c_int {
     // SAFETY: `payload` is the walk's boxed `HideState`, alive while the
     // walk runs, and reached only from here during the call (the walk
     // calls back from `&mut Revwalk` methods); `id` points to a node's id.
     let st = unsafe { &mut *payload.cast::<HideState<'_>>() };
-    // SAFETY: as above: a node's id, valid for the call.
+    // SAFETY: a node's id, aligned and valid (unwritten) for the call (the
+    // contract).
     let id = unsafe { &*id };
     if st.panic.is_some() {
         return 1;

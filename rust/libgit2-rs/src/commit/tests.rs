@@ -34,15 +34,21 @@ impl Drop for Fresh {
     }
 }
 
-fn cstr<'a>(p: *const c_char) -> Option<&'a [u8]> {
-    // SAFETY: NULL or one of the parsed commit's strings, live during the
-    // test.
+/// # Safety
+///
+/// `p` is NULL or a NUL-terminated string, live and unwritten for `'a`.
+unsafe fn cstr<'a>(p: *const c_char) -> Option<&'a [u8]> {
+    // SAFETY: NULL or a NUL-terminated string (the contract).
     unsafe { opt_cbytes(p) }
 }
 
-fn sig_of(p: *const GitSignature) -> (Vec<u8>, Vec<u8>, GitTime) {
+/// # Safety
+///
+/// `p` is a signature the parse allocated, live for the call.
+unsafe fn sig_of(p: *const GitSignature) -> (Vec<u8>, Vec<u8>, GitTime) {
     assert!(!p.is_null());
-    // SAFETY: a signature the parse allocated.
+    // SAFETY: a signature the parse allocated (the contract), with
+    // NUL-terminated strings.
     unsafe {
         (
             cstr((*p).name).unwrap().to_vec(),
@@ -154,16 +160,21 @@ fn full_parse() {
         Oid::parse_hex(T.as_bytes(), OidType::Sha1).unwrap()
     );
     assert_eq!(c.parent_ids.len(), 2);
-    assert_eq!(sig_of(c.author).0, b"A");
-    let (n, e, w) = sig_of(c.committer);
+    // SAFETY: a string or signature of the commit just parsed, live with it.
+    assert_eq!(unsafe { sig_of(c.author) }.0, b"A");
+    // SAFETY: a string or signature of the commit just parsed, live with it.
+    let (n, e, w) = unsafe { sig_of(c.committer) };
     assert_eq!(
         (n.as_slice(), e.as_slice(), w.time, w.offset),
         (&b"C"[..], &b"c@d"[..], 3, -90)
     );
-    assert_eq!(cstr(c.message_encoding).unwrap(), b"UTF-8");
-    let header = cstr(c.raw_header).unwrap();
+    // SAFETY: a string or signature of the commit just parsed, live with it.
+    assert_eq!(unsafe { cstr(c.message_encoding) }.unwrap(), b"UTF-8");
+    // SAFETY: a string or signature of the commit just parsed, live with it.
+    let header = unsafe { cstr(c.raw_header) }.unwrap();
     assert!(header.ends_with(b"gpgsig x\n y\n"));
-    assert_eq!(cstr(c.raw_message).unwrap(), b"\nhello\n");
+    // SAFETY: a string or signature of the commit just parsed, live with it.
+    assert_eq!(unsafe { cstr(c.raw_message) }.unwrap(), b"\nhello\n");
     // SAFETY: a live commit.
     let m = unsafe { CStr::from_ptr(message_ptr(c)) };
     assert_eq!(m.to_bytes(), b"hello\n");
@@ -176,15 +187,20 @@ fn parse_edges() {
     let d = format!("tree {T}\nauthor A <a@b> 1 +0000\ncommitter C <c@d> 3 +0000\n");
     let (r, mut c) = parse_full(d.as_bytes());
     r.unwrap();
-    assert_eq!(cstr(c.get().raw_message).unwrap(), b"");
-    assert_eq!(cstr(c.get().raw_header).unwrap(), d.as_bytes());
+    // SAFETY: a string or signature of the commit just parsed, live with it.
+    assert_eq!(unsafe { cstr(c.get().raw_message) }.unwrap(), b"");
+    // SAFETY: a string or signature of the commit just parsed, live with it.
+    assert_eq!(unsafe { cstr(c.get().raw_header) }.unwrap(), d.as_bytes());
 
     // A NUL in the header cuts the raw header (strndup), as C.
     let d = format!("tree {T}\nauthor A <a@b> 1 +0000\ncommitter C <c@d> 3 +0000\nx \0y\n\nmsg");
     let (r, mut c) = parse_full(d.as_bytes());
     r.unwrap();
-    assert!(cstr(c.get().raw_header).unwrap().ends_with(b"x "));
-    assert_eq!(cstr(c.get().raw_message).unwrap(), b"msg");
+    // SAFETY: a string of the commit just parsed, live with it.
+    let h = unsafe { cstr(c.get().raw_header) }.unwrap();
+    assert!(h.ends_with(b"x "));
+    // SAFETY: a string or signature of the commit just parsed, live with it.
+    assert_eq!(unsafe { cstr(c.get().raw_message) }.unwrap(), b"msg");
 
     // Bad trees.
     for d in [
