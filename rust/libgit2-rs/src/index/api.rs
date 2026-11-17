@@ -1124,12 +1124,13 @@ pub struct IndexEntries<'r> {
     cur: usize,
 }
 
-// SAFETY: the snapshot is a vector of entry pointers into the index, read
-// only with the index's lock held (`next`) and released with it held
-// (`drop`); the index handle is `Send + Sync`.
-unsafe impl Send for IndexEntries<'_> {}
-// SAFETY: `&IndexEntries` reaches nothing (every method takes `&mut`).
-unsafe impl Sync for IndexEntries<'_> {}
+// `Send + Sync` from its fields: the handle (`Index`'s impls) and the
+// snapshot (`GitVector`'s; its entry pointers are read only with the
+// index's lock held, in `next`, and released with it held, in `drop`).
+const _: () = {
+    fn send_sync<T: Send + Sync>() {}
+    let _ = send_sync::<IndexEntries<'static>>;
+};
 
 impl Iterator for IndexEntries<'_> {
     type Item = IndexEntry;

@@ -415,6 +415,13 @@ pub fn tree_walk_post(
         &'a mut dyn FnMut(&[u8], &TreeEntryView<'_>) -> c_int,
         PhantomData<&'b ()>,
     );
+    /// The walk's callback.
+    ///
+    /// # Safety
+    ///
+    /// `payload` is the `Payload` below, which nothing else uses during the
+    /// call; `root` a string and `entry` an entry of a live tree, for the
+    /// call (`git_tree_walk` calls it so).
     unsafe extern "C" fn cb(
         root: *const c_char,
         entry: *const GitTreeEntry,
@@ -749,6 +756,13 @@ impl Diff {
     /// `git_diff_foreach` with a file callback only.
     pub fn foreach_file(&self, f: &mut dyn FnMut(&DeltaView<'_>) -> c_int) -> c_int {
         struct Payload<'a>(&'a mut dyn FnMut(&DeltaView<'_>) -> c_int);
+        /// The file callback.
+        ///
+        /// # Safety
+        ///
+        /// `payload` is the `Payload` below, which nothing else uses during
+        /// the call; `delta` a live delta whose paths are strings, for the
+        /// call (`git_diff_foreach` calls it so).
         unsafe extern "C" fn cb(
             delta: *const d::GitDiffDelta,
             _progress: f32,

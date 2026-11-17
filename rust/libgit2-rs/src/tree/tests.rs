@@ -279,6 +279,9 @@ fn builder_serialize_and_filter() {
 
     // Through the C ABI: get, filter, remove, clear.
     let p = &raw mut b;
+    /// # Safety
+    ///
+    /// `e` is a live entry (the filter's).
     unsafe extern "C" fn drop_trees(e: *const GitTreeEntry, _: *mut c_void) -> c_int {
         // SAFETY: a live entry, given by the filter.
         c_int::from(unsafe { (*e).is_tree() })
@@ -489,6 +492,9 @@ fn filter_reentrant_callback() {
         bld: *mut GitTreebuilder,
         calls: usize,
     }
+    /// # Safety
+    ///
+    /// `payload` is the `Ctx` below and `e` a live entry (the filter's).
     unsafe extern "C" fn cb(e: *const GitTreeEntry, payload: *mut c_void) -> c_int {
         // SAFETY: the context passed below, live during the filter.
         let ctx = unsafe { &mut *payload.cast::<Ctx>() };
