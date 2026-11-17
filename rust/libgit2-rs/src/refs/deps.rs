@@ -364,23 +364,32 @@ impl ObjBox {
     /// `git_object_lookup(repo, id, kind)`.
     pub fn lookup(repo: RepoPtr, id: &Oid, kind: c_int) -> Result<ObjBox> {
         let mut out = core::ptr::null_mut();
+        // SAFETY: `repo` is NULL or a live repository (as the call below requires), only read
+        // through `&` (its state is interior-mutable).
+        let repo_ref = unsafe { repo.as_ptr().as_ref() };
         // SAFETY: a live repository; `id` valid for the call; `out` writable.
         ErrorCode::check(unsafe {
-            git_object_lookup(&raw mut out, repo.as_ptr(), Some(id), kind)
+            git_object_lookup(Out::from(&mut out), repo_ref, Some(id), kind)
         })?;
         NonNull::new(out).map(ObjBox).ok_or(ErrorCode::GENERIC)
     }
 
     /// `git_object_type`.
     pub fn kind(&self) -> c_int {
+        // SAFETY: `self.0` is NULL or a live object (as the call below requires), whose header is
+        // not written once shared but for its atomic count.
+        let obj_ref = unsafe { self.0.as_ptr().as_ref() };
         // SAFETY: a live object.
-        unsafe { git_object_type(self.0.as_ptr()) }
+        unsafe { git_object_type(obj_ref) }
     }
 
     /// `git_object_id`.
     pub fn id(&self) -> Oid {
+        // SAFETY: `self.0` is NULL or a live object (as the call below requires), whose header is
+        // not written once shared but for its atomic count.
+        let obj_ref = unsafe { self.0.as_ptr().as_ref() };
         // SAFETY: a live object.
-        let id = unsafe { git_object_id(self.0.as_ptr()) };
+        let id = unsafe { git_object_id(obj_ref) };
         // SAFETY: the object's id, alive as long as it.
         unsafe { *id }
     }
@@ -403,7 +412,7 @@ impl ObjBox {
     pub fn peel(&self, kind: c_int) -> Result<ObjBox> {
         let mut out = core::ptr::null_mut();
         // SAFETY: a live object; `out` writable.
-        ErrorCode::check(unsafe { git_object_peel(&raw mut out, self.0.as_ptr(), kind) })?;
+        ErrorCode::check(unsafe { git_object_peel(Out::from(&mut out), self.0.as_ptr(), kind) })?;
         NonNull::new(out).map(ObjBox).ok_or(ErrorCode::GENERIC)
     }
 
@@ -432,8 +441,11 @@ impl Drop for ObjBox {
 
 /// `git_object__is_valid(repo, id, kind)`.
 pub fn object_is_valid(repo: RepoPtr, id: &Oid, kind: c_int) -> bool {
+    // SAFETY: `repo` is NULL or a live repository (as the call below requires), only read through
+    // `&` (its state is interior-mutable).
+    let repo_ref = unsafe { repo.as_ptr().as_ref() };
     // SAFETY: a live repository; `id` valid for the call.
-    unsafe { git_object__is_valid(repo.as_ptr(), Some(id), kind) }
+    unsafe { git_object__is_valid(repo_ref, Some(id), kind) }
 }
 
 /// An owned `git_commit` (looked up and freed through object_api.c,
@@ -443,17 +455,19 @@ pub struct CommitBox(NonNull<git_commit>);
 impl CommitBox {
     /// `git_commit_lookup`.
     pub fn lookup(repo: RepoPtr, id: &Oid) -> Result<CommitBox> {
-        let mut out: *mut git_commit = core::ptr::null_mut();
+        let mut out: *mut crate::object::GitObject = core::ptr::null_mut();
         // SAFETY: a live repository (`RepoPtr`'s invariant), a valid id and
         // our writable local.
         ErrorCode::check(unsafe {
             crate::object_api::ffi::git_commit_lookup(
-                (&raw mut out).cast(),
-                repo.as_ptr(),
+                Out::from(&mut out),
+                Some(repo.get()),
                 Some(id),
             )
         })?;
-        NonNull::new(out).map(CommitBox).ok_or(ErrorCode::GENERIC)
+        NonNull::new(out.cast::<git_commit>())
+            .map(CommitBox)
+            .ok_or(ErrorCode::GENERIC)
     }
 
     /// The commit as the commit module's handle.

@@ -21,9 +21,11 @@ unsafe extern "C" {
 ///
 /// # Safety
 ///
-/// `pb` is a live `git_packbuilder *` the caller may use.
+/// `pb` is a live `git_packbuilder *` that no other thread uses during the
+/// call.
 pub unsafe fn insert(pb: *mut c_void, id: &Oid) -> Result<()> {
-    // SAFETY: the caller's contract; `id` is borrowed for the call.
+    // SAFETY: `pb` is a live builder used by this thread alone (this fn's
+    // contract); `id` is a readable id borrowed for the call; NULL name.
     ErrorCode::check_zero(unsafe { git_packbuilder_insert(pb, id, core::ptr::null()) })
 }
 
@@ -39,33 +41,37 @@ impl Packbuilder {
     /// `repo` is a live `git_repository *` that outlives the builder.
     pub unsafe fn new(repo: *mut c_void) -> Result<Packbuilder> {
         let mut out = core::ptr::null_mut();
-        // SAFETY: the caller's contract; `out` is writable.
+        // SAFETY: `repo` is a live repository (this fn's contract); `out`
+        // is a writable local.
         ErrorCode::check(unsafe { git_packbuilder_new(&raw mut out, repo) })?;
         NonNull::new(out).map(Packbuilder).ok_or(ErrorCode::GENERIC)
     }
 
     /// `git_packbuilder_set_threads`.
     pub fn set_threads(&mut self, n: c_uint) {
-        // SAFETY: a live builder.
+        // SAFETY: the live builder this value owns (made by `new`, whose
+        // repository outlives it), used through `&mut self` alone.
         unsafe { git_packbuilder_set_threads(self.0.as_ptr(), n) };
     }
 
     /// `git_packbuilder_insert_commit`.
     pub fn insert_commit(&mut self, id: &Oid) -> Result<()> {
-        // SAFETY: a live builder; `id` borrowed for the call.
+        // SAFETY: as in `set_threads`; `id` a readable id borrowed for the
+        // call.
         ErrorCode::check(unsafe { git_packbuilder_insert_commit(self.0.as_ptr(), id) }).map(drop)
     }
 
     /// `git_packbuilder__write_buf`.
     pub fn write_buf(&mut self, buf: &mut GitStr) -> Result<()> {
-        // SAFETY: a live builder; `buf` a valid string borrowed for the call.
+        // SAFETY: as in `set_threads`; `buf` a valid string, borrowed
+        // exclusively for the call.
         ErrorCode::check(unsafe { git_packbuilder__write_buf(buf, self.0.as_ptr()) }).map(drop)
     }
 }
 
 impl Drop for Packbuilder {
     fn drop(&mut self) {
-        // SAFETY: owned, freed once.
+        // SAFETY: the builder this value owns, freed once (no use after).
         unsafe { git_packbuilder_free(self.0.as_ptr()) }
     }
 }

@@ -532,9 +532,12 @@ unsafe fn check_entry(
     if id.is_zero() {
         return Err(tree_error("failed to insert entry: invalid null OID", f));
     }
+    // SAFETY: `repo` is live, only read through `&` (its state is
+    // interior-mutable).
+    let repo_ref = unsafe { repo.as_ref() };
     if filemode != FILEMODE_COMMIT
         // SAFETY: `repo` is live.
-        && !unsafe { pend::git_object__is_valid(repo, Some(id), otype_from_mode(filemode)) }
+        && !unsafe { pend::git_object__is_valid(repo_ref, Some(id), otype_from_mode(filemode)) }
     {
         return Err(tree_error(
             "failed to insert entry: invalid object specified",
@@ -772,12 +775,15 @@ impl GitTreebuilder {
         self.serialize(buf, crate::oid::oid_size(oid_type))?;
         // SAFETY: the builder's repository is live (contract).
         let odb = unsafe { repo_odb(self.repo) }?;
+        // SAFETY: the repository's live odb, only read through `&` (the odb
+        // module's docs).
+        let odb = unsafe { odb.as_ref() };
         let mut oid = Oid::default();
         let bytes = buf.as_bytes();
         // SAFETY: readable bytes; `oid` writable.
         ErrorCode::check(unsafe {
             crate::odb::ffi::git_odb_write(
-                &raw mut oid,
+                Out::from(&mut oid),
                 odb,
                 bytes.as_ptr().cast(),
                 bytes.len(),
@@ -1697,6 +1703,12 @@ pub mod ffi {
             // SAFETY: a live entry (contract), whose id is not written while
             // it lives.
             let id = unsafe { &(*entry).oid };
+            // SAFETY: `object_out` is writable (contract), and no reference
+            // to it is live.
+            let object_out = unsafe { Out::from_ptr(object_out) };
+            // SAFETY: `repo` is NULL or live (contract), only read through
+            // `&` (its state is interior-mutable).
+            let repo = unsafe { repo.as_ref() };
             // SAFETY: the caller's contract on `object_out` and `repo`.
             unsafe { pend::git_object_lookup(object_out, repo, Some(id), OBJ_ANY) }
         })
@@ -1828,10 +1840,13 @@ pub mod ffi {
         barrier(|| {
             // SAFETY: a fresh tree that only the caller holds (contract).
             let t = unsafe { &mut *tree.cast::<GitTree>() };
+            // SAFETY: a live odb object (contract), not written once shared
+            // but for its atomic count.
+            let odb_obj_ref = unsafe { odb_obj.as_ref() };
             // SAFETY: a live odb object (contract).
-            let p = unsafe { crate::odb::ffi::git_odb_object_data(odb_obj) }.cast::<c_char>();
+            let p = unsafe { crate::odb::ffi::git_odb_object_data(odb_obj_ref) }.cast::<c_char>();
             // SAFETY: as above.
-            let n = unsafe { crate::odb::ffi::git_odb_object_size(odb_obj) };
+            let n = unsafe { crate::odb::ffi::git_odb_object_size(odb_obj_ref) };
             let d = if p.is_null() {
                 &[][..]
             } else {

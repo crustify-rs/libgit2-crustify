@@ -237,8 +237,9 @@ unsafe fn with_state<R>(
     backend: *mut GitOdbBackend,
     f: impl FnOnce(&MempackState) -> R,
 ) -> Option<R> {
-    // SAFETY: the caller's contract; the body takes `&S` (shared), so it
-    // runs beside the table's slots.
+    // SAFETY: `backend` is a live table `new_backend` made (this fn's
+    // contract), of this `CTable` type; the body takes `&S` (shared), so it
+    // may run beside the table's slots.
     unsafe {
         CTable::<BackendTable, MempackBackend>::enter(
             backend,
@@ -260,14 +261,15 @@ unsafe fn with_state<R>(
 ///
 /// # Safety
 ///
-/// `repo` is a live `git_repository *`.
+/// `repo` is a live `git_repository *` for the call.
 pub(crate) unsafe fn dump(
     pack: &mut crate::util::str::GitStr,
     repo: *mut c_void,
     state: &MempackState,
 ) -> Result<()> {
     let commits = state.commits()?;
-    // SAFETY: the caller's contract.
+    // SAFETY: `repo` is a live repository for the call (this fn's
+    // contract), which the packbuilder, dropped at its end, uses.
     let mut pb = unsafe { crate::sys::pack_objects::Packbuilder::new(repo) }
         .map_err(|_| ErrorCode::GENERIC)?;
     pb.set_threads(0);
@@ -291,12 +293,11 @@ pub mod ffi {
     ///
     /// `out` is NULL or writable.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_mempack_new(out: *mut *mut GitOdbBackend) -> c_int {
+    pub unsafe extern "C" fn git_mempack_new(mut out: Out<'_, *mut GitOdbBackend>) -> c_int {
         barrier(|| {
             git_assert_arg!(!out.is_null(), "out", -1);
             let b = new_backend(Arc::new(MempackState::default()));
-            // SAFETY: the caller's contract.
-            unsafe { out.write(b.as_ptr()) };
+            out.write(b.as_ptr());
             0
         })
     }
@@ -312,7 +313,7 @@ pub mod ffi {
         pb: *mut c_void,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
+            // SAFETY: `backend` is a mempack table (this export's contract).
             let ids = unsafe { with_state(backend, MempackState::ids) }
                 .unwrap_or(Err(ErrorCode::GENERIC));
             let ids = match ids {
@@ -320,7 +321,8 @@ pub mod ffi {
                 Err(e) => return e.raw(),
             };
             for id in &ids {
-                // SAFETY: the caller's packbuilder.
+                // SAFETY: `pb` is a live packbuilder (this export's contract),
+                // used by nothing else during the call.
                 if let Err(e) = unsafe { crate::sys::pack_objects::insert(pb, id) } {
                     return e.raw();
                 }
@@ -344,17 +346,22 @@ pub mod ffi {
         barrier(|| {
             // GIT_BUF_WRAP_PRIVATE(pack, git_mempack__dump, repo, backend)
             let mut s = GitStr::new();
-            // SAFETY: the caller's `git_buf`; `s` a local string.
+            // SAFETY: `pack` is NULL or a valid `git_buf` (this export's
+            // contract); `s` a writable local string (overwritten, holding
+            // nothing to free).
             let mut error = unsafe { crate::buf::ffi::git_buf_tostr(&raw mut s, pack) };
             if error == 0 {
                 let run = |st: &MempackState| {
-                    // SAFETY: the caller's repository.
+                    // SAFETY: `repo` is a live repository (this export's
+                    // contract).
                     crate::util::export::status(unsafe { dump(&mut s, repo, st) })
                 };
-                // SAFETY: the caller's contract: a mempack table.
+                // SAFETY: `backend` is a mempack table (this export's
+                // contract).
                 error = unsafe { with_state(backend, run) }.unwrap_or(-1);
                 if error == 0 {
-                    // SAFETY: as above.
+                    // SAFETY: `pack` is a valid `git_buf` (`git_buf_tostr`
+                    // accepted it), `s` a valid string.
                     error = unsafe { crate::buf::ffi::git_buf_fromstr(pack, Some(&mut s)) };
                 }
             }
@@ -371,7 +378,7 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_mempack_reset(backend: *mut GitOdbBackend) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
+            // SAFETY: `backend` is a mempack table (this export's contract).
             unsafe { with_state(backend, MempackState::reset) }.map_or(-1, |()| 0)
         })
     }
@@ -380,7 +387,7 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` is writable; `backend` NULL or a mempack table.
+    /// `out` is NULL or writable; `backend` NULL or a mempack table.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_mempack_object_count(
         mut out: Out<'_, usize>,
@@ -388,7 +395,8 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!backend.is_null(), "_backend", -1);
-            // SAFETY: the caller's contract.
+            // SAFETY: `backend` is a mempack table (this export's contract;
+            // NULL is rejected above).
             let n = unsafe { with_state(backend, MempackState::object_count) };
             match n {
                 Some(n) => {

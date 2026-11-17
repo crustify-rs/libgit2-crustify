@@ -285,8 +285,11 @@ pub(crate) unsafe fn parse_odb(
     // `git_cached_obj`; `size` is set before it is returned and not written
     // after. A place read, no reference.
     let size = unsafe { (*c).size };
+    // SAFETY: `odb_obj` is NULL or a live odb object, not written once shared but
+    // for its atomic count.
+    let odb_obj_ref = unsafe { odb_obj.as_ref() };
     // SAFETY: a live odb object (the contract).
-    let d = unsafe { p::git_odb_object_data(odb_obj) };
+    let d = unsafe { p::git_odb_object_data(odb_obj_ref) };
     // SAFETY: an odb object's buffer holds `size` bytes, unwritten while it
     // lives, which is the whole call (the contract).
     let data = unsafe { crate::util::export::bytes(d.cast(), size) };
@@ -340,8 +343,9 @@ pub unsafe fn target(tag: NonNull<GitTag>) -> Result<NonNull<GitObject>> {
     // (C dereferences a NULL repository: a tag parsed from raw data.)
     git_assert!(!t.object.repo.is_null(), "t->object.repo");
     // SAFETY: a non-NULL owner of a live object is a live repository (it
-    // outlives its objects).
-    unsafe { object::lookup(t.object.repo, &t.target, t.kind) }
+    // outlives its objects), only read through `&` (interior-mutable).
+    let repo = unsafe { &*t.object.repo };
+    object::lookup(repo, &t.target, t.kind)
 }
 
 // ---------------------------------------------------------------------------
@@ -424,10 +428,8 @@ pub fn write_annotation(
         );
         let _ = tag.putc(b'\n');
         tag.puts(message)?;
-        let odb = repo.odb_weak()?;
-        // SAFETY: the repository's odb, which it keeps live while it is
-        // (and `repo` is, for the call).
-        unsafe { crate::blob::odb_write(odb.as_ptr(), tag.as_bytes(), GIT_OBJECT_TAG) }
+        let odb = crate::object::repo_odb_weak(repo)?;
+        crate::blob::odb_write(odb, tag.as_bytes(), GIT_OBJECT_TAG)
     })();
     r.map_err(|_| git_error_set!(ErrorClass::OBJECT, "failed to create tag annotation"))
 }
@@ -564,7 +566,7 @@ pub fn create_from_buffer(
     allow_ref_overwrite: bool,
 ) -> Result<()> {
     // The repository's odb, live while it is (and `repo` is, for the call).
-    let odb = repo.odb_weak().map_err(|_| ErrorCode::GENERIC)?.as_ptr();
+    let odb = crate::object::repo_odb_weak(repo).map_err(|_| ErrorCode::GENERIC)?;
     // Validate the buffer (C leaks what it parsed when this fails:
     // rust/DEFECTS.md).
     let oid_type = repo.oid_type_raw();
@@ -575,7 +577,7 @@ pub fn create_from_buffer(
         let mut target_obj = ptr::null_mut();
         // SAFETY: the repository's live odb (above), a readable id, a
         // writable out-parameter.
-        if unsafe { p::git_odb_read(&raw mut target_obj, odb, &raw const target) } < 0 {
+        if unsafe { p::git_odb_read(Out::from(&mut target_obj), Some(odb), Some(&target)) } < 0 {
             return Err(ErrorCode::GENERIC);
         }
         /// The odb object, freed on drop.
@@ -616,7 +618,12 @@ pub fn create_from_buffer(
     let mut stream = ptr::null_mut();
     // SAFETY: the repository's live odb, a writable out-parameter.
     ErrorCode::check(unsafe {
-        p::git_odb_open_wstream(&raw mut stream, odb, buffer.len() as u64, GIT_OBJECT_TAG)
+        p::git_odb_open_wstream(
+            Out::from(&mut stream),
+            Some(odb),
+            buffer.len() as u64,
+            GIT_OBJECT_TAG,
+        )
     })?;
     // SAFETY: the stream just opened (live until freed below); `buffer` is
     // readable for its length.
@@ -1373,6 +1380,9 @@ pub mod ffi {
         tag_target: *mut *mut GitObject,
         tag: *const GitTag,
     ) -> c_int {
+        // SAFETY: `tag_target` is NULL or writable (this export's
+        // contract), and no reference to it is live.
+        let tag_target = unsafe { Out::from_ptr(tag_target) };
         // SAFETY: this export's arguments, under `git_object_peel`'s
         // contract (a tag is an object: it starts with its header).
         unsafe { crate::object::ffi::git_object_peel(tag_target, tag.cast(), GIT_OBJECT_ANY) }

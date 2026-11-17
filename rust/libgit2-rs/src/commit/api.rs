@@ -293,8 +293,11 @@ impl<'r> Commit<'r> {
     pub fn tree(&self) -> Result<Tree<'r>, Error> {
         self.obj.need_repo()?;
         // SAFETY: the commit's live repository (checked above).
-        let raw =
-            unsafe { crate::object::lookup(self.obj.repo_raw(), self.tree_id(), GIT_OBJECT_TREE) }?;
+        let raw = crate::object::lookup(
+            unsafe { &*self.obj.repo_raw() },
+            self.tree_id(),
+            GIT_OBJECT_TREE,
+        )?;
         // SAFETY: a tree of the same repository, with its reference.
         let obj = unsafe { self.obj.sibling(raw) };
         Ok(Tree::wrap(obj))

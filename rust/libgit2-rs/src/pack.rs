@@ -1891,7 +1891,9 @@ pub unsafe fn packfile_free(p: *mut GitPackFile, unlink_packfile: bool) {
     if p.is_null() {
         return;
     }
-    // SAFETY: the caller's contract: ours alone.
+    // SAFETY: a non-NULL `p` is the `Box::into_raw` of `packfile_alloc`,
+    // which nothing else uses any more and is freed once (this fn's
+    // contract).
     let pack = unsafe { Box::from_raw(p) };
     {
         let _g = pack.plock();
@@ -2272,7 +2274,7 @@ impl core::fmt::Debug for Pack {
 pub mod ffi {
     use super::*;
     use crate::git_arg;
-    use crate::util::cabi::Out;
+    use crate::util::cabi::{CStrArg, Out};
     use crate::util::export::{barrier, status};
 
     /// `git_pack__lookup_id`.
@@ -2302,14 +2304,16 @@ pub mod ffi {
             let table = if len == 0 {
                 &[][..]
             } else {
-                // SAFETY: the caller's contract: the entries below `hi` are
-                // readable, the last ending at `len`.
+                // SAFETY: the entries below `hi` are readable (this export's
+                // contract), the last ending at `len`, which is therefore
+                // within one allocation (`<= isize::MAX`); `u8` alignment 1.
                 unsafe { core::slice::from_raw_parts(id_lookup_table.cast::<u8>(), len) }
             };
             let prefix = if oid_size == 0 {
                 &[][..]
             } else {
-                // SAFETY: the prefix has `oid_size` bytes (the caller).
+                // SAFETY: `id_prefix` is readable for `oid_size` bytes (this
+                // export's contract).
                 unsafe { core::slice::from_raw_parts(id_prefix, oid_size) }
             };
             lookup_id(table, stride, lo, hi, prefix, oid_size)
@@ -2333,7 +2337,8 @@ pub mod ffi {
             let mut buf = [0u8; 10];
             match object_header(&mut buf, size, type_) {
                 Ok(n) => {
-                    // SAFETY: `hdr` has room for `n` bytes (the caller).
+                    // SAFETY: `hdr` has room for the header, `n <= 10` bytes
+                    // (this export's contract), and is not `buf`, a local.
                     unsafe { ptr::copy_nonoverlapping(buf.as_ptr(), hdr, n) };
                     out.write(n);
                     0
@@ -2347,15 +2352,15 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `out` is writable; `path` is NUL-terminated.
+    /// `out` is NULL or writable; `path` is NULL or NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_packfile__name(
         mut out: Out<'_, *mut c_char>,
-        path: *const c_char,
+        path: CStrArg<'_>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: NUL-terminated (the caller).
-            let path = unsafe { CStr::from_ptr(path) };
+            // (C's `strlen` dereferences a NULL `path`.)
+            let path = git_arg!(path.get(), "path", -1);
             match packfile_name(path.to_bytes()) {
                 Ok(s) => {
                     out.write(s.into_raw());
@@ -2374,17 +2379,12 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_packfile_alloc(
         mut pack_out: Out<'_, *mut GitPackFile>,
-        path: *const c_char,
+        path: CStrArg<'_>,
         oid_type: git_oid_t,
     ) -> c_int {
         barrier(|| {
             pack_out.write(ptr::null_mut());
-            let path = if path.is_null() {
-                &[][..]
-            } else {
-                // SAFETY: NUL-terminated (the caller).
-                unsafe { CStr::from_ptr(path) }.to_bytes()
-            };
+            let path = path.to_bytes();
             match packfile_alloc(path, oid_type) {
                 Ok(p) => {
                     pack_out.write(p);
@@ -2402,7 +2402,7 @@ pub mod ffi {
     /// As [`packfile_free`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_packfile_free(p: *mut GitPackFile, unlink_packfile: bool) {
-        // SAFETY: the caller's contract.
+        // SAFETY: this export's contract is `packfile_free`'s.
         barrier(|| unsafe { packfile_free(p, unlink_packfile) })
     }
 
@@ -2410,22 +2410,23 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `size_p`, `type_p` and `curpos` are valid; `p` is a live pack;
-    /// `w_curs` is a valid cursor.
+    /// `size_p` and `type_p` are NULL or writable; `p` is NULL or a live
+    /// pack; `w_curs` NULL or a valid cursor (as
+    /// [`Cursor::from_raw_mut`] states, for the call); `curpos` NULL or
+    /// valid, used by nothing else during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_packfile_unpack_header(
         mut size_p: Out<'_, usize>,
         mut type_p: Out<'_, c_int>,
         p: Option<&GitPackFile>,
-        w_curs: *mut *mut GitMwindow,
-        curpos: *mut i64,
+        w_curs: Option<&mut Cursor>,
+        curpos: Option<&mut i64>,
     ) -> c_int {
         barrier(|| {
             let p = git_arg!(p, "p", -1);
-            // SAFETY: a valid cursor, used only here (the caller).
-            let cursor = unsafe { Cursor::from_raw_mut(w_curs) };
-            // SAFETY: valid (the caller).
-            let curpos = unsafe { &mut *curpos };
+            // (C dereferences a NULL cursor or position.)
+            let cursor = git_arg!(w_curs, "w_curs", -1);
+            let curpos = git_arg!(curpos, "curpos", -1);
             match p.unpack_header(cursor, curpos) {
                 Ok((size, kind)) => {
                     size_p.write(size);
@@ -2466,28 +2467,26 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `delta_base_out` is NULL or writable; `p` is a live pack; `w_curs`
-    /// is a valid cursor; `curpos` is valid.
+    /// `delta_base_out` is NULL or writable; `p` is NULL or a live pack;
+    /// `w_curs` and `curpos` as in [`git_packfile_unpack_header`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn get_delta_base(
-        delta_base_out: *mut i64,
+        mut delta_base_out: Out<'_, i64>,
         p: Option<&GitPackFile>,
-        w_curs: *mut *mut GitMwindow,
-        curpos: *mut i64,
+        w_curs: Option<&mut Cursor>,
+        curpos: Option<&mut i64>,
         type_: c_int,
         delta_obj_offset: i64,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!delta_base_out.is_null(), "delta_base_out", -1);
             let p = git_arg!(p, "p", -1);
-            // SAFETY: a valid cursor, used only here (the caller).
-            let cursor = unsafe { Cursor::from_raw_mut(w_curs) };
-            // SAFETY: valid (the caller).
-            let curpos = unsafe { &mut *curpos };
+            // (C dereferences a NULL cursor or position.)
+            let cursor = git_arg!(w_curs, "w_curs", -1);
+            let curpos = git_arg!(curpos, "curpos", -1);
             match p.delta_base(cursor, curpos, type_, delta_obj_offset) {
                 Ok(off) => {
-                    // SAFETY: writable (checked not NULL; the caller).
-                    unsafe { delta_base_out.write(off) };
+                    delta_base_out.write(off);
                     0
                 }
                 Err(e) => e.raw(),
@@ -2499,41 +2498,37 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `obj` is writable; `p` is a live pack; `obj_offset` is valid.
+    /// `obj` is NULL or writable; `p` is NULL or a live pack; `obj_offset`
+    /// NULL or valid, used by nothing else during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_packfile_unpack(
-        obj: *mut GitRawobj,
+        mut obj: Out<'_, GitRawobj>,
         p: Option<&GitPackFile>,
-        obj_offset: *mut i64,
+        obj_offset: Option<&mut i64>,
     ) -> c_int {
         barrier(|| {
             let p = git_arg!(p, "p", -1);
-            // SAFETY: valid (the caller).
-            let off = unsafe { &mut *obj_offset };
+            // (C dereferences a NULL offset.)
+            let off = git_arg!(obj_offset, "obj_offset", -1);
             match p.unpack(off) {
                 Ok((d, kind)) => {
                     let (data, len) = d.into_raw();
-                    // SAFETY: writable (the caller); C frees `data`.
-                    unsafe {
-                        obj.write(GitRawobj {
-                            data: data.cast(),
-                            len,
-                            type_: kind,
-                        })
-                    };
+                    // C frees `data`.
+                    obj.write(GitRawobj {
+                        data: data.cast(),
+                        len,
+                        type_: kind,
+                    });
                     0
                 }
                 Err(e) => {
                     // C leaves `obj` empty (or, if the chain could not be
                     // built, untouched); callers read it only on success.
-                    // SAFETY: as above.
-                    unsafe {
-                        obj.write(GitRawobj {
-                            data: ptr::null_mut(),
-                            len: 0,
-                            type_: GIT_OBJECT_INVALID,
-                        })
-                    };
+                    obj.write(GitRawobj {
+                        data: ptr::null_mut(),
+                        len: 0,
+                        type_: GIT_OBJECT_INVALID,
+                    });
                     e.raw()
                 }
             }
@@ -2554,7 +2549,8 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             let p = git_arg!(p, "p", -1);
-            // SAFETY: the caller's contract is `open_in`'s.
+            // SAFETY: `obj` is writable and stays put until disposed, `p`
+            // outlives it (this export's contract, `open_in`'s).
             status(unsafe { GitPackfileStream::open_in(obj, p, curpos) }.map(|_| ()))
         })
     }
@@ -2563,7 +2559,9 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `obj` is an open stream; `buffer` is writable for `len` bytes.
+    /// `obj` is an open stream that nothing else uses during the call;
+    /// `buffer` is writable for `len` bytes and overlaps neither the stream
+    /// nor the pack.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_packfile_stream_read(
         obj: *mut GitPackfileStream,
@@ -2571,7 +2569,8 @@ pub mod ffi {
         len: usize,
     ) -> isize {
         barrier(|| {
-            // SAFETY: the caller's contract is `read`'s.
+            // SAFETY: an open stream and a writable buffer (this export's
+            // contract), as `read` requires.
             unsafe { GitPackfileStream::read(obj, buffer.cast(), len) }
         })
     }
@@ -2583,7 +2582,8 @@ pub mod ffi {
     /// `obj` is an open stream, disposed once.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_packfile_stream_dispose(obj: *mut GitPackfileStream) {
-        // SAFETY: the caller's contract is `dispose`'s.
+        // SAFETY: an open stream, disposed once (this export's contract),
+        // as `dispose` requires.
         barrier(|| unsafe { GitPackfileStream::dispose(obj) })
     }
 
@@ -2591,10 +2591,13 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `e` is writable; `p` is NULL or a live pack; `short_oid` is valid.
+    /// `e` is NULL or writable; `p` is NULL or a live pack; `short_oid`
+    /// NULL or a readable id.
+    ///
+    /// (`p` stays a raw pointer: the entry hands it back to C.)
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_pack_entry_find(
-        e: *mut GitPackEntry,
+        mut e: Out<'_, GitPackEntry>,
         p: *mut GitPackFile,
         short_oid: Option<&Oid>,
         len: usize,
@@ -2602,19 +2605,17 @@ pub mod ffi {
         barrier(|| {
             let short_oid = git_arg!(short_oid, "short_oid", -1);
             git_assert_arg!(!p.is_null(), "p", -1);
-            // SAFETY: a live pack (the caller).
+            // SAFETY: a live pack (this export's contract; not NULL, checked
+            // above), only read through `&` (`GitPackFile` is `Sync` with
+            // interior mutability).
             let pack = unsafe { &*p };
-            let id = short_oid;
-            match pack.entry_find(id, len) {
+            match pack.entry_find(short_oid, len) {
                 Ok((offset, found)) => {
-                    // SAFETY: writable (the caller).
-                    unsafe {
-                        e.write(GitPackEntry {
-                            offset,
-                            id: found,
-                            p,
-                        })
-                    };
+                    e.write(GitPackEntry {
+                        offset,
+                        id: found,
+                        p,
+                    });
                     0
                 }
                 Err(err) => err.raw(),
@@ -2636,8 +2637,8 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             let p = git_arg!(p, "p", -1);
-            // SAFETY: a live pack (the caller); the callback contract is the
-            // caller's, and each id outlives its call.
+            // SAFETY: `cb` may be called with `data` and an id (this
+            // export's contract); each id is readable for its call.
             p.foreach_entry(|id| unsafe { cb(id, data) })
         })
     }
@@ -2660,7 +2661,8 @@ pub mod ffi {
         barrier(|| {
             let p = git_arg!(p, "p", -1);
             let r = p.foreach_entry_offset(|id, off| {
-                // SAFETY: the callback contract is the caller's.
+                // SAFETY: `cb` may be called with `data` (this export's
+                // contract), an id readable for the call, and an offset.
                 unsafe { cb(id, off, data) }
             });
             match r {

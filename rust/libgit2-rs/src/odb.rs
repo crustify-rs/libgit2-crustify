@@ -508,11 +508,16 @@ pub struct GitOdbObject {
 }
 
 /// `git_rawobj`: what a backend read.
+///
+/// Invariant (module-private fields, written only by [`RawObj::empty`],
+/// this module's reads and the backends' `read`/`read_prefix` slots, whose
+/// contract it is): `data` is NULL, or a `git__allocator` block of at
+/// least `len` readable bytes that this value owns.
 #[derive(Debug)]
-pub(crate) struct RawObj {
-    pub data: *mut c_void,
-    pub len: usize,
-    pub type_: git_object_t,
+struct RawObj {
+    data: *mut c_void,
+    len: usize,
+    type_: git_object_t,
 }
 
 impl RawObj {
@@ -526,23 +531,21 @@ impl RawObj {
 
     /// Free the data (`git__free(raw.data)`).
     fn free(&mut self) {
-        // SAFETY: the data a backend returned is `git__allocator` memory
-        // (`git_odb_backend_data_alloc`), owned here, or NULL.
+        // SAFETY: `data` is NULL or a `git__allocator` block this value
+        // owns (the invariant: a backend's `git_odb_backend_data_alloc`),
+        // freed once (it is reset just below).
         unsafe { alloc::free(self.data) };
         self.data = core::ptr::null_mut();
     }
 
-    /// The data as bytes.
-    ///
-    /// # Safety
-    ///
-    /// `data` is readable for `len` bytes (a backend's contract), or `len`
-    /// is 0.
-    unsafe fn bytes(&self) -> Option<&[u8]> {
+    /// The data as bytes (`None`: NULL data with a length).
+    fn bytes(&self) -> Option<&[u8]> {
         if self.data.is_null() {
             return (self.len == 0).then_some(&[][..]);
         }
-        // SAFETY: the caller's contract; `len` fits a buffer that exists.
+        // SAFETY: a non-NULL `data` is a block of at least `len` readable
+        // bytes this value owns (the invariant), so `len <= isize::MAX`, and
+        // nothing writes it while `&self` is borrowed; `u8` has alignment 1.
         Some(unsafe { core::slice::from_raw_parts(self.data.cast::<u8>(), self.len) })
     }
 }
@@ -563,7 +566,7 @@ fn odb_object_alloc(oid: &Oid, raw: &RawObj) -> Result<NonNull<GitOdbObject>> {
     };
     let b = GIT_ALLOC.try_box(obj).map_err(|_| errors::oom())?;
     let (p, _) = Box::into_raw_with_allocator(b);
-    // SAFETY: from a box.
+    // SAFETY: `into_raw_with_allocator` of a box is never NULL.
     Ok(unsafe { NonNull::new_unchecked(p) })
 }
 
@@ -574,22 +577,30 @@ fn odb_object_alloc(oid: &Oid, raw: &RawObj) -> Result<NonNull<GitOdbObject>> {
 /// `obj` was made by `odb_object_alloc` (or with `git__malloc` by C, with
 /// a `git__allocator` buffer), and nothing uses it again.
 pub unsafe fn odb_object_free(obj: NonNull<GitOdbObject>) {
-    // SAFETY: the caller's contract.
+    // SAFETY: `obj` is live and no one else uses it (this fn's contract):
+    // one field read in place.
     let buffer = unsafe { (*obj.as_ptr()).buffer };
-    // SAFETY: the caller's contract: the object's own buffer.
+    // SAFETY: the object's own buffer, a `git__allocator` block (or NULL)
+    // that nothing uses again (this fn's contract), freed once.
     unsafe { alloc::free(buffer) };
-    // SAFETY: the caller's contract.
+    // SAFETY: the object's block, from `git__allocator` (`GIT_ALLOC`'s box
+    // or C's `git__malloc`), not used again (this fn's contract).
     unsafe { alloc::free(obj.as_ptr().cast()) };
 }
 
 /// `git_cache_store_raw` of a fresh object: the reference the caller now
 /// holds (to it, or to the object already cached).
-fn store_raw(cache: &GitCache, obj: NonNull<GitOdbObject>) -> NonNull<GitOdbObject> {
-    // SAFETY: fresh, private to the caller.
-    unsafe { (*obj.as_ptr()).cached.flags = GIT_CACHE_STORE_RAW };
-    // SAFETY: a live raw object, private, whose (zero) reference passes:
-    // `store` takes one for the caller and one for the map.
-    unsafe { cache.store(obj.cast()) }.cast()
+///
+/// # Safety
+///
+/// `obj` is a fresh object of [`odb_object_alloc`]'s (count 0), private to
+/// the caller, which uses it again only through the result.
+unsafe fn store_raw(cache: &GitCache, obj: NonNull<GitOdbObject>) -> NonNull<GitOdbObject> {
+    // SAFETY: a fresh `git_odb_object` of count 0, private to the caller,
+    // used again only through the result (this fn's contract): `store_as`
+    // marks it raw and takes one reference for the caller and one for the
+    // map.
+    unsafe { cache.store_as(obj.cast(), GIT_CACHE_STORE_RAW) }.cast()
 }
 
 // ---------------------------------------------------------------------------
@@ -820,12 +831,29 @@ fn strict_hash_verification() -> bool {
 }
 
 /// `backend_internal`.
+///
+/// Invariant (made only by [`GitOdb::add_backend_internal`], whose caller
+/// promises it): `backend` is a live backend table owned by an odb, which
+/// frees it only when the odb itself goes; so it is live as long as a
+/// borrow of that odb (every holder of a `BackendInternal` has one), and
+/// its fields are not written once added (libgit2 sets `odb` once, under
+/// the odb's lock, before the table is shared).
 #[derive(Clone, Copy, Debug)]
 struct BackendInternal {
     backend: NonNull<GitOdbBackend>,
     priority: c_int,
     is_alternate: bool,
     disk_inode: u64,
+}
+
+impl BackendInternal {
+    /// A copy of the table (its version, owner and slots).
+    #[inline]
+    fn table(&self) -> GitOdbBackend {
+        // SAFETY: `backend` is a live table whose fields nothing writes
+        // (the invariant); every field is plain data, read by value.
+        unsafe { self.backend.as_ptr().read() }
+    }
 }
 
 /// What the odb's mutex protects: the backends (C's `git_vector`, sorted
@@ -914,10 +942,12 @@ impl Drop for GitOdb {
         {
             let mut l = self.lock();
             for bi in core::mem::take(&mut l.backends) {
-                // SAFETY: each backend was handed to this odb, which frees
-                // it once (its `free` slot is required).
-                if let Some(free) = unsafe { (*bi.backend.as_ptr()).free } {
-                    // SAFETY: as above.
+                // Each backend was handed to this odb, which frees it once,
+                // here, as it goes (`&mut self`: no borrow of it is left).
+                if let Some(free) = bi.table().free {
+                    // SAFETY: the table's own `free`, called once with the
+                    // live table, which nothing uses again (it was taken
+                    // out of `backends`).
                     unsafe { free(bi.backend.as_ptr()) };
                 }
             }
@@ -1008,8 +1038,9 @@ impl GitOdb {
         if owner.is_null() {
             &self.own_cache
         } else {
-            // SAFETY: the owner of an odb is a live repository (it clears
-            // the owner before it goes); `GitRepository` is `Sync`.
+            // SAFETY: a non-NULL owner of an odb is a live repository (it
+            // clears the owner before it goes, and holds the odb while it
+            // is set, so for this borrow of `self`), only read through `&`.
             let repo = unsafe { &*owner.cast::<crate::repository::GitRepository>() };
             repo.objects()
         }
@@ -1033,9 +1064,10 @@ impl GitOdb {
         is_alternate: bool,
         disk_inode: u64,
     ) -> Result<()> {
-        // SAFETY: the caller's backend is a live table (the exports'
-        // contract); fields are read in place.
-        let t = unsafe { slots(backend.as_ptr()) };
+        // SAFETY: `backend` is a live table (this fn's contract) that
+        // nothing writes during the call (it is not shared yet); every
+        // field is plain data, read by value.
+        let t = unsafe { backend.as_ptr().read() };
         let (version, owner) = (t.version, t.odb);
         check_version(Some(version), GIT_ODB_BACKEND_VERSION, "git_odb_backend")?;
         let me = core::ptr::from_ref(self).cast_mut();
@@ -1054,8 +1086,10 @@ impl GitOdb {
         if l.backends.len() > 1 {
             crate::util::tsort::tsort(&mut l.backends, backend_sort_cmp);
         }
-        // SAFETY: a field of the live table, written in place while the
-        // lock is held (C writes it the same way).
+        // SAFETY: a field of the live table (this fn's contract), written
+        // in place while the lock is held and before any other thread can
+        // reach the table through this odb (C writes it the same way); no
+        // reference to the table is live.
         unsafe { (*backend.as_ptr()).odb = me };
         Ok(())
     }
@@ -1071,7 +1105,8 @@ impl GitOdb {
         priority: c_int,
         is_alternate: bool,
     ) -> Result<()> {
-        // SAFETY: the caller's contract.
+        // SAFETY: `backend` is a live table whose ownership passes to the
+        // odb on success (this fn's contract).
         unsafe { self.add_backend_internal(backend, priority, is_alternate, 0) }
     }
 
@@ -1129,7 +1164,8 @@ impl GitOdb {
         // C returns -1 for each failure below, whatever the callee's code.
         let loose = crate::odb_loose::new_backend(objects_dir.to_bytes(), Some(&loose_opts))
             .map_err(|_| ErrorCode::GENERIC)?;
-        // SAFETY: a backend table this function just made.
+        // SAFETY: a live backend table `new_backend` just made, ours to
+        // hand over.
         if unsafe {
             self.add_backend_internal(
                 loose,
@@ -1141,14 +1177,16 @@ impl GitOdb {
         .is_err()
         {
             // C leaked the backend here (rust/DEFECTS.md).
-            // SAFETY: ours, not added: freed once.
+            // SAFETY: the table made above, not added (so still ours), not
+            // used again.
             unsafe { free_backend(loose) };
             return Err(ErrorCode::GENERIC);
         }
 
         let packed = crate::odb_pack::backend_pack_raw(objects_dir, &pack_opts)
             .map_err(|_| ErrorCode::GENERIC)?;
-        // SAFETY: a backend table the pack backend just made.
+        // SAFETY: a live backend table `backend_pack_raw` just made, ours
+        // to hand over.
         if unsafe {
             self.add_backend_internal(
                 packed,
@@ -1159,7 +1197,7 @@ impl GitOdb {
         }
         .is_err()
         {
-            // SAFETY: as above.
+            // SAFETY: as for `loose` above.
             unsafe { free_backend(packed) };
             return Err(ErrorCode::GENERIC);
         }
@@ -1234,8 +1272,8 @@ impl GitOdb {
                     "cannot access repository to set odb caps"
                 ));
             }
-            // SAFETY: the owner of an odb is a live repository (it clears
-            // the owner before it goes); `GitRepository` is `Sync`.
+            // SAFETY: as in `cache`: a non-NULL owner is a live repository
+            // for this borrow of `self`, only read through `&`.
             let repo = unsafe { &*repo.cast::<crate::repository::GitRepository>() };
             if let Ok(val) =
                 repo.configmap_lookup(crate::repository::GIT_CONFIGMAP_FSYNCOBJECTFILES)
@@ -1264,15 +1302,15 @@ impl GitOdb {
         };
         for bi in &l.backends {
             let b = bi.backend.as_ptr();
-            // SAFETY: a live backend table (the odb's), read in place.
-            let t = unsafe { slots(b) };
+            let t = bi.table();
             let (refresh, exists) = (t.refresh, t.exists);
             if only_refreshed && refresh.is_none() {
                 continue;
             }
             if let Some(exists) = exists {
-                // SAFETY: the slot of the table, given the table and a live
-                // oid, with the lock held (the backends' contract).
+                // SAFETY: the table's own slot, called with the live table
+                // (`BackendInternal`'s invariant: `self` owns it) and a
+                // readable id, with the lock held (the backends' contract).
                 if unsafe { exists(b, id) } != 0 {
                     return true;
                 }
@@ -1288,8 +1326,7 @@ impl GitOdb {
         };
         for bi in &l.backends {
             let b = bi.backend.as_ptr();
-            // SAFETY: as in `exists_1`.
-            let t = unsafe { slots(b) };
+            let t = bi.table();
             let (refresh, freshen, exists) = (t.refresh, t.freshen, t.exists);
             if only_refreshed && refresh.is_none() {
                 continue;
@@ -1346,8 +1383,7 @@ impl GitOdb {
         let mut last_found: Option<Oid> = None;
         for bi in &l.backends {
             let b = bi.backend.as_ptr();
-            // SAFETY: as in `exists_1`.
-            let t = unsafe { slots(b) };
+            let t = bi.table();
             let (refresh, exists_prefix) = (t.refresh, t.exists_prefix);
             if only_refreshed && refresh.is_none() {
                 continue;
@@ -1462,8 +1498,7 @@ impl GitOdb {
         let l = self.try_lock()?;
         for bi in &l.backends {
             let b = bi.backend.as_ptr();
-            // SAFETY: as in `exists_1`.
-            let t = unsafe { slots(b) };
+            let t = bi.table();
             let (refresh, read_header) = (t.refresh, t.read_header);
             if only_refreshed && refresh.is_none() {
                 continue;
@@ -1543,8 +1578,7 @@ impl GitOdb {
         if !strict_hash_verification() {
             return Ok(());
         }
-        // SAFETY: a backend's buffer is readable for its length.
-        let data = unsafe { raw.bytes() };
+        let data = raw.bytes();
         let hashed = hash_object(data, raw.len, raw.type_, self.options.oid_type)?;
         if *id != hashed {
             return Err(error_mismatch(id, &hashed));
@@ -1569,8 +1603,7 @@ impl GitOdb {
             let l = self.try_lock()?;
             for bi in &l.backends {
                 let b = bi.backend.as_ptr();
-                // SAFETY: as in `exists_1`.
-                let t = unsafe { slots(b) };
+                let t = bi.table();
                 let (refresh, read) = (t.refresh, t.read);
                 if only_refreshed && refresh.is_none() {
                     continue;
@@ -1613,7 +1646,9 @@ impl GitOdb {
                 return Err(e);
             }
         };
-        Ok(store_raw(self.cache(), obj))
+        // SAFETY: `obj` was just made by `odb_object_alloc`, and is used
+        // again only through the result.
+        Ok(unsafe { store_raw(self.cache(), obj) })
     }
 
     /// `git_odb_read`: a new reference to the object.
@@ -1643,9 +1678,10 @@ impl GitOdb {
             ));
         }
         if let Some(obj) = self.cache().get(id, GIT_CACHE_STORE_RAW) {
-            // SAFETY: our reference, given up after the read.
+            // SAFETY: a raw cached object (a `git_odb_object`), live with
+            // the reference `get` gave; its type is not written once shared.
             let t = unsafe { (*obj.cast::<GitOdbObject>().as_ptr()).cached.type_ };
-            // SAFETY: as above.
+            // SAFETY: that reference, given up once.
             unsafe { cache::decref(obj) };
             return Ok(git_object_t::from(t));
         }
@@ -1653,9 +1689,10 @@ impl GitOdb {
             Ok((_, t)) => Ok(t),
             Err(ErrorCode::PASSTHROUGH) => {
                 let obj = self.read_1(id, false)?;
-                // SAFETY: as above.
+                // SAFETY: live with the reference `read_1` gave; its type is
+                // not written once shared.
                 let t = unsafe { (*obj.as_ptr()).cached.type_ };
-                // SAFETY: as above.
+                // SAFETY: that reference, given up once.
                 unsafe { cache::decref(obj.cast()) };
                 Ok(git_object_t::from(t))
             }
@@ -1677,8 +1714,7 @@ impl GitOdb {
             let l = self.try_lock()?;
             for bi in &l.backends {
                 let b = bi.backend.as_ptr();
-                // SAFETY: as in `exists_1`.
-                let t = unsafe { slots(b) };
+                let t = bi.table();
                 let (refresh, read_prefix) = (t.refresh, t.read_prefix);
                 if only_refreshed && refresh.is_none() {
                     continue;
@@ -1743,7 +1779,9 @@ impl GitOdb {
                 return Err(e);
             }
         };
-        Ok(store_raw(self.cache(), obj))
+        // SAFETY: `obj` was just made by `odb_object_alloc`, and is used
+        // again only through the result.
+        Ok(unsafe { store_raw(self.cache(), obj) })
     }
 
     /// `git_odb_read_prefix`.
@@ -1792,13 +1830,15 @@ impl GitOdb {
         };
         for bi in backends {
             let b = bi.backend.as_ptr();
-            // SAFETY: as in `exists_1` (C calls it without the lock, and
-            // without checking the slot: a backend without `foreach`, such
-            // as mempack, is skipped here; rust/DEFECTS.md).
-            let Some(foreach) = (unsafe { (*b).foreach }) else {
+            // (C calls it without the lock, and without checking the slot:
+            // a backend without `foreach`, such as mempack, is skipped here;
+            // rust/DEFECTS.md.)
+            let Some(foreach) = bi.table().foreach else {
                 continue;
             };
-            // SAFETY: as above; the caller's callback and payload.
+            // SAFETY: the table's own slot, called with the live table (the
+            // snapshot's invariant: the odb `&self` borrows owns it), and
+            // the caller's callback and payload (this fn's contract).
             let error = unsafe { foreach(b, cb, payload) };
             if error != 0 {
                 return error;
@@ -1837,8 +1877,7 @@ impl GitOdb {
                     continue;
                 }
                 let b = bi.backend.as_ptr();
-                // SAFETY: as in `exists_1`.
-                if let Some(write) = unsafe { (*b).write } {
+                if let Some(write) = bi.table().write {
                     // SAFETY: as in `exists_1`; `data` is readable for
                     // `len` bytes (a slice).
                     error = unsafe { write(b, &raw const oid, data_ptr, len, type_) };
@@ -1850,17 +1889,21 @@ impl GitOdb {
         }
         let stream = self.open_wstream(len as git_object_size_t, type_)?;
         let stream = stream.as_ptr();
-        // SAFETY: a live stream (ours until freed below); `data` as above.
+        // SAFETY: the live stream `open_wstream` just gave, ours alone until
+        // freed below (no reference to it is live); `data` is readable for
+        // `len` bytes (a slice).
         let mut r = unsafe { stream_write_slot(stream, data_ptr.cast(), len) };
         if r == 0 {
-            // SAFETY: as above.
+            // SAFETY: as above: one field of the live stream, read in place.
             r = match unsafe { (*stream).finalize_write } {
-                // SAFETY: as above.
+                // SAFETY: the stream's own slot, called with the live stream
+                // and a readable id (a local).
                 Some(f) => unsafe { f(stream, &raw const oid) },
                 None => git_error_set!(ErrorClass::ODB, "stream does not support writing").raw(),
             };
         }
-        // SAFETY: ours, freed once.
+        // SAFETY: the stream is ours, not used again; its `hash_ctx` is the
+        // odb's own `git__allocator` context (`open_wstream`).
         unsafe { stream_free(stream) };
         ErrorCode::check(r).map(drop)
     }
@@ -1884,8 +1927,7 @@ impl GitOdb {
                     continue;
                 }
                 let b = bi.backend.as_ptr();
-                // SAFETY: as in `exists_1`.
-                let t = unsafe { slots(b) };
+                let t = bi.table();
                 let (writestream, write) = (t.writestream, t.write);
                 if let Some(writestream) = writestream {
                     writes += 1;
@@ -1924,26 +1966,31 @@ impl GitOdb {
         let ctx = alloc::malloc(size_of::<HashCtx>()).cast::<HashCtx>();
         if ctx.is_null() {
             // C leaked the stream here (rust/DEFECTS.md).
-            // SAFETY: the backend's stream, not handed out.
+            // SAFETY: the live stream the backend just made, not handed out
+            // (not used again); its `hash_ctx` is the backend's NULL.
             unsafe { stream_free(stream.as_ptr()) };
             return Err(ErrorCode::GENERIC);
         }
         let r = (|| {
-            // SAFETY: a fresh context of ours, written in place.
+            // SAFETY: `ctx` is a fresh, non-NULL `git__allocator` block of a
+            // `HashCtx`'s size (malloc-aligned), ours alone: `init_raw`
+            // writes it in place.
             unsafe { HashCtx::init_raw(ctx, oid_algorithm(self.options.oid_type)) }?;
             let mut header = [0u8; 64];
             let hdrlen = format_object_header(&mut header, size, type_)?;
-            // SAFETY: a fresh context, ours.
+            // SAFETY: the context `init_raw` just initialized, ours alone
+            // (not handed out yet): the only reference to it.
             let c = unsafe { &mut *ctx };
-            // SAFETY: initialized above.
+            // SAFETY: `c` was initialized by `init_raw` (as `hasher`
+            // requires).
             unsafe { c.hasher() }?.update(&header[..hdrlen])
         })();
         if let Err(e) = r {
-            // SAFETY: ours, not handed out.
+            // SAFETY: our `git__allocator` block, not handed out, freed once.
             unsafe { alloc::free(ctx.cast()) };
             // C leaked the stream here (rust/DEFECTS.md).
-            // SAFETY: the backend's stream, not handed out; its context
-            // is still NULL.
+            // SAFETY: the backend's live stream, not handed out (not used
+            // again); its context is still the backend's NULL.
             unsafe { stream_free(stream.as_ptr()) };
             return Err(e);
         }
@@ -1977,8 +2024,7 @@ impl GitOdb {
                     break;
                 }
                 let b = bi.backend.as_ptr();
-                // SAFETY: as in `exists_1`.
-                if let Some(readstream) = unsafe { (*b).readstream } {
+                if let Some(readstream) = bi.table().readstream {
                     reads += 1;
                     // SAFETY: as in `exists_1`; the out-parameters are
                     // writable.
@@ -2021,8 +2067,7 @@ impl GitOdb {
                     continue;
                 }
                 let b = bi.backend.as_ptr();
-                // SAFETY: as in `exists_1`.
-                if let Some(writepack) = unsafe { (*b).writepack } {
+                if let Some(writepack) = bi.table().writepack {
                     writes += 1;
                     // SAFETY: as in `exists_1`; the caller's callback.
                     error =
@@ -2053,8 +2098,7 @@ impl GitOdb {
                 continue;
             }
             let b = bi.backend.as_ptr();
-            // SAFETY: as in `exists_1`.
-            if let Some(writemidx) = unsafe { (*b).writemidx } {
+            if let Some(writemidx) = bi.table().writemidx {
                 writes += 1;
                 // SAFETY: as in `exists_1`.
                 error = unsafe { writemidx(b) };
@@ -2074,8 +2118,7 @@ impl GitOdb {
         let mut l = self.try_lock()?;
         for bi in &l.backends {
             let b = bi.backend.as_ptr();
-            // SAFETY: as in `exists_1`.
-            if let Some(refresh) = unsafe { (*b).refresh } {
+            if let Some(refresh) = bi.table().refresh {
                 // SAFETY: as in `exists_1`.
                 let error = unsafe { refresh(b) };
                 if error < 0 {
@@ -2090,27 +2133,17 @@ impl GitOdb {
     }
 }
 
-/// A copy of the backend table at `b` (its version, owner and slots).
-///
-/// # Safety
-///
-/// `b` is a live backend table, whose fields nothing writes meanwhile
-/// (libgit2 sets `odb` once, under the odb's lock).
-#[inline]
-unsafe fn slots(b: *const GitOdbBackend) -> GitOdbBackend {
-    // SAFETY: the caller's contract; every field is plain data.
-    unsafe { b.read() }
-}
-
 /// Free a backend through its `free` slot.
 ///
 /// # Safety
 ///
-/// `b` is a live backend nothing uses again.
+/// `b` is a live backend table that nothing uses again.
 pub(crate) unsafe fn free_backend(b: NonNull<GitOdbBackend>) {
-    // SAFETY: the caller's contract.
+    // SAFETY: `b` is a live table (this fn's contract): one field read in
+    // place.
     if let Some(free) = unsafe { (*b.as_ptr()).free } {
-        // SAFETY: as above.
+        // SAFETY: the table's own `free`, called once with the live table,
+        // which nothing uses again (this fn's contract).
         unsafe { free(b.as_ptr()) };
     }
 }
@@ -2119,11 +2152,15 @@ pub(crate) unsafe fn free_backend(b: NonNull<GitOdbBackend>) {
 ///
 /// # Safety
 ///
-/// `stream` is a live stream; `data` is readable for `len` bytes.
+/// `stream` is a live stream that no other thread uses and to which no
+/// reference is live; `data` is readable for `len` bytes, unwritten during
+/// the call.
 unsafe fn stream_write_slot(stream: *mut GitOdbStream, data: *const c_char, len: usize) -> c_int {
-    // SAFETY: the caller's contract.
+    // SAFETY: `stream` is live (this fn's contract): one field read in
+    // place.
     match unsafe { (*stream).write } {
-        // SAFETY: as above.
+        // SAFETY: the stream's own slot, called with the live stream and
+        // the readable `data` (this fn's contract).
         Some(w) => unsafe { w(stream, data, len) },
         None => git_error_set!(ErrorClass::ODB, "stream does not support writing").raw(),
     }
@@ -2134,15 +2171,18 @@ unsafe fn stream_write_slot(stream: *mut GitOdbStream, data: *const c_char, len:
 /// # Safety
 ///
 /// `stream` is a live stream nothing uses again; its `hash_ctx` is NULL or
-/// a `git__allocator` context.
+/// a `git__allocator` context that only the stream holds.
 pub unsafe fn stream_free(stream: *mut GitOdbStream) {
-    // SAFETY: the caller's contract.
+    // SAFETY: `stream` is live (this fn's contract): one field read in
+    // place.
     let ctx = unsafe { (*stream).hash_ctx };
-    // SAFETY: the caller's contract; `git_hash_ctx_cleanup` does nothing.
+    // SAFETY: NULL or the stream's own `git__allocator` context (this fn's
+    // contract), freed once; `git_hash_ctx_cleanup` does nothing.
     unsafe { alloc::free(ctx) };
-    // SAFETY: as above.
+    // SAFETY: as for `hash_ctx`: one field read in place.
     if let Some(free) = unsafe { (*stream).free } {
-        // SAFETY: as above.
+        // SAFETY: the stream's own `free`, called once with the live
+        // stream, which nothing uses again (this fn's contract).
         unsafe { free(stream) };
     }
 }

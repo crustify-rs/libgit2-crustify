@@ -1312,6 +1312,13 @@ out-of-memory error instead.
   grafts.
 - Rust: frees them.
 
+### object: a NULL repository in `git_object_short_id`, `git_object__is_valid` and `git_object__from_odb_object`
+- C: `git_object__short_id` reads `obj->repo->oid_type` of an object parsed
+  by `git_object__from_raw` (NULL `repo`); `git_object__is_valid` and
+  `git_object__from_odb_object` dereference a NULL `repo` argument: a crash.
+- Rust: `short_id` fails with the assertion `obj->repo`; the other two
+  report `invalid argument: 'repo'` (the Rust before dereferenced NULL too).
+
 ## Tests: `rebase::merge::copy_notes_{specified,disabled}_in_config` leak their config
 
 - **C location:** `tests/libgit2/rebase/merge.c`, both tests take `git_repository_config(&config, repo)` and never free it.

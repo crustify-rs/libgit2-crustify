@@ -23,6 +23,7 @@
 //! the parents and the commit time, without allocating.
 
 use crate::util::cabi::CStrArg;
+use crate::util::cabi::Out;
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::marker::PhantomData;
 use core::ptr::{self, NonNull};
@@ -1195,7 +1196,7 @@ fn object_is_valid(repo: Option<&git_repository>, id: &Oid, t: c_int) -> bool {
     match repo {
         // SAFETY: a live repository (a reference, only read through `&`);
         // `id` readable.
-        Some(r) => unsafe { pend::git_object__is_valid(repo_raw(Some(r)), Some(id), t) },
+        Some(r) => unsafe { pend::git_object__is_valid(Some(r), Some(id), t) },
         None if !crate::object::strict_input_validation() => true,
         None => {
             let _ = errors::assert_arg_failed("repo");
@@ -1416,15 +1417,23 @@ pub(crate) fn create_internal(
             // `git_repository_odb__weakptr`'s check.
             return Err(errors::assert_arg_failed("repo"));
         };
-        let odb = repo.odb_weak()?.as_ptr();
+        let odb = crate::object::repo_odb_weak(repo)?;
         // SAFETY: the repository's odb, live while it is (for the call);
         // the tree id readable.
-        ErrorCode::check(unsafe { crate::odb::ffi::git_odb__freshen(odb, Some(&args.tree)) })?;
+        ErrorCode::check(unsafe {
+            crate::odb::ffi::git_odb__freshen(Some(odb), Some(&args.tree))
+        })?;
         let bytes = buf.as_bytes();
         // SAFETY: `id` a writable id (a `&mut`); the live odb; `bytes`
         // readable for its length.
         ErrorCode::check(unsafe {
-            crate::odb::ffi::git_odb_write(id, odb, bytes.as_ptr().cast(), bytes.len(), OBJ_COMMIT)
+            crate::odb::ffi::git_odb_write(
+                Out::from(&mut *id),
+                Some(odb),
+                bytes.as_ptr().cast(),
+                bytes.len(),
+                OBJ_COMMIT,
+            )
         })?;
 
         if !update_ref.is_null() {
@@ -2288,18 +2297,27 @@ pub mod ffi {
         barrier(|| {
             let c = git_arg!(commit, "commit", -1);
             let opts = *git_arg!(parse_opts, "opts", -1);
+            // SAFETY: `odb_obj` is NULL or a live odb object, not written once shared but
+            // for its atomic count.
+            let odb_obj_ref = unsafe { odb_obj.as_ref() };
             // SAFETY: a live odb object (this export's contract).
-            let p = unsafe { crate::odb::ffi::git_odb_object_data(odb_obj) }.cast::<c_char>();
+            let p = unsafe { crate::odb::ffi::git_odb_object_data(odb_obj_ref) }.cast::<c_char>();
+            // SAFETY: `odb_obj` is NULL or a live odb object, not written once shared but
+            // for its atomic count.
+            let odb_obj_ref = unsafe { odb_obj.as_ref() };
             // SAFETY: as above.
-            let n = unsafe { crate::odb::ffi::git_odb_object_size(odb_obj) };
+            let n = unsafe { crate::odb::ffi::git_odb_object_size(odb_obj_ref) };
             if p.is_null() {
                 return errors::assert_arg_failed("data").raw();
             }
             // SAFETY: the object's data, readable for its size and
             // unwritten while the object lives (the whole call).
             let data = unsafe { crate::util::export::bytes(p, n) };
+            // SAFETY: `odb_obj` is NULL or a live odb object, not written once shared but
+            // for its atomic count.
+            let odb_obj_ref = unsafe { odb_obj.as_ref() };
             // SAFETY: the live object's id, aligned.
-            let id = unsafe { crate::odb::ffi::git_odb_object_id(odb_obj) };
+            let id = unsafe { crate::odb::ffi::git_odb_object_id(odb_obj_ref) };
             // SAFETY: as above, copied.
             let id = unsafe { id.read() };
             if let Err(e) = parse_into(c, data, &opts) {
@@ -2672,27 +2690,25 @@ pub mod ffi {
             let field = field.get().map(CStr::to_bytes).unwrap_or(b"gpgsig");
             // `git_repository_odb__weakptr`'s check.
             let repo = git_arg!(repo, "repo", -1);
-            let odb = match repo.odb_weak() {
-                Ok(o) => o.as_ptr(),
+            let odb = match crate::object::repo_odb_weak(repo) {
+                Ok(o) => o,
                 Err(e) => return e.raw(),
             };
             let mut obj = ptr::null_mut();
             // SAFETY: `obj` a writable local; the repository's odb, live
             // while it is; `commit_id` NULL (which `git_odb_read` rejects) or
             // readable.
-            let error = unsafe {
-                crate::odb::ffi::git_odb_read(
-                    &raw mut obj,
-                    odb,
-                    commit_id.map_or(ptr::null(), ptr::from_ref),
-                )
-            };
+            let error =
+                unsafe { crate::odb::ffi::git_odb_read(Out::from(&mut obj), Some(odb), commit_id) };
             if error < 0 {
                 return error;
             }
+            // SAFETY: `obj` is NULL or a live odb object, not written once shared but
+            // for its atomic count.
+            let obj_ref = unsafe { obj.as_ref() };
             // SAFETY: the object just read (non-NULL on success), live until
             // freed below.
-            let r = if unsafe { crate::odb::ffi::git_odb_object_type(obj) } != OBJ_COMMIT {
+            let r = if unsafe { crate::odb::ffi::git_odb_object_type(obj_ref) } != OBJ_COMMIT {
                 let _ = git_error_set!(
                     ErrorClass::INVALID,
                     "the requested type does not match the type in the ODB"
@@ -2700,9 +2716,12 @@ pub mod ffi {
                 Err(ErrorCode::NOT_FOUND)
             } else {
                 // SAFETY: as above.
-                let p = unsafe { crate::odb::ffi::git_odb_object_data(obj) }.cast::<c_char>();
+                let p = unsafe { crate::odb::ffi::git_odb_object_data(obj_ref) }.cast::<c_char>();
+                // SAFETY: `obj` is NULL or a live odb object, not written once shared but
+                // for its atomic count.
+                let obj_ref = unsafe { obj.as_ref() };
                 // SAFETY: as above.
-                let n = unsafe { crate::odb::ffi::git_odb_object_size(obj) };
+                let n = unsafe { crate::odb::ffi::git_odb_object_size(obj_ref) };
                 // SAFETY: the object's data (empty if NULL), readable for its
                 // size and unwritten until it is freed below, after its last
                 // use.
@@ -2855,7 +2874,7 @@ pub mod ffi {
     /// `signature`, `signature_field` NULL or NUL-terminated.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_commit_create_with_signature(
-        out: Out<'_, Oid>,
+        mut out: Out<'_, Oid>,
         repo: Option<&git_repository>,
         commit_content: CStrArg<'_>,
         signature: CStrArg<'_>,
@@ -2907,15 +2926,15 @@ pub mod ffi {
                     }
                     None => content,
                 };
-                let odb = repo.odb_weak()?.as_ptr();
+                let odb = crate::object::repo_odb_weak(repo)?;
                 // SAFETY: `out` is non-NULL (checked above), so writable
                 // (`Out`'s invariant), and written here only, by the odb;
                 // the repository's live odb; `bytes` readable for its
                 // length.
                 ErrorCode::check(unsafe {
                     crate::odb::ffi::git_odb_write(
-                        out.as_ptr(),
-                        odb,
+                        out.reborrow(),
+                        Some(odb),
                         bytes.as_ptr().cast(),
                         bytes.len(),
                         OBJ_COMMIT,

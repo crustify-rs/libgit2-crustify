@@ -4,6 +4,7 @@
 
 #![allow(non_camel_case_types)]
 
+use crate::util::cabi::Out;
 use core::ffi::c_int;
 
 use crate::oid::Oid;
@@ -29,9 +30,14 @@ pub unsafe fn git_commit_lookup(
     repo: *mut git_repository,
     id: Option<&Oid>,
 ) -> c_int {
-    // SAFETY: the arguments satisfy the export's contract (this
-    // function's).
-    unsafe { crate::object_api::ffi::git_commit_lookup(out.cast(), repo, id) }
+    // SAFETY: `out` is NULL or writable (as the call below requires), and no reference to it is
+    // live.
+    let out_out = unsafe { Out::from_ptr(out.cast()) };
+    // SAFETY: `repo` is NULL or a live repository (as the call below requires), only read through
+    // `&` (its state is interior-mutable).
+    let repo_ref = unsafe { repo.as_ref() };
+    // SAFETY: the caller's contract.
+    unsafe { crate::object_api::ffi::git_commit_lookup(out_out, repo_ref, id) }
 }
 
 /// `git_commit_free`.

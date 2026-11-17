@@ -25,7 +25,7 @@
 //! | `git_odb_backend_pack_options` | [`GitOdbBackendPackOptions`] | mirrored (public) |
 //! | `struct pack_backend`, `struct pack_writepack` | [`PackBackend`], [`Writepack`] behind [`CTable`] | the C table, then Rust state |
 
-use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
+use core::ffi::{CStr, c_int, c_uint, c_void};
 use core::ptr::{self, NonNull};
 use std::ffi::CString;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -664,7 +664,9 @@ impl PackBackend {
             oid_type: self.oid_type,
             ..GitIndexerOptions::default()
         };
-        // SAFETY: the caller's contract is `Indexer::new`'s.
+        // SAFETY: `odb` is NULL or a live odb that outlives the writepack,
+        // and the callback may be called with its payload (this fn's
+        // contract), as `Indexer::new` requires.
         let indexer = unsafe { Indexer::new(self.pack_folder.as_deref(), &mut opts) }
             .map_err(|_| ErrorCode::GENERIC)?;
         Ok(Writepack { indexer })
@@ -701,7 +703,8 @@ fn panicked() -> c_int {
 ///
 /// # Safety
 ///
-/// The pointers are writable.
+/// The pointers are aligned and writable, and no reference to their
+/// pointees is live.
 unsafe fn write_object(
     buffer_p: *mut *mut c_void,
     len_p: *mut usize,
@@ -710,11 +713,12 @@ unsafe fn write_object(
     kind: c_int,
 ) {
     let (data, len) = data.into_raw();
-    // SAFETY: writable (the caller); C frees `data` with `git__free`.
+    // SAFETY: `buffer_p` is writable (this fn's contract); C frees `data`
+    // with `git__free`.
     unsafe { buffer_p.write(data.cast()) };
-    // SAFETY: writable (the caller).
+    // SAFETY: `len_p` is writable (this fn's contract).
     unsafe { len_p.write(len) };
-    // SAFETY: writable (the caller).
+    // SAFETY: `type_p` is writable (this fn's contract).
     unsafe { type_p.write(kind) };
 }
 
@@ -1119,7 +1123,7 @@ fn to_object(data: GitBytes, kind: c_int) -> ApiResult<PackObject> {
 /// The exports of `odb_pack.c`.
 pub mod ffi {
     use super::*;
-    use crate::util::cabi::Out;
+    use crate::util::cabi::{CStrArg, Out};
     use crate::util::export::barrier;
 
     /// `git_odb_backend_pack_options_init`.
@@ -1129,7 +1133,7 @@ pub mod ffi {
     /// `opts` is NULL or writable.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_odb_backend_pack_options_init(
-        opts: *mut GitOdbBackendPackOptions,
+        mut opts: Out<'_, GitOdbBackendPackOptions>,
         version: c_uint,
     ) -> c_int {
         barrier(|| {
@@ -1142,13 +1146,10 @@ pub mod ffi {
                 )
                 .raw();
             }
-            // SAFETY: writable (checked not NULL; the caller).
-            unsafe {
-                opts.write(GitOdbBackendPackOptions {
-                    version: GIT_ODB_BACKEND_PACK_OPTIONS_VERSION,
-                    oid_type: 0,
-                })
-            };
+            opts.write(GitOdbBackendPackOptions {
+                version: GIT_ODB_BACKEND_PACK_OPTIONS_VERSION,
+                oid_type: 0,
+            });
             0
         })
     }
@@ -1157,19 +1158,17 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `backend_out` is writable; `idx` is NUL-terminated; `opts` is NULL
-    /// or valid.
+    /// `backend_out` is NULL or writable; `idx` is NULL or NUL-terminated;
+    /// `opts` is NULL or readable, unwritten during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_odb_backend_one_pack(
         mut backend_out: Out<'_, *mut GitOdbBackend>,
-        idx: *const c_char,
-        opts: *const GitOdbBackendPackOptions,
+        idx: CStrArg<'_>,
+        opts: Option<&GitOdbBackendPackOptions>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: NUL-terminated (the caller).
-            let idx = unsafe { CStr::from_ptr(idx) };
-            // SAFETY: NULL or valid (the caller).
-            let opts = unsafe { opts.as_ref() };
+            // (C dereferences a NULL `idx`.)
+            let idx = crate::git_arg!(idx.get(), "idx", -1);
             match backend_one_pack(idx, opts) {
                 Ok(t) => {
                     backend_out.write(t.into_c().as_ptr());
@@ -1184,19 +1183,18 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `backend_out` is writable; `objects_dir` is NUL-terminated; `opts` is
-    /// NULL or valid.
+    /// `backend_out` is NULL or writable; `objects_dir` is NULL or
+    /// NUL-terminated; `opts` is NULL or readable, unwritten during the
+    /// call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_odb_backend_pack(
         mut backend_out: Out<'_, *mut GitOdbBackend>,
-        objects_dir: *const c_char,
-        opts: *const GitOdbBackendPackOptions,
+        objects_dir: CStrArg<'_>,
+        opts: Option<&GitOdbBackendPackOptions>,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: NUL-terminated (the caller).
-            let dir = unsafe { CStr::from_ptr(objects_dir) };
-            // SAFETY: NULL or valid (the caller).
-            let opts = unsafe { opts.as_ref() };
+            // (C dereferences a NULL `objects_dir`.)
+            let dir = crate::git_arg!(objects_dir.get(), "objects_dir", -1);
             let (out, r) = match backend_pack(dir.to_bytes(), opts) {
                 Ok(t) => (t.into_c().as_ptr(), 0),
                 Err(e) => (ptr::null_mut(), e.raw()),

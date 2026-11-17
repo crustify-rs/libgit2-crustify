@@ -5,7 +5,7 @@
 /// The exports of `object_api.c`.
 pub mod ffi {
     use crate::util::cabi::Out;
-    use core::ffi::{c_int, c_void};
+    use core::ffi::c_int;
 
     use crate::object::deps::git_repository;
     use crate::object::ffi as o;
@@ -14,311 +14,132 @@ pub mod ffi {
     };
     use crate::oid::Oid;
 
-    /// `git_commit_lookup`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_lookup`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_commit_lookup(
-        out: *mut *mut c_void,
-        repo: *mut git_repository,
-        id: Option<&Oid>,
-    ) -> c_int {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_lookup(out.cast(), repo, id, GIT_OBJECT_COMMIT) }
+    /// The six typed exports of one object type. A `git_commit *` (and the
+    /// others) is a `git_object *` (its header is the first member), so
+    /// the parameters are the object's: the same ABI (a pointer).
+    macro_rules! typed_object_api {
+        (
+            $t:expr, $name:literal,
+            $lookup:ident, $lookup_prefix:ident, $free:ident, $id:ident, $owner:ident, $dup:ident
+        ) => {
+            #[doc = concat!("`git_", $name, "_lookup`.")]
+            ///
+            /// # Safety
+            ///
+            /// As `git_object_lookup`: `out` is NULL or writable; `repo`
+            /// NULL or a live repository; `id` NULL or a readable id that
+            /// nothing writes during the call.
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn $lookup(
+                out: Out<'_, *mut GitObject>,
+                repo: Option<&git_repository>,
+                id: Option<&Oid>,
+            ) -> c_int {
+                o::lookup_c(out, repo, id, $t)
+            }
+
+            #[doc = concat!("`git_", $name, "_lookup_prefix`.")]
+            ///
+            /// # Safety
+            ///
+            /// As `git_object_lookup_prefix` (see the lookup above).
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn $lookup_prefix(
+                out: Out<'_, *mut GitObject>,
+                repo: Option<&git_repository>,
+                id: Option<&Oid>,
+                len: usize,
+            ) -> c_int {
+                o::lookup_prefix_c(out, repo, id, len, $t)
+            }
+
+            #[doc = concat!("`git_", $name, "_free`.")]
+            ///
+            /// # Safety
+            ///
+            /// As `git_object_free`: `obj` is NULL or an object the caller
+            /// holds a reference to, not used again by the caller.
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn $free(obj: *mut GitObject) {
+                // SAFETY: this export's contract is `git_object_free`'s.
+                unsafe { o::git_object_free(obj) }
+            }
+
+            #[doc = concat!("`git_", $name, "_id`.")]
+            ///
+            /// # Safety
+            ///
+            /// As `git_object_id`: `obj` is NULL or a live object.
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn $id(obj: Option<&GitObject>) -> *const Oid {
+                o::object_id(obj)
+            }
+
+            #[doc = concat!("`git_", $name, "_owner`.")]
+            ///
+            /// # Safety
+            ///
+            /// As `git_object_owner`: `obj` is NULL or a live object.
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn $owner(obj: Option<&GitObject>) -> *mut git_repository {
+                o::object_owner(obj)
+            }
+
+            #[doc = concat!("`git_", $name, "_dup`.")]
+            ///
+            /// # Safety
+            ///
+            /// As `git_object_dup`: `out` is NULL or writable, `obj` NULL
+            /// or a live object.
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn $dup(
+                out: Out<'_, *mut GitObject>,
+                obj: *mut GitObject,
+            ) -> c_int {
+                // SAFETY: this export's contract is `git_object_dup`'s.
+                unsafe { o::git_object_dup(out, obj) }
+            }
+        };
     }
 
-    /// `git_commit_lookup_prefix`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_lookup_prefix`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_commit_lookup_prefix(
-        out: *mut *mut c_void,
-        repo: *mut git_repository,
-        id: Option<&Oid>,
-        len: usize,
-    ) -> c_int {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_lookup_prefix(out.cast(), repo, id, len, GIT_OBJECT_COMMIT) }
-    }
-
-    /// `git_commit_free`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_free`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_commit_free(obj: *mut c_void) {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_free(obj.cast::<GitObject>()) }
-    }
-
-    /// `git_commit_id`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_id`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_commit_id(obj: *const c_void) -> *const Oid {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_id(obj.cast::<GitObject>()) }
-    }
-
-    /// `git_commit_owner`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_owner`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_commit_owner(obj: *const c_void) -> *mut git_repository {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_owner(obj.cast::<GitObject>()) }
-    }
-
-    /// `git_commit_dup`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_dup`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_commit_dup(out: *mut *mut c_void, obj: *mut c_void) -> c_int {
-        // SAFETY: `out` is writable (this export's contract).
-        let out = unsafe { Out::from_ptr(out.cast()) };
-        // SAFETY: forwarded.
-        unsafe { o::git_object_dup(out, obj.cast::<GitObject>()) }
-    }
-
-    /// `git_tree_lookup`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_lookup`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tree_lookup(
-        out: *mut *mut c_void,
-        repo: *mut git_repository,
-        id: Option<&Oid>,
-    ) -> c_int {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_lookup(out.cast(), repo, id, GIT_OBJECT_TREE) }
-    }
-
-    /// `git_tree_lookup_prefix`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_lookup_prefix`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tree_lookup_prefix(
-        out: *mut *mut c_void,
-        repo: *mut git_repository,
-        id: Option<&Oid>,
-        len: usize,
-    ) -> c_int {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_lookup_prefix(out.cast(), repo, id, len, GIT_OBJECT_TREE) }
-    }
-
-    /// `git_tree_free`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_free`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tree_free(obj: *mut c_void) {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_free(obj.cast::<GitObject>()) }
-    }
-
-    /// `git_tree_id`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_id`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tree_id(obj: *const c_void) -> *const Oid {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_id(obj.cast::<GitObject>()) }
-    }
-
-    /// `git_tree_owner`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_owner`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tree_owner(obj: *const c_void) -> *mut git_repository {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_owner(obj.cast::<GitObject>()) }
-    }
-
-    /// `git_tree_dup`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_dup`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tree_dup(out: *mut *mut c_void, obj: *mut c_void) -> c_int {
-        // SAFETY: `out` is writable (this export's contract).
-        let out = unsafe { Out::from_ptr(out.cast()) };
-        // SAFETY: forwarded.
-        unsafe { o::git_object_dup(out, obj.cast::<GitObject>()) }
-    }
-
-    /// `git_tag_lookup`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_lookup`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tag_lookup(
-        out: *mut *mut c_void,
-        repo: *mut git_repository,
-        id: Option<&Oid>,
-    ) -> c_int {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_lookup(out.cast(), repo, id, GIT_OBJECT_TAG) }
-    }
-
-    /// `git_tag_lookup_prefix`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_lookup_prefix`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tag_lookup_prefix(
-        out: *mut *mut c_void,
-        repo: *mut git_repository,
-        id: Option<&Oid>,
-        len: usize,
-    ) -> c_int {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_lookup_prefix(out.cast(), repo, id, len, GIT_OBJECT_TAG) }
-    }
-
-    /// `git_tag_free`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_free`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tag_free(obj: *mut c_void) {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_free(obj.cast::<GitObject>()) }
-    }
-
-    /// `git_tag_id`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_id`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tag_id(obj: *const c_void) -> *const Oid {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_id(obj.cast::<GitObject>()) }
-    }
-
-    /// `git_tag_owner`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_owner`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tag_owner(obj: *const c_void) -> *mut git_repository {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_owner(obj.cast::<GitObject>()) }
-    }
-
-    /// `git_tag_dup`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_dup`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_tag_dup(out: *mut *mut c_void, obj: *mut c_void) -> c_int {
-        // SAFETY: `out` is writable (this export's contract).
-        let out = unsafe { Out::from_ptr(out.cast()) };
-        // SAFETY: forwarded.
-        unsafe { o::git_object_dup(out, obj.cast::<GitObject>()) }
-    }
-
-    /// `git_blob_lookup`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_lookup`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_blob_lookup(
-        out: *mut *mut c_void,
-        repo: *mut git_repository,
-        id: Option<&Oid>,
-    ) -> c_int {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_lookup(out.cast(), repo, id, GIT_OBJECT_BLOB) }
-    }
-
-    /// `git_blob_lookup_prefix`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_lookup_prefix`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_blob_lookup_prefix(
-        out: *mut *mut c_void,
-        repo: *mut git_repository,
-        id: Option<&Oid>,
-        len: usize,
-    ) -> c_int {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_lookup_prefix(out.cast(), repo, id, len, GIT_OBJECT_BLOB) }
-    }
-
-    /// `git_blob_free`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_free`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_blob_free(obj: *mut c_void) {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_free(obj.cast::<GitObject>()) }
-    }
-
-    /// `git_blob_id`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_id`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_blob_id(obj: *const c_void) -> *const Oid {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_id(obj.cast::<GitObject>()) }
-    }
-
-    /// `git_blob_owner`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_owner`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_blob_owner(obj: *const c_void) -> *mut git_repository {
-        // SAFETY: forwarded.
-        unsafe { o::git_object_owner(obj.cast::<GitObject>()) }
-    }
-
-    /// `git_blob_dup`.
-    ///
-    /// # Safety
-    ///
-    /// As `git_object_dup`.
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_blob_dup(out: *mut *mut c_void, obj: *mut c_void) -> c_int {
-        // SAFETY: `out` is writable (this export's contract).
-        let out = unsafe { Out::from_ptr(out.cast()) };
-        // SAFETY: forwarded.
-        unsafe { o::git_object_dup(out, obj.cast::<GitObject>()) }
-    }
+    typed_object_api!(
+        GIT_OBJECT_COMMIT,
+        "commit",
+        git_commit_lookup,
+        git_commit_lookup_prefix,
+        git_commit_free,
+        git_commit_id,
+        git_commit_owner,
+        git_commit_dup
+    );
+    typed_object_api!(
+        GIT_OBJECT_TREE,
+        "tree",
+        git_tree_lookup,
+        git_tree_lookup_prefix,
+        git_tree_free,
+        git_tree_id,
+        git_tree_owner,
+        git_tree_dup
+    );
+    typed_object_api!(
+        GIT_OBJECT_TAG,
+        "tag",
+        git_tag_lookup,
+        git_tag_lookup_prefix,
+        git_tag_free,
+        git_tag_id,
+        git_tag_owner,
+        git_tag_dup
+    );
+    typed_object_api!(
+        GIT_OBJECT_BLOB,
+        "blob",
+        git_blob_lookup,
+        git_blob_lookup_prefix,
+        git_blob_free,
+        git_blob_id,
+        git_blob_owner,
+        git_blob_dup
+    );
 }

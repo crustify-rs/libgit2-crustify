@@ -94,8 +94,11 @@ impl Object {
 
     /// `git_object_id`.
     pub fn id(&self) -> Oid {
+        // SAFETY: `self.0` is NULL or a live object (as the call below requires), whose header is
+        // not written once shared but for its atomic count.
+        let obj_ref = unsafe { self.0.as_ptr().as_ref() };
         // SAFETY: a live object.
-        let id = unsafe { p::git_object_id(self.0.as_ptr()) };
+        let id = unsafe { p::git_object_id(obj_ref) };
         // SAFETY: its id lives as long as it does, and is copied now.
         unsafe { *id }
     }
@@ -104,7 +107,9 @@ impl Object {
     pub fn peel(&self, kind: c_int) -> Result<Object> {
         let mut out = ptr::null_mut();
         // SAFETY: a live object; `out` is writable.
-        ErrorCode::check(unsafe { p::git_object_peel(&raw mut out, self.0.as_ptr(), kind) })?;
+        ErrorCode::check(unsafe {
+            p::git_object_peel(Out::from(&mut out), self.0.as_ptr(), kind)
+        })?;
         // SAFETY: on success C hands us a new reference.
         unsafe { Object::from_raw(out) }.ok_or(ErrorCode::GENERIC)
     }
@@ -113,9 +118,14 @@ impl Object {
 /// `git_object_lookup`.
 pub fn object_lookup(repo: Repo, id: &Oid, kind: c_int) -> Result<Object> {
     let mut out = ptr::null_mut();
+    // SAFETY: `repo.0` is NULL or a live repository (as the call below requires), only read
+    // through `&` (its state is interior-mutable).
+    let repo_0_ref = unsafe { repo.0.as_ref() };
     // SAFETY: `out` writable; `repo` NULL or live (the invariant); `id`
     // readable.
-    ErrorCode::check(unsafe { p::git_object_lookup(&raw mut out, repo.0, Some(id), kind) })?;
+    ErrorCode::check(unsafe {
+        p::git_object_lookup(Out::from(&mut out), repo_0_ref, Some(id), kind)
+    })?;
     // SAFETY: on success C hands us a new reference.
     unsafe { Object::from_raw(out) }.ok_or(ErrorCode::GENERIC)
 }

@@ -253,7 +253,7 @@ impl Drop for CTree {
     fn drop(&mut self) {
         if self.owned {
             // SAFETY: a tree we looked up, freed once.
-            unsafe { p::git_tree_free(self.ptr.as_ptr()) };
+            unsafe { p::git_tree_free(self.ptr.as_ptr().cast()) };
         }
     }
 }
@@ -288,8 +288,16 @@ unsafe impl TreeSource for CTrees {
     type Tree = CTree;
 
     fn id(&self, tree: &CTree) -> Oid {
+        // SAFETY: a live tree (`CTree`), whose header is not written once
+        // shared but for its atomic count.
+        let obj = unsafe {
+            tree.ptr
+                .as_ptr()
+                .cast::<crate::object::GitObject>()
+                .as_ref()
+        };
         // SAFETY: a live tree (`CTree`); its id lives as long as it.
-        let id = unsafe { p::git_tree_id(tree.ptr.as_ptr()) };
+        let id = unsafe { p::git_tree_id(obj) };
         // SAFETY: as above.
         unsafe { *id }
     }
@@ -752,12 +760,18 @@ mod p {
         hint_mode: libc::mode_t,
         apply_filters: bool,
     ) -> c_int {
+        // SAFETY: `out_st` is NULL or writable (as the call below requires), and no reference to
+        // it is live.
+        let out_st_out = unsafe { Out::from_ptr(out_st.cast()) };
+        // SAFETY: `repo` is NULL or a live repository (as the call below requires), only read
+        // through `&` (its state is interior-mutable).
+        let repo_ref = unsafe { repo.cast::<crate::repository::GitRepository>().as_ref() };
         // SAFETY: the caller's contract (`posix::Stat` is `libc::stat`).
         unsafe {
             crate::blob::ffi::git_blob__create_from_paths(
                 out_oid,
-                out_st.cast(),
-                repo.cast(),
+                out_st_out,
+                repo_ref,
                 full_path,
                 hint_path,
                 hint_mode,
@@ -777,8 +791,14 @@ mod p {
         buffer: *const c_void,
         len: usize,
     ) -> c_int {
+        // SAFETY: `id` is NULL or writable (as the call below requires), and no reference to it is
+        // live.
+        let id_out = unsafe { Out::from_ptr(id) };
+        // SAFETY: `repo` is NULL or a live repository (as the call below requires), only read
+        // through `&` (its state is interior-mutable).
+        let repo_ref = unsafe { repo.cast::<crate::repository::GitRepository>().as_ref() };
         // SAFETY: the caller's contract.
-        unsafe { crate::blob::ffi::git_blob_create_from_buffer(id, repo.cast(), buffer, len) }
+        unsafe { crate::blob::ffi::git_blob_create_from_buffer(id_out, repo_ref, buffer, len) }
     }
 
     /// `git_object__is_valid`.
@@ -791,8 +811,11 @@ mod p {
         id: Option<&Oid>,
         expected_type: c_int,
     ) -> bool {
+        // SAFETY: `repo` is NULL or a live repository (as the call below requires), only read
+        // through `&` (its state is interior-mutable).
+        let repo_ref = unsafe { repo.cast::<crate::repository::GitRepository>().as_ref() };
         // SAFETY: the caller's contract.
-        unsafe { crate::object::ffi::git_object__is_valid(repo.cast(), id, expected_type) }
+        unsafe { crate::object::ffi::git_object__is_valid(repo_ref, id, expected_type) }
     }
 
     pub use crate::object_api::ffi::{git_tree_free, git_tree_id};
@@ -803,8 +826,11 @@ mod p {
     ///
     /// As the export's.
     pub unsafe fn git_tree_owner(tree: *const c_void) -> *mut c_void {
+        // SAFETY: `tree` is NULL or a live object (as the call below requires), whose header is
+        // not written once shared but for its atomic count.
+        let tree_ref = unsafe { tree.cast::<crate::object::GitObject>().as_ref() };
         // SAFETY: the caller's contract.
-        unsafe { crate::object_api::ffi::git_tree_owner(tree) }.cast()
+        unsafe { crate::object_api::ffi::git_tree_owner(tree_ref) }.cast()
     }
 
     /// `git_tree_lookup`.
@@ -817,7 +843,13 @@ mod p {
         repo: *mut c_void,
         id: Option<&Oid>,
     ) -> c_int {
+        // SAFETY: `out` is NULL or writable (as the call below requires), and no reference to it
+        // is live.
+        let out_out = unsafe { Out::from_ptr(out.cast()) };
+        // SAFETY: `repo` is NULL or a live repository (as the call below requires), only read
+        // through `&` (its state is interior-mutable).
+        let repo_ref = unsafe { repo.cast::<crate::repository::GitRepository>().as_ref() };
         // SAFETY: the caller's contract.
-        unsafe { crate::object_api::ffi::git_tree_lookup(out, repo.cast(), id) }
+        unsafe { crate::object_api::ffi::git_tree_lookup(out_out, repo_ref, id) }
     }
 }
