@@ -179,10 +179,10 @@ pub unsafe extern "C" fn git_futils_readbuffer_fd_full(
 /// # Safety
 ///
 /// `out` is NULL (an assertion error) or a valid `git_str`; `path` NULL or
-/// a NUL-terminated string that does not lie in `out`'s buffer (which the
-/// call frees); `checksum` NULL or 32 readable and writable bytes;
-/// `updated` NULL or a writable `int`. Nothing else accesses any of them
-/// during the call, and none overlaps another.
+/// a NUL-terminated string (it may lie in `out`'s buffer); `checksum` NULL
+/// or 32 readable and writable bytes; `updated` NULL or a writable `int`.
+/// Nothing else accesses any of them during the call, and none overlaps
+/// another (`path` and `out`'s buffer aside).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_futils_readbuffer_updated(
     out: Option<&mut GitStr>,
@@ -196,6 +196,13 @@ pub unsafe extern "C" fn git_futils_readbuffer_updated(
             let _ = errors::assert_arg_failed("path && *path");
             return -1;
         };
+        // A `path` in `out`'s buffer is copied: the call frees that buffer
+        // (C's swap and dispose) while the `&CStr` it borrows is live.
+        let start = out.as_ptr() as usize;
+        let copy = (out.capacity() > 0
+            && (start..start + out.capacity()).contains(&(p.as_ptr() as usize)))
+        .then(|| p.to_owned());
+        let p = copy.as_deref().unwrap_or(p);
         status(readbuffer_updated(out, p, checksum, updated))
     })
 }

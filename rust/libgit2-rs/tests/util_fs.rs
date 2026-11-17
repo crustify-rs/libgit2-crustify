@@ -258,6 +258,13 @@ fn readbuffer_and_writebuffer() {
         -1
     );
     assert_eq!(last().1, "invalid argument: 'path && *path'");
+
+    // The path in the buffer the call replaces (and frees): read first.
+    b.sets(&t.path("big")).unwrap();
+    let in_b = b.as_ptr();
+    // SAFETY: a valid git_str, and a C string within its buffer.
+    assert_eq!(unsafe { git_futils_readbuffer(&mut b, in_b) }, 0);
+    assert_eq!(b.as_bytes(), &data[..]);
 }
 
 #[test]
