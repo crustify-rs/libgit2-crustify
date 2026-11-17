@@ -2217,16 +2217,35 @@ impl IndexPtr {
     ///
     /// As [`get_ref`](Self::get_ref); and when the entries are not sorted,
     /// as [`get`](Self::get) for the sort.
-    #[inline]
+    #[inline(always)]
     pub unsafe fn sorted<'a>(self) -> &'a GitIndex {
+        // SAFETY: this fn's contract, for the entries.
+        unsafe { self.prepared(|i| i.entries.is_sorted(), GitIndex::sort) }
+    }
+
+    /// The index after `prepare` made `ready` true (exclusive access only
+    /// when it was not: a sort of the entries, NAME or REUC records), as a
+    /// shared view.
+    ///
+    /// # Safety
+    ///
+    /// As [`get_ref`](Self::get_ref); and when `ready` is false, as
+    /// [`get`](Self::get) for `prepare`, which calls no foreign code.
+    #[inline(always)]
+    pub(crate) unsafe fn prepared<'a>(
+        self,
+        ready: impl FnOnce(&GitIndex) -> bool,
+        prepare: impl FnOnce(&mut GitIndex),
+    ) -> &'a GitIndex {
         // SAFETY: `get_ref`'s contract (this fn's); the borrow ends with the
         // statement.
-        if !unsafe { self.get_ref() }.entries.is_sorted() {
-            // SAFETY: `get`'s contract, this fn's when the entries are not
-            // sorted (an unsorted index is not being read by another
-            // thread; if it were, the C raced the same way); the borrow
-            // ends with the statement, before the shared one below.
-            unsafe { self.get() }.sort();
+        if !ready(unsafe { self.get_ref() }) {
+            // SAFETY: `get`'s contract, this fn's when not `ready` (an
+            // unsorted index is not being read by another thread; if it
+            // were, the C raced the same way); `prepare` calls no foreign
+            // code, and the borrow ends with the statement, before the
+            // shared one below.
+            prepare(unsafe { self.get() });
         }
         // SAFETY: `get_ref`'s contract (this fn's).
         unsafe { self.get_ref() }

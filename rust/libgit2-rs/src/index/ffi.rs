@@ -72,39 +72,6 @@ unsafe fn handle(index: *const GitIndex) -> Option<IndexPtr> {
     NonNull::new(index.cast_mut()).map(|p| unsafe { IndexPtr::new(p) })
 }
 
-/// The index with its NAME records sorted (exclusively only if they are
-/// not: see [`IndexPtr::sorted`]).
-///
-/// # Safety
-///
-/// As [`IndexPtr::sorted`].
-unsafe fn sorted_names<'a>(ix: IndexPtr) -> &'a GitIndex {
-    // SAFETY: `get_ref`'s contract (this fn's); the borrow ends with the
-    // statement.
-    if !unsafe { ix.get_ref() }.names.is_sorted() {
-        // SAFETY: `get`'s contract, this fn's when the records are not
-        // sorted; the borrow ends with the statement.
-        unsafe { ix.get() }.sort_names();
-    }
-    // SAFETY: `get_ref`'s contract (this fn's).
-    unsafe { ix.get_ref() }
-}
-
-/// The index with its REUC records sorted (as [`sorted_names`]).
-///
-/// # Safety
-///
-/// As [`IndexPtr::sorted`].
-unsafe fn sorted_reuc<'a>(ix: IndexPtr) -> &'a GitIndex {
-    // SAFETY: as in `sorted_names`.
-    if !unsafe { ix.get_ref() }.reuc.is_sorted() {
-        // SAFETY: as in `sorted_names`.
-        unsafe { ix.get() }.sort_reuc();
-    }
-    // SAFETY: as in `sorted_names`.
-    unsafe { ix.get_ref() }
-}
-
 /// A C matched-path callback as the operations call it.
 ///
 /// # Safety
@@ -1764,7 +1731,7 @@ pub unsafe extern "C" fn git_index_name_get_byindex(
         // export's contract: C's read paths); this export holds no other
         // reference to it, and the borrow, shared but for a needed sort,
         // ends before any foreign call.
-        let i = unsafe { sorted_names(ix) };
+        let i = unsafe { ix.prepared(|i| i.names.is_sorted(), GitIndex::sort_names) };
 
         i.names
             .get(n)
@@ -1885,7 +1852,9 @@ pub unsafe extern "C" fn git_index_reuc_find(
         // export's contract: C's read paths); this export holds no other
         // reference to it, and the borrow, shared but for a needed sort,
         // ends before any foreign call.
-        let (pos, r) = match unsafe { sorted_reuc(ix) }.reuc_find_sorted(p) {
+        let (pos, r) = match unsafe { ix.prepared(|i| i.reuc.is_sorted(), GitIndex::sort_reuc) }
+            .reuc_find_sorted(p)
+        {
             Ok(pos) => (pos, 0),
             Err(pos) => (pos, ErrorCode::NOT_FOUND.raw()),
         };

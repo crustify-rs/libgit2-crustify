@@ -61,6 +61,7 @@ impl Repo {
 }
 
 /// The raw pointer of an optional repository.
+#[cfg(not(miri))]
 fn raw(repo: Option<Repo>) -> *mut c_void {
     repo.map_or(ptr::null_mut(), Repo::as_ptr)
 }
