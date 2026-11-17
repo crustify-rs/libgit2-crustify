@@ -677,13 +677,23 @@ struct LooseWriteStream {
     backend: std::sync::Arc<Loose>,
 }
 
-// SAFETY: a filebuf owns its buffers, descriptor and paths (`Send`); the
-// mutex makes the state `Sync`.
-unsafe impl Send for OpenFilebuf {}
+// A filebuf is `Send` (its own proof, in `filebuf.rs`), so its box is; the
+// mutex makes the stream's state `Sync`.
+const _: () = {
+    fn send_sync<T: Send + Sync>() {}
+    let _ = send_sync::<LooseWriteStream>;
+};
 
 ffibox::impl_cvtable! {
     // SAFETY: libgit2 passes each slot of a stream the stream, first, and
     // calls `free` on every stream once; `read` is NULL (write only).
+    //
+    // Stream slot arguments (cited as such below): `write` is called by
+    // `git_odb_stream_write` (`odb/ffi.rs`) and the odb's `write` with
+    // `data` readable for `len` bytes that nothing writes during the call
+    // (the odb passes a slice; a C caller must do the same), and
+    // `finalize_write` by `git_odb_stream_finalize_write` with `oid` a
+    // valid id (the odb's local, or the C caller's, unwritten meanwhile).
     unsafe impl CVtable<LooseWriteStream> for StreamTable {}
     base = GitOdbStream { mode: crate::odb::GIT_STREAM_WRONLY, ..GitOdbStream::default() };
     /// `loose_backend__writestream_write`.
@@ -692,7 +702,10 @@ ffibox::impl_cvtable! {
         on busy: busy(),
         |s: &LooseWriteStream| {
             let mut f = s.fbuf.lock().unwrap_or_else(PoisonError::into_inner);
-            // SAFETY: C's contract: `data` is readable for `len` bytes.
+            // SAFETY: `data` is readable for `len` initialized bytes,
+            // unwritten for the call (stream slot arguments, above); NULL
+            // with 0 is empty, and `bytes` panics (into `on panic`) for
+            // `len > isize::MAX`.
             let data = unsafe { crate::util::export::bytes(data, len) };
             crate::util::export::status(f.0.write(data))
         },
@@ -704,7 +717,8 @@ ffibox::impl_cvtable! {
         |s: &LooseWriteStream| {
             let mut f = s.fbuf.lock().unwrap_or_else(PoisonError::into_inner);
             let mut final_path = GitStr::new();
-            // SAFETY: C's contract: a readable id.
+            // SAFETY: `oid` is a valid id, unwritten for the call (stream
+            // slot arguments, above).
             let oid = unsafe { &*oid };
             if s.backend.object_file_name(&mut final_path, oid).is_err()
                 || s.backend.object_mkdir(&final_path).is_err()
@@ -727,8 +741,12 @@ struct ReadState {
     start_read: usize,
 }
 
-// SAFETY: the state owns its mapping and its inflate state (zlib-rs's, not
-// tied to a thread); the stream's input points into the mapping.
+// SAFETY: field by field: `map` is a private read-only mapping this state
+// owns and alone unmaps (`Drop`), which any thread may read and unmap;
+// `zstream` is an inflate stream whose zlib-rs state (an allocation it
+// owns) and input pointer (into `map`) are tied to no thread, and it is
+// reached only through `zs()` on `&mut self`; `start`, `start_len` and
+// `start_read` are plain data. `Sync` comes from the `Mutex` around it.
 unsafe impl Send for ReadState {}
 
 impl ReadState {
@@ -748,8 +766,10 @@ impl Drop for ReadState {
     fn drop(&mut self) {
         // `git_futils_mmap_free`, `git_zstream_free`.
         self.zs().free();
-        // SAFETY: the mapping is this state's (or empty); the stream that
-        // read it is freed.
+        // SAFETY: the mapping is this state's (or empty), unmapped only
+        // here; the stream whose input pointed into it is freed above, and
+        // no slice of it outlives `readstream` (`map_bytes`'s) or a `read`
+        // call.
         unsafe { posix::munmap(&mut self.map) };
     }
 }
@@ -762,6 +782,13 @@ ffibox::impl_cvtable! {
     // SAFETY: libgit2 passes each slot of a stream the stream, first, and
     // calls `free` on every stream once; the write slots are NULL (read
     // only), which C's contract allows.
+    //
+    // Stream slot arguments: `read` is called by `git_odb_stream_read`
+    // (`odb/ffi.rs`), whose caller passes `buffer` writable for
+    // `buffer_len` bytes for the call (its contract; the safe `OdbReader`
+    // passes a `&mut [u8]`). It does not overlap the state: that lives in
+    // the table's allocation past the `git_odb_stream` C knows, which no
+    // caller is given.
     unsafe impl CVtable<LooseReadStream> for StreamTable {}
     base = GitOdbStream::default();
     /// `loose_backend__readstream_read`.
@@ -777,8 +804,11 @@ ffibox::impl_cvtable! {
             let start_remain = st.start_len - st.start_read;
             if start_remain > 0 && buffer_len > 0 {
                 let chunk = start_remain.min(buffer_len);
-                // SAFETY: C's contract: `buffer` is writable for
-                // `buffer_len` bytes; `start` is the state's.
+                // SAFETY: `buffer` is writable for `buffer_len >= chunk`
+                // bytes (stream slot arguments, above; `buffer_len` was
+                // only lowered); `start[start_read..]` holds `start_remain
+                // >= chunk` bytes of the state, which `buffer` cannot
+                // overlap (the state is the stream's own allocation).
                 unsafe { core::ptr::copy_nonoverlapping(st.start[st.start_read..].as_ptr(), buffer, chunk) };
                 buffer = buffer.wrapping_add(chunk);
                 st.start_read += chunk;
@@ -787,9 +817,13 @@ ffibox::impl_cvtable! {
             }
             if buffer_len > 0 {
                 let mut chunk = buffer_len;
-                // SAFETY: the input is the mapping, alive in the state and
-                // never written; `buffer` is writable for `chunk` bytes
-                // (C's contract) and distinct from both.
+                // SAFETY: the input is the rest of the mapping (set by
+                // `readstream_*`), which the state keeps mapped and which
+                // nothing writes (loose files are never rewritten in place:
+                // `map_bytes`); `buffer`, advanced past the bytes copied
+                // above, is writable for the remaining `chunk` bytes (stream
+                // slot arguments) and overlaps neither the read-only
+                // mapping nor the stream.
                 if let Err(e) = unsafe { st.zs().get_output(buffer, &mut chunk) } {
                     return e.raw();
                 }
@@ -863,7 +897,10 @@ impl Loose {
             }
         }
         let ctx = Ctx(ctx);
-        // SAFETY: a fresh context of ours, written in place.
+        // SAFETY: `ctx.0` is a fresh `git__malloc` allocation of
+        // `size_of::<HashCtx>()` bytes (not NULL, checked), aligned to 8
+        // (`git__allocator` aligns as `malloc`), which is `HashCtx`'s
+        // alignment; no one else has it yet.
         unsafe {
             crate::util::hash::HashCtx::init_raw(ctx.0, crate::odb::oid_algorithm(self.oid_type()))
         }?;
@@ -877,8 +914,9 @@ impl Loose {
             st.map = futils::mmap_ro_file(c_path(&path)?)?;
             // In place: the stream does not move until freed.
             st.zs().init_bulk(ZstreamKind::Inflate as c_int)?;
-            // SAFETY: the mapping's bytes, read only, alive while the state
-            // is (the stream's input points into them until it is freed).
+            // SAFETY: `st.map` is the private read-only mapping just made
+            // (or empty), unmapped only when the state is dropped, after
+            // `data`'s last use in this block.
             let data = unsafe { map_bytes(st.map.data, st.map.len) };
             if is_zlib_compressed_data(data) {
                 readstream_standard(st, data)?
@@ -888,21 +926,32 @@ impl Loose {
         };
         let p = t.into_c();
         let ctx = core::mem::ManuallyDrop::new(ctx).0;
-        // SAFETY: the fresh table's fields, before C sees it.
+        // SAFETY: `p` is the table `into_c` just gave up: live, aligned,
+        // and reached by no one else yet (no slot runs, no reference to it
+        // exists), so its field may be written in place.
         unsafe { (*p.as_ptr()).hash_ctx = ctx.cast::<c_void>() };
         Ok((p, hdr.size, hdr.type_))
     }
 }
 
-/// The bytes of a read-only mapping.
+/// The bytes of a read-only mapping of a loose object file.
+///
+/// The slice borrows a `MAP_PRIVATE` mapping of a file that git and libgit2
+/// never modify in place (an object is written to a temporary file and
+/// renamed); this, like C and every `mmap` reader, relies on no other
+/// process rewriting it. A file truncated under the mapping makes a read
+/// of the lost pages fault (`SIGBUS`), as in C (see `mwindow.rs`).
 ///
 /// # Safety
 ///
-/// `data` and `len` are a live private read-only mapping (or empty), not
-/// unmapped while the slice lives.
+/// `data` and `len` are a live private read-only mapping (or NULL / 0) of
+/// a loose object file, not unmapped while the slice lives.
 unsafe fn map_bytes<'a>(data: *const c_void, len: usize) -> &'a [u8] {
-    // SAFETY: the caller's contract; nothing writes a private read-only
-    // mapping.
+    // SAFETY: `data` is readable for `len` bytes, all initialized (a
+    // mapping of a file), for `'a` (this fn's contract); nothing in the
+    // process writes a read-only mapping, and other processes do not
+    // rewrite the file (above). `u8` needs no alignment; a mapping is at
+    // most `isize::MAX` bytes (`bytes` panics otherwise).
     unsafe { crate::util::export::bytes(data.cast(), len) }
 }
 
@@ -925,7 +974,9 @@ fn readstream_standard(st: &mut ReadState, data: &[u8]) -> Result<ObjHdr> {
     st.zs().set_input(data.as_ptr().cast(), data.len());
     let mut head = [0u8; MAX_HEADER_LEN];
     let mut init = head.len();
-    // SAFETY: the input is the mapping (alive, unwritten); `head` a local.
+    // SAFETY: the input is `data`, the state's mapping, which stays mapped
+    // and unwritten (`map_bytes`) for the call; `head` is a local of `init`
+    // writable bytes, disjoint from the input and the stream.
     unsafe { st.zs().get_output(head.as_mut_ptr(), &mut init) }?;
     let (hdr, head_len) = parse_header(&head[..init])?;
     if !type_is_valid(hdr.type_) {
@@ -953,8 +1004,8 @@ pub struct LooseBackend(std::sync::Arc<Loose>);
 ///
 /// # Safety
 ///
-/// The pointers are aligned and writable, and no reference to their
-/// pointees is live.
+/// The pointers are valid for writes and aligned, and no reference to
+/// their pointees is live during the call.
 unsafe fn write_raw(
     buffer_p: *mut *mut c_void,
     len_p: *mut usize,
@@ -980,6 +1031,16 @@ ffibox::impl_cvtable! {
     // SAFETY: libgit2 passes each of a backend's slots the backend in the
     // place marked `@`, and calls `free` once; the slots left NULL
     // (`refresh`, `writepack`, `writemidx`) are optional in C's contract.
+    //
+    // Slot arguments (cited as such below): the odb (`odb.rs`: `read_1`,
+    // `read_prefix_1`, `read_header`, `exists_1`, `exists_prefix_1`,
+    // `write`, `open_wstream`, `open_rstream`, `foreach`, `freshen_1`)
+    // passes its `&Oid` ids, a slice's pointer and length as `data, len`,
+    // and its own locals as out-parameters, all valid and aligned for the
+    // call and reached by nothing else meanwhile; a C caller of the slots
+    // of `git2/sys/odb_backend.h` must pass the same (C's `loose_backend__*`
+    // dereferenced them alike). The ids are `const`: nothing writes them
+    // during the call. An `&Oid` made from one lives only inside the slot.
     unsafe impl CVtable<LooseBackend> for BackendTable {}
     base = backend_base();
     /// `loose_backend__read`.
@@ -988,10 +1049,12 @@ ffibox::impl_cvtable! {
         on busy: busy(),
         |s: &LooseBackend| {
             git_assert_arg!(!oid.is_null(), "oid", -1);
-            // SAFETY: C's contract: a readable id.
+            // SAFETY: `oid` is a valid id, unwritten for the call (slot
+            // arguments, above).
             match s.0.read(unsafe { &*oid }) {
                 Ok(raw) => {
-                    // SAFETY: C's contract: writable out-parameters.
+                    // SAFETY: `buffer_p`, `len_p` and `type_p` are valid,
+                    // aligned and unaliased for the call (slot arguments).
                     unsafe { write_raw(buffer_p, len_p, type_p, raw) };
                     0
                 }
@@ -1015,7 +1078,8 @@ ffibox::impl_cvtable! {
             if !(len >= GIT_OID_MINPREFIXLEN && len <= s.0.oid_hexsize) {
                 return errors::assert_arg_failed("len >= 4 && len <= backend->oid_hexsize").raw();
             }
-            // SAFETY: C's contract: a readable id (or NULL, refused).
+            // SAFETY: `short_oid` is NULL (refused here) or a valid id,
+            // unwritten for the call (slot arguments, above).
             let Some(short_oid) = (unsafe { short_oid.as_ref() }) else {
                 let text = if len == s.0.oid_hexsize { "oid" } else { "backend && short_oid" };
                 return errors::assert_arg_failed(text).raw();
@@ -1023,12 +1087,14 @@ ffibox::impl_cvtable! {
             let mut id = None;
             let r = s.0.read_prefix(short_oid, len, &mut id);
             if let Some(id) = id {
-                // SAFETY: C's contract: writable out-parameters.
+                // SAFETY: `out_oid` is a valid, aligned `git_oid *` for the
+                // call (slot arguments).
                 unsafe { out_oid.write(id) };
             }
             match r {
                 Ok(raw) => {
-                    // SAFETY: as above.
+                    // SAFETY: `buffer_p`, `len_p` and `type_p` are valid,
+                    // aligned and unaliased for the call (slot arguments).
                     unsafe { write_raw(buffer_p, len_p, type_p, raw) };
                     0
                 }
@@ -1042,12 +1108,14 @@ ffibox::impl_cvtable! {
         on busy: busy(),
         |s: &LooseBackend| {
             git_assert_arg!(!oid.is_null(), "oid", -1);
-            // SAFETY: C's contract: a readable id.
+            // SAFETY: `oid` is a valid id, unwritten for the call (slot
+            // arguments, above).
             match s.0.read_header(unsafe { &*oid }) {
                 Ok(h) => {
-                    // SAFETY: C's contract: writable out-parameters.
+                    // SAFETY: `len_p` is a valid, aligned `size_t *` for the
+                    // call (slot arguments).
                     unsafe { len_p.write(h.size) };
-                    // SAFETY: as above.
+                    // SAFETY: `type_p` likewise (slot arguments).
                     unsafe { type_p.write(h.type_) };
                     0
                 }
@@ -1064,9 +1132,13 @@ ffibox::impl_cvtable! {
                 // C read through NULL (rust/DEFECTS.md).
                 return errors::assert_arg_failed("data").raw();
             }
-            // SAFETY: C's contract: a readable id.
+            // SAFETY: `oid` is a valid id, unwritten for the call (slot
+            // arguments, above).
             let oid = unsafe { &*oid };
-            // SAFETY: C's contract: `len` readable bytes.
+            // SAFETY: `data` is readable for `len` initialized bytes that
+            // nothing writes during the call (slot arguments: the odb
+            // passes a slice); NULL with 0 is the empty slice, and `bytes`
+            // panics (into `on panic`) for `len > isize::MAX`.
             let data = unsafe { crate::util::export::bytes(data.cast(), len) };
             code(s.0.write(oid, data, type_))
         },
@@ -1076,14 +1148,16 @@ ffibox::impl_cvtable! {
         on panic: -1,
         on busy: busy(),
         |s: &LooseBackend| {
-            // SAFETY: C's contract: writable.
+            // SAFETY: `stream_out` is a valid, aligned `git_odb_stream **`
+            // for the call (slot arguments).
             unsafe { stream_out.write(core::ptr::null_mut()) };
             match s.0.writestream(length, type_) {
                 Ok(st) => {
-                    // SAFETY: the table this slot runs on, live; its field,
-                    // before C sees the stream; and C's out-parameter.
+                    // SAFETY: `st` is the stream table `into_c` just gave
+                    // up: live, aligned, and reached by no one else yet (no
+                    // slot runs on it, no reference to it exists).
                     unsafe { (*st.as_ptr()).backend = backend };
-                    // SAFETY: as above.
+                    // SAFETY: `stream_out` as above (slot arguments).
                     unsafe { stream_out.write(st.as_ptr()) };
                     0
                 }
@@ -1100,22 +1174,26 @@ ffibox::impl_cvtable! {
             git_assert_arg!(!len_out.is_null(), "len_out", -1);
             git_assert_arg!(!type_out.is_null(), "type_out", -1);
             git_assert_arg!(!oid.is_null(), "oid", -1);
-            // SAFETY: C's contract: writable out-parameters.
+            // SAFETY: `stream_out` is a valid, aligned `git_odb_stream **`
+            // for the call (slot arguments; NULL refused above).
             unsafe { stream_out.write(core::ptr::null_mut()) };
-            // SAFETY: as above.
+            // SAFETY: `len_out` likewise, a `size_t *`.
             unsafe { len_out.write(0) };
-            // SAFETY: as above.
+            // SAFETY: `type_out` likewise, a `git_object_t *`.
             unsafe { type_out.write(crate::odb::GIT_OBJECT_INVALID) };
-            // SAFETY: C's contract: a readable id.
+            // SAFETY: `oid` is a valid id, unwritten for the call (slot
+            // arguments, above).
             match s.0.readstream(unsafe { &*oid }) {
                 Ok((st, len, t)) => {
-                    // SAFETY: as in `writestream`.
+                    // SAFETY: as in `writestream`: a fresh table no one
+                    // else reaches yet.
                     unsafe { (*st.as_ptr()).backend = backend };
-                    // SAFETY: as above.
+                    // SAFETY: `stream_out`, `len_out`, `type_out` as at the
+                    // top of this slot.
                     unsafe { stream_out.write(st.as_ptr()) };
-                    // SAFETY: as above.
+                    // SAFETY: as the line above.
                     unsafe { len_out.write(len) };
-                    // SAFETY: as above.
+                    // SAFETY: as the line above.
                     unsafe { type_out.write(t) };
                     0
                 }
@@ -1129,7 +1207,8 @@ ffibox::impl_cvtable! {
         on busy: 0,
         |s: &LooseBackend| {
             git_assert_arg!(!oid.is_null(), "oid", -1);
-            // SAFETY: C's contract: a readable id.
+            // SAFETY: `oid` is a valid id, unwritten for the call (slot
+            // arguments, above).
             c_int::from(s.0.exists(unsafe { &*oid }))
         },
     }
@@ -1140,10 +1219,12 @@ ffibox::impl_cvtable! {
         |s: &LooseBackend| {
             git_assert_arg!(!out.is_null(), "out", -1);
             git_assert_arg!(!short_id.is_null(), "short_id", -1);
-            // SAFETY: C's contract: a readable id.
+            // SAFETY: `short_id` is a valid id, unwritten for the call
+            // (slot arguments, above; NULL refused).
             match s.0.exists_prefix(unsafe { &*short_id }, len) {
                 Ok(id) => {
-                    // SAFETY: C's contract: writable.
+                    // SAFETY: `out` is a valid, aligned `git_oid *` for the
+                    // call (slot arguments; NULL refused).
                     unsafe { out.write(id) };
                     0
                 }
@@ -1159,7 +1240,10 @@ ffibox::impl_cvtable! {
             let Some(cb) = cb else {
                 return errors::assert_arg_failed("cb").raw();
             };
-            // SAFETY: the caller's callback, with its payload.
+            // SAFETY: `cb` and `data` are a `git_odb_foreach_cb` and its
+            // payload, which the caller of `foreach` (the odb's `foreach`, or
+            // C) lets us call for the call's duration; `id` is a local
+            // `&Oid`, valid during the callback.
             s.0.foreach(&mut |id| unsafe { cb(id, data) })
         },
     }
@@ -1167,7 +1251,8 @@ ffibox::impl_cvtable! {
     fn freshen(@backend, oid: *const Oid) -> c_int {
         on panic: -1,
         on busy: busy(),
-        // SAFETY: C's contract: a readable id.
+        // SAFETY: `oid` is a valid id, unwritten for the call (slot
+        // arguments, above).
         |s: &LooseBackend| code(s.0.freshen(unsafe { &*oid })),
     }
     release free;
