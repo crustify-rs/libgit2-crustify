@@ -64,8 +64,10 @@ pub fn validate_str_length(
     // A `GitStr` is a `git_str` too (both layout-tested): C only reads it.
     let s = core::ptr::from_ref(path).cast::<ConstStr>();
     let flags = crate::util::fs_path::GIT_FS_PATH_REJECT_LONG_PATHS;
-    // SAFETY: NULL or a live repository, and a valid `git_str` that C
-    // only reads.
+    // SAFETY: `r` is NULL or the live repository `repo` borrows (`Sync`;
+    // C reads its config and flags); `s` is a valid `git_str` (`GitStr` has
+    // its layout, both layout-tested) that C only reads, borrowed for the
+    // call.
     if unsafe { git_path_str_is_valid(r, s, 0, flags) } {
         return Ok(());
     }
@@ -89,7 +91,7 @@ pub const REJECT_DOT_GIT: c_uint = GIT_PATH_REJECT_DOT_GIT;
 /// # Safety
 ///
 /// `repo` is NULL or a live repository not freed during the call; `path`
-/// is NUL-terminated.
+/// is a NUL-terminated string, unwritten during the call.
 pub unsafe fn is_valid<R>(
     repo: *mut R,
     path: *const c_char,
@@ -104,7 +106,8 @@ pub unsafe fn is_valid<R>(
         size: usize::MAX,
     };
     // SAFETY: `s` is a borrowed `git_str` over `path`, which the C reads as a
-    // NUL-terminated string; `repo` per the contract.
+    // NUL-terminated string (this function's contract); `repo` is NULL or
+    // a live repository not freed during the call (likewise).
     unsafe { git_path_str_is_valid(repo.cast(), &raw const s, file_mode, flags) }
 }
 

@@ -26,6 +26,8 @@ pub unsafe fn mergehead_foreach(
     cb: MergeheadCb,
     payload: *mut c_void,
 ) -> c_int {
-    // SAFETY: a live repository and the caller's contract.
+    // SAFETY: a live repository (C reads its `MERGE_HEAD`); `cb` may be
+    // called with `payload` for each merge head (this function's
+    // contract).
     unsafe { git_repository_mergehead_foreach(repo.as_ptr(), cb, payload) }
 }

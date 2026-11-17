@@ -110,7 +110,9 @@ unsafe extern "C" {
 ///
 /// `fl` is NULL or a live filter list that no other thread modifies.
 pub unsafe fn list_length(fl: *const git_filter_list) -> usize {
-    // SAFETY: the caller's contract; the function reads the count only.
+    // SAFETY: `fl` is NULL (the empty list, which C checks) or a live list
+    // that no other thread modifies (this function's contract); the C
+    // reads its count only.
     unsafe { git_filter_list_length(fl) }
 }
 
@@ -120,7 +122,8 @@ pub struct FilterList(NonNull<git_filter_list>);
 
 impl Drop for FilterList {
     fn drop(&mut self) {
-        // SAFETY: the list is owned by `self` and freed once.
+        // SAFETY: the list `self` owns (from a successful load), freed
+        // once, here.
         unsafe { git_filter_list_free(self.0.as_ptr().cast()) }
     }
 }
@@ -141,8 +144,9 @@ impl FilterList {
         flags: u32,
     ) -> Result<Option<FilterList>> {
         let mut fl: *mut git_filter_list = ptr::null_mut();
-        // SAFETY: the caller's contract on `repo` and `blob`; `path` is a
-        // NUL-terminated string, `fl` writable.
+        // SAFETY: `repo` is a live repository and `blob` NULL or a live
+        // blob of it (this function's contract); `path` is a NUL-terminated
+        // string borrowed for the call; `fl` is a local out-parameter.
         let r = unsafe {
             git_filter_list_load(
                 (&raw mut fl).cast(),
@@ -170,7 +174,8 @@ impl FilterList {
         opts: &mut git_filter_options,
     ) -> Result<Option<FilterList>> {
         let mut fl = ptr::null_mut();
-        // SAFETY: as in `load`; `opts` is a valid options struct.
+        // SAFETY: as in `load`; `opts` is a valid options struct, which the
+        // C only reads, borrowed for the call.
         let r =
             unsafe { git_filter_list_load_ext(&raw mut fl, repo, blob, path.as_ptr(), mode, opts) };
         ErrorCode::check(r)?;
@@ -194,8 +199,9 @@ impl FilterList {
         repo: *mut git_repository,
         path: &CStr,
     ) -> Result<()> {
-        // SAFETY: a live list, a valid `git_str`, the caller's `repo`, a
-        // NUL-terminated path.
+        // SAFETY: the list `self` owns, live; `out` a valid `git_str` that
+        // only this call reaches; `repo` the live repository the list was
+        // loaded for (this function's contract); a NUL-terminated path.
         let r =
             unsafe { git_filter_list__apply_to_file(out, self.0.as_ptr(), repo, path.as_ptr()) };
         ErrorCode::check(r).map(|_| ())
@@ -212,9 +218,10 @@ pub unsafe fn apply_to_buffer(
     fl: *mut git_filter_list,
     data: &[u8],
 ) -> Result<()> {
-    // SAFETY: the caller's contract on `fl`; `data` is readable for its
-    // length, `out` a valid `git_str` that does not alias `data`
-    // (`&mut` and `&` cannot overlap).
+    // SAFETY: `fl` is a live list that no other thread uses meanwhile
+    // (this function's contract); `data` is readable for its length, `out`
+    // a valid `git_str` that does not alias `data` (`&mut` and `&` cannot
+    // overlap).
     let r = unsafe { git_filter_list__apply_to_buffer(out, fl, data.as_ptr().cast(), data.len()) };
     ErrorCode::check(r).map(|_| ())
 }
@@ -224,14 +231,16 @@ pub unsafe fn apply_to_buffer(
 ///
 /// # Safety
 ///
-/// `out` is a valid `git_buf`; `fl` NULL or a live list; `blob` a live
-/// `git_blob`.
+/// `out` is a valid `git_buf` that nothing else accesses during the call;
+/// `fl` NULL or a live list; `blob` a live `git_blob`; none freed during
+/// the call.
 pub unsafe fn apply_to_blob(
     out: *mut GitBuf,
     fl: *mut git_filter_list,
     blob: *mut c_void,
 ) -> Result<()> {
-    // SAFETY: the caller's contract.
+    // SAFETY: `out` is a valid `git_buf`, `fl` NULL or a live list, `blob`
+    // a live blob (this function's contract), all for the call.
     let r = unsafe { git_filter_list_apply_to_blob(out, fl, blob) };
     ErrorCode::check(r).map(|_| ())
 }

@@ -61,7 +61,9 @@ define_ctype!(MatchData, MatchDataRef, MatchDataMut, pcre2_match_data_8);
 // matching with one pattern from several threads at once (each with its
 // own match data) as safe, and freeing it from any thread.
 unsafe impl Send for Code {}
-// SAFETY: as above: shared access only matches.
+// SAFETY: as for `Send`: through a shared borrow a pattern is only
+// matched (`pcre2_match` takes it `const`), which PCRE2 allows from
+// several threads at once.
 unsafe impl Sync for Code {}
 // SAFETY: match data belongs to one owner, and PCRE2 frees it from any
 // thread.
@@ -168,7 +170,7 @@ pub fn pcre2_match<'m>(
     } else {
         rc.unsigned_abs().min(count)
     };
-    // SAFETY: as above.
+    // SAFETY: as for the count.
     let ptr = unsafe { pcre2_get_ovector_pointer_8(p) };
     // SAFETY: the ovector has `2 * count` offsets in `md`'s allocation
     // (`count` <= `u32::MAX`, so the length fits `isize`); the first
@@ -186,6 +188,7 @@ pub fn pcre2_match<'m>(
 /// A non-null `code` is a live compiled pattern that is not freed for
 /// `'a`.
 pub unsafe fn code_ref<'a>(code: *mut pcre2_code_8) -> Option<CodeRef<'a>> {
-    // SAFETY: the caller's contract.
+    // SAFETY: a non-null `code` is a live compiled pattern, not freed for
+    // `'a` (this function's contract).
     unsafe { CodeRef::from_ptr(code) }
 }

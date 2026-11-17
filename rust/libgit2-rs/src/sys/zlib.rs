@@ -71,7 +71,9 @@ pub unsafe fn deflate_init(strm: *mut z_stream, level: c_int) -> c_int {
 /// and `next_in` / `next_out` are readable / writable for `avail_in` /
 /// `avail_out` bytes.
 pub unsafe fn deflate(strm: *mut z_stream, flush: c_int) -> c_int {
-    // SAFETY: the caller's contract.
+    // SAFETY: `strm` is the initialized stream, reached as `deflate_init`
+    // requires, with its buffers valid for their lengths (this function's
+    // contract): zlib's contract for `deflate`.
     unsafe { sys_deflate(strm, flush) }
 }
 
@@ -83,7 +85,8 @@ pub unsafe fn deflate(strm: *mut z_stream, flush: c_int) -> c_int {
 /// `strm` is a valid stream whose `state` is NULL or zlib's deflate state
 /// for it, reached as [`deflate_init`] requires.
 pub unsafe fn deflate_end(strm: *mut z_stream) -> c_int {
-    // SAFETY: the caller's contract.
+    // SAFETY: `strm` is a valid stream whose state is NULL or its own
+    // deflate state (this function's contract): zlib checks the rest.
     unsafe { sys_deflateEnd(strm) }
 }
 
@@ -93,7 +96,7 @@ pub unsafe fn deflate_end(strm: *mut z_stream) -> c_int {
 ///
 /// As [`deflate_end`].
 pub unsafe fn deflate_reset(strm: *mut z_stream) -> c_int {
-    // SAFETY: the caller's contract.
+    // SAFETY: as in `deflate_end` (this function's contract).
     unsafe { sys_deflateReset(strm) }
 }
 
@@ -121,7 +124,10 @@ unsafe extern "C" {
 pub unsafe fn inflate_init(strm: *mut z_stream) -> c_int {
     // SAFETY: zlib's static version string.
     let version = unsafe { sys_zlibVersion() };
-    // SAFETY: the caller's contract; the size is that of the stream.
+    // SAFETY: `strm` is a valid stream with no state, not moved and reached
+    // only through pointers derived from this one until `inflate_end`
+    // (this function's contract); the version and size are this zlib's
+    // and its `z_stream`'s (layout-tested).
     unsafe { sys_inflateInit_(strm, version, core::mem::size_of::<z_stream>() as c_int) }
 }
 
@@ -133,7 +139,8 @@ pub unsafe fn inflate_init(strm: *mut z_stream) -> c_int {
 /// `next_in` / `next_out` are readable / writable for `avail_in` /
 /// `avail_out` bytes.
 pub unsafe fn inflate(strm: *mut z_stream, flush: c_int) -> c_int {
-    // SAFETY: the caller's contract.
+    // SAFETY: `strm` went through `inflate_init`, with its buffers valid for
+    // their lengths (this function's contract): zlib's for `inflate`.
     unsafe { sys_inflate(strm, flush) }
 }
 
@@ -144,7 +151,8 @@ pub unsafe fn inflate(strm: *mut z_stream, flush: c_int) -> c_int {
 /// `strm` is a valid stream whose state is NULL or the system zlib's
 /// inflate state for it.
 pub unsafe fn inflate_end(strm: *mut z_stream) -> c_int {
-    // SAFETY: the caller's contract.
+    // SAFETY: `strm` is a valid stream whose state is NULL or its own
+    // inflate state (this function's contract).
     unsafe { sys_inflateEnd(strm) }
 }
 
@@ -154,6 +162,6 @@ pub unsafe fn inflate_end(strm: *mut z_stream) -> c_int {
 ///
 /// As [`inflate_end`].
 pub unsafe fn inflate_reset(strm: *mut z_stream) -> c_int {
-    // SAFETY: the caller's contract.
+    // SAFETY: as in `inflate_end` (this function's contract).
     unsafe { sys_inflateReset(strm) }
 }

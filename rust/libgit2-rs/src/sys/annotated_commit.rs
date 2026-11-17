@@ -21,9 +21,10 @@ pub const ANNOTATED_COMMIT_DESCRIPTION_OFFSET: usize = 56;
 ///
 /// `c` is a live `git_annotated_commit` for `'a`.
 pub unsafe fn id<'a>(c: NonNull<c_void>) -> &'a Oid {
-    // SAFETY: the caller's contract.
+    // SAFETY: `c` is a live annotated commit (this function's contract).
     let id = unsafe { git_annotated_commit_id(c.as_ptr()) };
-    // SAFETY: the id lives in the commit, for `'a`.
+    // SAFETY: the C returns the commit's own id, aligned, which lives and
+    // is unwritten as long as the commit, so for `'a`.
     unsafe { &*id }
 }
 
@@ -33,9 +34,11 @@ pub unsafe fn id<'a>(c: NonNull<c_void>) -> &'a Oid {
 ///
 /// As [`id`].
 pub unsafe fn description<'a>(c: NonNull<c_void>) -> Option<&'a CStr> {
-    // SAFETY: the caller's contract; the field is a `const char *` at the
-    // checked offset.
+    // SAFETY: `c` is a live annotated commit for `'a` (this function's
+    // contract), whose `description` is a `const char *` at the
+    // layout-tested offset.
     let p: *const c_char = unsafe { read_field(c, ANNOTATED_COMMIT_DESCRIPTION_OFFSET) };
-    // SAFETY: NULL or NUL-terminated, owned by the live commit.
+    // SAFETY: NULL or a NUL-terminated string owned by the commit, which
+    // lives, unwritten, for `'a`.
     unsafe { opt_cstr(p) }
 }

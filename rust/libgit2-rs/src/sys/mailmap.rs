@@ -24,6 +24,8 @@ pub unsafe fn resolve_signature(
     mailmap: *const c_void,
     sig: *const GitSignature,
 ) -> c_int {
-    // SAFETY: the caller's contract is the C's.
+    // SAFETY: `out` is writable, `mailmap` NULL or live, `sig` a live
+    // signature, all for the call (this function's contract, which is the
+    // C's).
     unsafe { git_mailmap_resolve_signature(out, mailmap, sig) }
 }
