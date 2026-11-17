@@ -195,7 +195,10 @@ impl<'r> Odb<'r> {
     /// pack backend of an [`open`](Self::open)ed odb), on
     /// [`commit`](OdbPackWriter::commit).
     pub fn write_pack(&self) -> ApiResult<OdbPackWriter<'_>> {
-        // SAFETY: no progress callback.
+        // SAFETY: `write_pack`'s one condition is on the progress callback,
+        // and there is none. (The writepack's indexer keeps the odb's
+        // address: the `OdbPackWriter` borrows `self`, whose reference keeps
+        // the odb alive until the writepack is freed.)
         let wp = unsafe { self.inner().write_pack(None, core::ptr::null_mut()) }.map_err(err)?;
         let wp = NonNull::new(wp).ok_or_else(|| err(ErrorCode::GENERIC))?;
         Ok(OdbPackWriter {
@@ -302,10 +305,16 @@ impl<'r> Odb<'r> {
             panic: Option<Box<dyn core::any::Any + Send>>,
         }
         unsafe extern "C" fn trampoline(id: *const Oid, payload: *mut c_void) -> c_int {
-            // SAFETY: the payload below, alive for the walk; the id is
-            // the backend's, readable for the call.
+            // SAFETY: `payload` is `&raw mut p` below, which `foreach_raw`
+            // hands only to this trampoline, one call at a time (the odb
+            // walks its backends in turn, and each calls back
+            // sequentially); `p` is a live local of `foreach`, which does
+            // not touch it until the walk returns, so this `&mut` is the
+            // only reference to it while the call lasts.
             let p = unsafe { &mut *payload.cast::<Payload<'_>>() };
-            // SAFETY: as above.
+            // SAFETY: `id` is a valid id for the call: every caller of a
+            // `git_odb_foreach_cb` passes one (the Rust backends pass a
+            // `&Oid`; C's midx and packs, their local `git_oid`).
             let id = unsafe { &*id };
             if p.panic.is_some() {
                 return 1;
@@ -327,8 +336,9 @@ impl<'r> Odb<'r> {
             stopped: false,
             panic: None,
         };
-        // SAFETY: the trampoline matches the payload, which outlives the
-        // call.
+        // SAFETY: `foreach_raw` requires that `cb` may be called with
+        // `payload`: the trampoline reads `payload` as a `Payload`, which it
+        // is, and `p` outlives the call.
         let r = unsafe {
             self.inner()
                 .foreach_raw(Some(trampoline), (&raw mut p).cast::<c_void>())
@@ -412,10 +422,14 @@ pub struct ExpandId {
 /// (`Clone` shares it), usable from any thread.
 pub struct OdbObject(NonNull<GitOdbObject>);
 
-// SAFETY: an odb object is immutable once read, but for its atomic count;
-// the last reference frees it on whichever thread drops it.
+// SAFETY: field by field, `GitOdbObject` is `cached` (id, type, flags and
+// size, written only while the object is made, and `refcount`, an atomic)
+// and `buffer` (a `git__allocator` block the object owns, never written
+// once made). So shared use from several threads only reads, but for the
+// atomic count; the last reference frees the object and its buffer
+// (`git__free`, usable from any thread) on whichever thread drops it.
 unsafe impl Send for OdbObject {}
-// SAFETY: as above.
+// SAFETY: as for `Send` just above.
 unsafe impl Sync for OdbObject {}
 
 impl OdbObject {
@@ -445,9 +459,12 @@ impl OdbObject {
         if o.buffer.is_null() || o.cached.size == 0 {
             return &[];
         }
-        // SAFETY: the buffer holds `size` bytes (the backends' contract),
-        // never written once the object is made, and lives as long as the
-        // object, which `self` keeps.
+        // SAFETY: `buffer` holds `size` initialized bytes and a NUL
+        // (`GitOdbObject`'s invariant: `odb_object_alloc` takes a backend's
+        // `RawObj`, at least `len` readable bytes), never written once the
+        // object is made, and freed only with the object, which `self`
+        // keeps alive for the returned borrow. `bytes` panics past
+        // `isize::MAX`.
         unsafe { crate::util::export::bytes(o.buffer.cast::<c_char>(), o.cached.size) }
     }
 
@@ -478,7 +495,9 @@ impl Clone for OdbObject {
 
 impl Drop for OdbObject {
     fn drop(&mut self) {
-        // SAFETY: this handle's reference.
+        // SAFETY: the object is live (this handle holds a reference, which
+        // it gives up here, once); it was made by `odb_object_alloc`, whose
+        // `flags` make `decref` free it as an odb object.
         unsafe { cache::decref(self.0.cast()) }
     }
 }
@@ -514,8 +533,11 @@ impl OdbWriter<'_> {
     /// Store the object (`git_odb_stream_finalize_write`); its id.
     pub fn finalize(self) -> ApiResult<Oid> {
         let mut id = Oid::NONE;
-        // SAFETY: our live stream, whose backend belongs to the borrowed
-        // odb; `id` a local.
+        // SAFETY: `git_odb_stream_finalize_write`'s conditions: `id` is a
+        // local, readable and writable; `self.stream` is the live stream
+        // `open_wstream` gave, used by this handle alone (it is neither
+        // `Send` nor `Sync`, and holds no reference into the stream); its
+        // backend belongs to the odb that `'odb` keeps alive.
         let r =
             unsafe { super::ffi::git_odb_stream_finalize_write(&raw mut id, self.stream.as_ptr()) };
         if r < 0 {
@@ -527,7 +549,10 @@ impl OdbWriter<'_> {
 
 impl std::io::Write for OdbWriter<'_> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        // SAFETY: our live stream; `buf` readable for its length.
+        // SAFETY: `git_odb_stream_write`'s conditions: the live stream from
+        // `open_wstream`, used by this handle alone (`&mut self`, not
+        // `Send`); `buf` is readable for `buf.len()` bytes, which nothing
+        // writes while it is borrowed.
         let r = unsafe {
             super::ffi::git_odb_stream_write(self.stream.as_ptr(), buf.as_ptr().cast(), buf.len())
         };
@@ -544,7 +569,8 @@ impl std::io::Write for OdbWriter<'_> {
 
 impl Drop for OdbWriter<'_> {
     fn drop(&mut self) {
-        // SAFETY: our stream, freed once.
+        // SAFETY: the live stream from `open_wstream`, not used after this;
+        // its `hash_ctx` is the odb's, held by the stream alone.
         unsafe { stream_free(self.stream.as_ptr()) }
     }
 }
@@ -563,7 +589,9 @@ pub struct OdbReader<'odb> {
 
 impl std::io::Read for OdbReader<'_> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        // SAFETY: our live stream; `buf` writable for its length.
+        // SAFETY: `git_odb_stream_read`'s conditions: the live stream from
+        // `open_rstream`, used by this handle alone (`&mut self`, not
+        // `Send`); `buf` is writable for `buf.len()` bytes.
         let r = unsafe {
             super::ffi::git_odb_stream_read(
                 self.stream.as_ptr(),
@@ -580,7 +608,8 @@ impl std::io::Read for OdbReader<'_> {
 
 impl Drop for OdbReader<'_> {
     fn drop(&mut self) {
-        // SAFETY: our stream, freed once.
+        // SAFETY: the live stream from `open_rstream`, not used after this;
+        // its `hash_ctx` is NULL or the backend's, held by the stream alone.
         unsafe { stream_free(self.stream.as_ptr()) }
     }
 }
@@ -658,13 +687,16 @@ impl OdbPackWriter<'_> {
     /// progress.
     pub fn commit(mut self) -> ApiResult<IndexerProgress> {
         let wp = self.wp.as_ptr();
-        // SAFETY: our live writepack; its slots are set by the backend
-        // that made it.
+        // SAFETY: `wp` is the live writepack `write_pack` gave, used by this
+        // handle alone (not `Send`, `self` owned): a read of one field in
+        // place, no reference formed.
         let Some(commit) = (unsafe { (*wp).commit }) else {
             return Err(err(ErrorCode::GENERIC));
         };
-        // SAFETY: the writepack's own slot, with it and our stats (a
-        // `git_indexer_progress`).
+        // SAFETY: the writepack's own `commit` slot, called as
+        // `git2/sys/odb_backend.h` declares it: with the live writepack and
+        // a writable `git_indexer_progress` (our field, mirrored, which
+        // nothing else references during the call).
         let r = unsafe { commit(wp, (&raw mut self.stats).cast()) };
         if r < 0 {
             return Err(err(ErrorCode::from_raw(r).unwrap_or(ErrorCode::GENERIC)));
@@ -676,11 +708,13 @@ impl OdbPackWriter<'_> {
 impl std::io::Write for OdbPackWriter<'_> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let wp = self.wp.as_ptr();
-        // SAFETY: as in `commit`.
+        // SAFETY: as in `commit`: a field read of the live writepack.
         let Some(append) = (unsafe { (*wp).append }) else {
             return Err(io_error(ErrorCode::GENERIC.raw()));
         };
-        // SAFETY: the writepack's own slot; `buf` readable for its length.
+        // SAFETY: the writepack's own `append` slot, with the live
+        // writepack, `buf` readable for `buf.len()` bytes (unwritten while
+        // borrowed) and our writable progress field, as in `commit`.
         let r = unsafe {
             append(
                 wp,
@@ -703,9 +737,10 @@ impl std::io::Write for OdbPackWriter<'_> {
 impl Drop for OdbPackWriter<'_> {
     fn drop(&mut self) {
         let wp = self.wp.as_ptr();
-        // SAFETY: our live writepack, freed once through its own slot.
+        // SAFETY: as in `commit`: a field read of the live writepack.
         if let Some(free) = unsafe { (*wp).free } {
-            // SAFETY: as above.
+            // SAFETY: the writepack's own `free` slot, called once, with the
+            // live writepack, which nothing uses after.
             unsafe { free(wp) };
         }
     }
@@ -738,10 +773,20 @@ crate::c_layout_test! {
 /// freed. [`Odb::add_backend`] hands it to the odb.
 pub struct Backend(NonNull<GitOdbBackend>);
 
-// SAFETY: every backend this API makes (loose, pack, mempack, Rust) is
-// usable from any thread under the odb's lock, as libgit2 requires of
-// backends.
+// SAFETY: the one field is a table that only this handle reaches (not yet
+// added to an odb), freed on drop through its `free` slot. Every
+// constructor makes a `CTable<_, S>` whose state `S` is `Send + Sync`
+// (asserted below): `LooseBackend`, `PackBackend` (`one_pack`, `pack`),
+// `MempackBackend`, `RustBackend`. So moving the table to another thread,
+// and freeing it there, moves only `Send` state.
 unsafe impl Send for Backend {}
+const _: () = {
+    fn send_sync<T: Send + Sync>() {}
+    let _ = send_sync::<crate::odb_loose::LooseBackend>;
+    let _ = send_sync::<crate::odb_pack::PackBackend>;
+    let _ = send_sync::<crate::odb_mempack::MempackBackend>;
+    let _ = send_sync::<RustBackend>;
+};
 
 impl core::fmt::Debug for Backend {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -751,7 +796,8 @@ impl core::fmt::Debug for Backend {
 
 impl Drop for Backend {
     fn drop(&mut self) {
-        // SAFETY: ours, not added to an odb: freed once.
+        // SAFETY: a live table only this handle has (never added to an
+        // odb: `Odb::add` forgets the handle when it does), not used again.
         unsafe { free_backend(self.0) }
     }
 }
@@ -911,8 +957,10 @@ enum Known {
 /// The address of a Rust backend's value.
 struct RustState(*const dyn OdbBackend);
 
-// SAFETY: only an address, compared and (by `BackendRef`, under its
-// contract) read as the `Send + Sync` value it points to.
+// SAFETY: the one field is an address that `KNOWN` holds; any thread
+// compares it, and only `BackendRef::downcast_ref` dereferences it, as a
+// `&` to a `dyn OdbBackend`, which is `Sync`, while the table it belongs to
+// is live (its SAFETY comment). No `&mut` is ever made through it.
 unsafe impl Send for RustState {}
 
 /// The tables of the backends that are alive, with what they are; an entry
@@ -1019,7 +1067,8 @@ impl Mempack {
     /// backend).
     pub fn dump(&self, repo: &crate::repository::Repository) -> ApiResult<Vec<u8>> {
         let mut pack = crate::util::str::GitStr::new();
-        // SAFETY: a live repository, borrowed for the call.
+        // SAFETY: `repo` is borrowed for the call, so its `git_repository`
+        // stays live (as `dump` requires).
         unsafe { crate::odb_mempack::dump(&mut pack, repo.raw_ptr().cast(), &self.0) }
             .map_err(err)?;
         Ok(pack.as_bytes().to_vec())
@@ -1138,9 +1187,11 @@ fn to_c_buffer(data: &[u8]) -> Result<*mut c_void> {
     if p.is_null() {
         return Err(ErrorCode::GENERIC);
     }
-    // SAFETY: a fresh allocation of `len + 1` bytes.
+    // SAFETY: `p` is a fresh allocation of `len + 1` bytes (not NULL,
+    // checked), so writable for `len` and disjoint from `data`; `u8` needs
+    // no alignment.
     unsafe { core::ptr::copy_nonoverlapping(data.as_ptr(), p, data.len()) };
-    // SAFETY: as above.
+    // SAFETY: as the line above: byte `len` is the last of the allocation.
     unsafe { p.wrapping_add(data.len()).write(0) };
     Ok(p.cast())
 }
@@ -1149,21 +1200,33 @@ ffibox::impl_cvtable! {
     // SAFETY: libgit2 passes each of a backend's slots the backend in the
     // place marked `@`, and calls `free` once; the slots left NULL are
     // optional in C's contract (streams are then the odb's own).
+    //
+    // Slot arguments (cited as such below): the odb (`odb.rs`: `read_1`,
+    // `read_prefix_1`, `read_header`, `exists_1`, `exists_prefix_1`,
+    // `write`, `foreach`, `freshen_1`) passes its `&Oid` ids, a slice's
+    // pointer and length as `data, len`, and its own locals as
+    // out-parameters, all valid and aligned for the call and reached by
+    // nothing else meanwhile; a C caller of the slots of
+    // `git2/sys/odb_backend.h` must pass the same. The ids are `const`:
+    // nothing writes them during the call. An `&Oid` made from one lives
+    // only inside the slot.
     unsafe impl CVtable<RustBackend> for BackendTable {}
     base = backend_base();
     fn read(buffer_p: *mut *mut c_void, len_p: *mut usize, type_p: *mut git_object_t, @backend, oid: *const Oid) -> c_int {
         on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         |s: &RustBackend| {
-            // SAFETY: C's contract: a readable id.
+            // SAFETY: `oid` is a valid id, unwritten for the call (slot
+            // arguments, above).
             match s.0.read(unsafe { &*oid }) {
                 Ok((data, kind)) => match to_c_buffer(&data) {
                     Ok(p) => {
-                        // SAFETY: C's contract: writable out-parameters.
+                        // SAFETY: `buffer_p` is a valid, aligned `void **`
+                        // for the call (slot arguments).
                         unsafe { buffer_p.write(p) };
-                        // SAFETY: as above.
+                        // SAFETY: `len_p` likewise, a `size_t *`.
                         unsafe { len_p.write(data.len()) };
-                        // SAFETY: as above.
+                        // SAFETY: `type_p` likewise, a `git_object_t *`.
                         unsafe { type_p.write(kind.raw()) };
                         0
                     }
@@ -1177,17 +1240,19 @@ ffibox::impl_cvtable! {
         on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         |s: &RustBackend| {
-            // SAFETY: C's contract: a readable id.
+            // SAFETY: `short` is a valid id, unwritten for the call (slot
+            // arguments, above).
             match s.0.read_prefix(unsafe { &*short }, len) {
                 Ok((id, data, kind)) => match to_c_buffer(&data) {
                     Ok(p) => {
-                        // SAFETY: C's contract: writable out-parameters.
+                        // SAFETY: `out` is a valid, aligned `git_oid *` for
+                        // the call (slot arguments).
                         unsafe { out.write(id) };
-                        // SAFETY: as above.
+                        // SAFETY: `buffer_p` likewise, a `void **`.
                         unsafe { buffer_p.write(p) };
-                        // SAFETY: as above.
+                        // SAFETY: `len_p` likewise, a `size_t *`.
                         unsafe { len_p.write(data.len()) };
-                        // SAFETY: as above.
+                        // SAFETY: `type_p` likewise, a `git_object_t *`.
                         unsafe { type_p.write(kind.raw()) };
                         0
                     }
@@ -1201,12 +1266,14 @@ ffibox::impl_cvtable! {
         on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         |s: &RustBackend| {
-            // SAFETY: C's contract: a readable id.
+            // SAFETY: `oid` is a valid id, unwritten for the call (slot
+            // arguments, above).
             match s.0.read_header(unsafe { &*oid }) {
                 Ok((len, kind)) => {
-                    // SAFETY: C's contract: writable out-parameters.
+                    // SAFETY: `len_p` is a valid, aligned `size_t *` for the
+                    // call (slot arguments).
                     unsafe { len_p.write(len) };
-                    // SAFETY: as above.
+                    // SAFETY: `type_p` likewise, a `git_object_t *`.
                     unsafe { type_p.write(kind.raw()) };
                     0
                 }
@@ -1224,9 +1291,14 @@ ffibox::impl_cvtable! {
             if data.is_null() && len != 0 {
                 return errors::assert_arg_failed("data").raw();
             }
-            // SAFETY: C's contract: a readable id.
+            // SAFETY: `oid` is a valid id, unwritten for the call (slot
+            // arguments, above).
             let oid = unsafe { &*oid };
-            // SAFETY: C's contract: `len` readable bytes.
+            // SAFETY: `data` is readable for `len` initialized bytes that
+            // nothing writes during the call (slot arguments: the odb
+            // passes a slice); NULL with 0 is the empty slice (NULL with
+            // more is refused above), and `bytes` panics (into `on panic`)
+            // for `len > isize::MAX`.
             let data = unsafe { crate::util::export::bytes(data.cast(), len) };
             match s.0.write(oid, data, kind) {
                 Ok(()) => 0,
@@ -1237,17 +1309,20 @@ ffibox::impl_cvtable! {
     fn exists(@backend, oid: *const Oid) -> c_int {
         on panic: 0,
         on busy: 0,
-        // SAFETY: C's contract: a readable id.
+        // SAFETY: `oid` is a valid id, unwritten for the call (slot
+        // arguments, above).
         |s: &RustBackend| c_int::from(s.0.exists(unsafe { &*oid })),
     }
     fn exists_prefix(out: *mut Oid, @backend, short: *const Oid, len: usize) -> c_int {
         on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
         |s: &RustBackend| {
-            // SAFETY: C's contract: a readable id.
+            // SAFETY: `short` is a valid id, unwritten for the call (slot
+            // arguments, above).
             match s.0.exists_prefix(unsafe { &*short }, len) {
                 Ok(id) => {
-                    // SAFETY: C's contract: writable.
+                    // SAFETY: `out` is NULL (skipped) or a valid, aligned
+                    // `git_oid *` for the call (slot arguments).
                     unsafe { crate::util::export::write_opt(out, id) };
                     0
                 }
@@ -1277,7 +1352,10 @@ ffibox::impl_cvtable! {
                 if stop != 0 {
                     return false;
                 }
-                // SAFETY: C's callback, with its payload.
+                // SAFETY: `cb` and `payload` are a `git_odb_foreach_cb` and
+                // its payload, which the caller of `foreach` (the odb's
+                // `foreach_raw`, or C) lets us call during the call; `id` is
+                // the backend's `&Oid`, valid during the callback.
                 stop = errors::set_after_callback(unsafe { cb(id, payload) }, "git_odb_foreach");
                 stop == 0
             });
@@ -1293,7 +1371,8 @@ ffibox::impl_cvtable! {
     fn freshen(@backend, oid: *const Oid) -> c_int {
         on panic: { errors::set_panic_error(); -1 },
         on busy: busy(),
-        // SAFETY: C's contract: a readable id.
+        // SAFETY: `oid` is a valid id, unwritten for the call (slot
+        // arguments, above).
         |s: &RustBackend| match s.0.freshen(unsafe { &*oid }) {
             Ok(()) => 0,
             Err(e) => raise(&e),

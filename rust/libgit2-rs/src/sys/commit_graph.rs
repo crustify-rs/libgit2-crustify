@@ -25,8 +25,11 @@ unsafe extern "C" {
 #[derive(Debug)]
 pub struct CommitGraph(NonNull<c_void>);
 
-// SAFETY: a commit-graph is used from any thread under its owner's lock
-// (the odb's mutex), as C does.
+// SAFETY: the one field owns a `git_commit_graph` (its file name, its oid
+// type, a `checked` flag and a lazily opened `git_commit_graph_file`: heap
+// data and a mapping, none tied to a thread). Its C functions are reached
+// only through `&mut self` (or `Drop`), so moving it to another thread and
+// using it there is what C does under the odb's mutex. (Not `Sync`.)
 unsafe impl Send for CommitGraph {}
 
 impl CommitGraph {
@@ -138,7 +141,9 @@ pub unsafe fn entry_find(
     len: usize,
 ) -> Result<GitCommitGraphEntry, c_int> {
     let mut e = GitCommitGraphEntry::zeroed();
-    // SAFETY: `e` is writable, `id` readable; `file` is live (contract).
+    // SAFETY: `e` is a writable local, `id` a valid id borrowed for the
+    // call; `file` is live and not freed during the call (this fn's
+    // contract); C only reads `file`.
     let r = unsafe { git_commit_graph_entry_find(&raw mut e, file, id, len) };
     if r == 0 { Ok(e) } else { Err(r) }
 }
@@ -154,7 +159,9 @@ pub unsafe fn entry_parent(
     n: usize,
 ) -> Result<GitCommitGraphEntry, c_int> {
     let mut e = GitCommitGraphEntry::zeroed();
-    // SAFETY: `e` is writable, `entry` readable; `file` is live (contract).
+    // SAFETY: `e` is a writable local, `entry` a borrowed entry of `file`;
+    // `file` is live and not freed during the call (this fn's contract); C
+    // only reads `file`.
     let r = unsafe { git_commit_graph_entry_parent(&raw mut e, file, entry, n) };
     if r == 0 { Ok(e) } else { Err(r) }
 }

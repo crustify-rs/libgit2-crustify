@@ -129,10 +129,12 @@ pub struct GitBytes {
     len: usize,
 }
 
-// SAFETY: the buffer is owned and not tied to a thread (`git__free` may run
-// anywhere); shared access only reads.
+// SAFETY: field by field: `ptr` is a `git__allocator` block this value
+// owns alone (`into_raw` gives it up by value), which `git__free` may free
+// on any thread; `len` is plain data. `&GitBytes` only reads the block
+// (`as_bytes`), so shared use from several threads is reads only.
 unsafe impl Send for GitBytes {}
-// SAFETY: as above.
+// SAFETY: as for `Send` just above: `&self` methods only read.
 unsafe impl Sync for GitBytes {}
 
 impl GitBytes {
@@ -221,9 +223,11 @@ pub struct GitRawobj {
 /// A private, read-only mapping, unmapped on drop.
 struct Mapping(GitMap);
 
-// SAFETY: a read-only mapping is not tied to a thread and is only read.
+// SAFETY: the one field is a private read-only mapping this value owns,
+// unmapped only by `Drop` (`&mut self`); a mapping is not tied to a thread,
+// and through `&Mapping` it is only read (`bytes`).
 unsafe impl Send for Mapping {}
-// SAFETY: as above.
+// SAFETY: as for `Send` just above.
 unsafe impl Sync for Mapping {}
 
 impl Mapping {
@@ -759,12 +763,22 @@ pub struct GitPackFile {
     bases: PackCache,
 }
 
-// SAFETY: the fields that are written while shared are atomics, locks, or
-// `idx_cache`, which only the indexer (C) writes, on a pack only its thread
-// uses (module docs); `pack_name` points into `name`, which is immutable;
-// the rest is written only at construction and destruction.
+// SAFETY: field by field, for shared use from several threads:
+// - `mwf`: its `lock` is a mutex, `fd` and `size` are atomics, and
+//   `windows` (an atomic pointer) and the windows it lists are reached
+//   only under `git_mwindow__mutex` (`mwindow::Ctl`);
+// - `refcount`, `has_cache`, `last_freshen`: atomics;
+// - `idx_cache`: an `UnsafeCell` written only by the indexer (C) on its own
+//   pack, which no other thread uses (module docs), and read only there
+//   (`idx_cache_offset`, behind `has_cache`);
+// - `pack_name`: points into `name`; `name`, `oid_type`, `pack_keep`,
+//   `mtime`: written only by `packfile_alloc`, before the pack is shared;
+// - `lock` (`Mutex`), `index` and `ids` (`OnceLock`s of `Send + Sync`
+//   data), `bases` (`PackCache`, its own lock): `Sync`.
 unsafe impl Sync for GitPackFile {}
-// SAFETY: as above; nothing in a pack is tied to a thread.
+// SAFETY: nothing in a pack is tied to a thread: the fields above own heap
+// data, mappings and a descriptor, which any thread may free, unmap or
+// close (`packfile_free`).
 unsafe impl Send for GitPackFile {}
 
 /// The C prefix of [`GitPackFile`], for the layout test.
@@ -1091,21 +1105,27 @@ impl GitPackFile {
         unsafe { CStrKey::from_ptr(NonNull::from(self.name.as_c_str()).cast()) }
     }
 
-    fn has_cache(&self) -> bool {
-        self.has_cache.load(Ordering::Relaxed) != 0
-    }
-
-    /// The indexer's entry for `id`, when it built the pack's cache.
-    fn idx_cache_offset(&self, id: &Oid) -> Option<i64> {
-        // SAFETY: `has_cache` is set only on the indexer's own pack, which
-        // only the indexer's thread uses: nothing writes the map during
-        // this read. A key built from a reference is valid for the lookup.
+    /// `None` unless the indexer built the pack's cache (`has_cache`);
+    /// then the offset of its entry for `id`, if it has one.
+    fn idx_cache_offset(&self, id: &Oid) -> Option<Option<i64>> {
+        if self.has_cache.load(Ordering::Relaxed) == 0 {
+            return None;
+        }
+        // SAFETY: `has_cache` (checked) is set only on the indexer's own
+        // pack, which only the indexer's thread uses, and which this thread
+        // is reading on its behalf: nothing writes the map during this
+        // borrow, which ends with this fn.
         let map = unsafe { &*self.idx_cache.get() };
-        // SAFETY: `id` outlives the lookup, which does not keep the key.
+        // SAFETY: `OidPtr::new` needs the id to outlive the key: `id` is
+        // borrowed for this fn, and the lookup does not keep the key.
         let key = unsafe { OidPtr::new(NonNull::from(id)) };
-        let entry = *map.get(&key)?;
-        // SAFETY: the indexer's entries live while they are in the map.
-        Some(unsafe { (*entry).offset })
+        let Some(&entry) = map.get(&key) else {
+            return Some(None);
+        };
+        // SAFETY: the map's values are the indexer's `git_pack_entry`s,
+        // which it frees only after removing them from the map (or with
+        // it): live and aligned, and written by no one during this read.
+        Some(Some(unsafe { (*entry).offset }))
     }
 
     fn plock(&self) -> MutexGuard<'_, ()> {
@@ -1333,10 +1353,10 @@ impl GitPackFile {
                 return Err(ErrorCode::BUFS);
             };
             let base_oid = Oid::from_bytes(raw, self.oid_type).expect("oid_size bytes");
-            if self.has_cache() {
+            if let Some(found) = self.idx_cache_offset(&base_oid) {
                 // The indexer's pack: look in its cache, and if the base is
                 // not there yet, let it come back later.
-                return match self.idx_cache_offset(&base_oid) {
+                return match found {
                     Some(0) => Err(packfile_error("delta offset is zero")),
                     Some(off) => {
                         *curpos += oid_size as i64;
@@ -1948,7 +1968,9 @@ impl GitPackfileStream {
     /// C's reads of `curpos` and `done`), by one thread at a time; `p`
     /// outlives it.
     pub unsafe fn open_in(obj: *mut GitPackfileStream, p: &GitPackFile, curpos: i64) -> Result<()> {
-        // SAFETY: writable (the caller); C's `memset` then the fields.
+        // SAFETY: `obj` is valid for writes of a stream and aligned (this
+        // fn's contract); `write` does not read or drop what was there
+        // (C's `memset` then the fields).
         unsafe {
             obj.write(GitPackfileStream {
                 curpos,
@@ -1993,25 +2015,34 @@ impl GitPackfileStream {
     /// `buffer` is writable for `len` bytes and overlaps neither the stream
     /// nor the pack.
     pub unsafe fn read(obj: *mut GitPackfileStream, buffer: *mut u8, len: usize) -> isize {
-        // SAFETY: an open stream; fields are read and written as places.
+        // SAFETY: `obj` is an open stream, valid and aligned, that only
+        // this call uses (this fn's contract); its fields are read and
+        // written as places, with no reference to the whole stream, so the
+        // `&mut` to `mw` and the zlib stream's pointer below overlap none
+        // of these accesses.
         if unsafe { (*obj).done } != 0 {
             return 0;
         }
-        // SAFETY: as above.
+        // SAFETY: a field read in place, as for `done` just above.
         let p = unsafe { (*obj).p };
-        // SAFETY: `p` outlives the stream (`open_in`'s contract).
+        // SAFETY: `p` is the live pack `open_in` stored, which outlives the
+        // stream (`open_in`'s contract); `GitPackFile` is only read through
+        // `&` (interior mutability where it changes).
         let p = unsafe { &*p };
-        // SAFETY: as above: a field's place.
+        // SAFETY: a field's place, as for `done` above; no reference made.
         let mw = unsafe { &raw mut (*obj).mw };
-        // SAFETY: `mw` is this stream's cursor (NULL or a held window), used
-        // only here for the call.
+        // SAFETY: `mw` is valid, aligned and NULL or a window this stream's
+        // cursor holds (only `window_open` and `close` below store into
+        // it); nothing else reaches it while `cursor` lives, which ends
+        // with this call.
         let cursor = unsafe { Cursor::from_raw_mut(mw) };
-        // SAFETY: as above.
+        // SAFETY: a field read in place, as for `done` above.
         let curpos = unsafe { (*obj).curpos };
         let Some(input) = p.window_open(cursor, curpos) else {
             return ErrorCode::BUFS.raw() as isize;
         };
-        // SAFETY: an open stream.
+        // SAFETY: `obj` is an open stream used only by this call (this
+        // fn's contract), as `z` requires.
         let z = unsafe { Self::z(obj) };
         let window_len = input.len();
         z.set_input(input.as_ptr().cast(), window_len);
@@ -2025,12 +2056,13 @@ impl GitPackfileStream {
             return -1;
         }
         let eos = z.eos();
-        // SAFETY: an open stream, as above.
+        // SAFETY: a field written in place, as `done` is read at the top;
+        // `cursor` (the `&mut` to `mw`) is not used again.
         unsafe {
             (*obj).curpos = curpos + (window_len - z.in_len()) as i64;
         }
         if eos {
-            // SAFETY: as above.
+            // SAFETY: as the write just above, for `done`.
             unsafe { (*obj).done = 1 };
         }
         // If we wrote nothing but are not done, we need more data.
@@ -2132,10 +2164,12 @@ impl PackObject {
 /// released on drop (`git_mwindow_put_pack`).
 pub struct Pack(NonNull<GitPackFile>);
 
-// SAFETY: a pack is `Send + Sync`; the reference is released (under the
-// global mutex) from any thread.
+// SAFETY: the one field is a counted reference to a heap `GitPackFile`,
+// which is `Send + Sync`; the count is atomic and the reference is
+// released by `put_pack`, under the global mutex, from any thread.
 unsafe impl Send for Pack {}
-// SAFETY: as above.
+// SAFETY: `&Pack` reaches only `&GitPackFile` (`file`), which is `Sync`,
+// and `Clone` takes the global mutex.
 unsafe impl Sync for Pack {}
 
 impl Pack {
@@ -2402,7 +2436,9 @@ pub mod ffi {
     /// As [`packfile_free`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_packfile_free(p: *mut GitPackFile, unlink_packfile: bool) {
-        // SAFETY: this export's contract is `packfile_free`'s.
+        // SAFETY: `p` is NULL or a pack from `packfile_alloc` that nothing
+        // uses any more (not in the pack cache), freed once: this export's
+        // contract, which is `packfile_free`'s.
         barrier(|| unsafe { packfile_free(p, unlink_packfile) })
     }
 

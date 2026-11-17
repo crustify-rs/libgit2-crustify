@@ -99,8 +99,13 @@ struct BackendState {
     last_found: Option<NonNull<GitPackFile>>,
 }
 
-// SAFETY: `last_found` points to a pack the state holds a reference to (in
-// `midx_packs` or `packs`), which is `Sync`; the rest is `Send`.
+// SAFETY: field by field: `midx_packs`, `packs` (`Pack`, `Send`),
+// `packs_sorted` and `midx` (`Arc<Midx>`, `Midx: Send + Sync`) are `Send`;
+// `last_found`, the one raw pointer, points to the heap `GitPackFile` of
+// one of those `Pack`s (they only move between the two vectors, and the
+// pack does not move with its handle), which is `Sync`, and is only read
+// through `&` while the state is borrowed. So sending the state sends
+// nothing more than its `Pack`s.
 unsafe impl Send for BackendState {}
 
 /// The pack backend (`struct pack_backend` after its table).
@@ -147,8 +152,11 @@ impl BackendState {
     }
 
     fn last_found(&self) -> Option<&GitPackFile> {
-        // SAFETY: a pack the state holds (see `last_found`'s invariant),
-        // alive while `self` is borrowed.
+        // SAFETY: `last_found` is one of the packs of `midx_packs` or
+        // `packs` (set only from them; a pack is never dropped from the
+        // state before the backend is freed), on the heap, so it stays live
+        // and in place while `self` is borrowed; `GitPackFile` is read only
+        // through `&` (interior mutability where it changes).
         self.last_found.map(|p| unsafe { p.as_ref() })
     }
 
@@ -168,19 +176,41 @@ impl BackendState {
 /// The trampoline for a Rust closure as a `git_odb_foreach_cb`.
 unsafe extern "C" fn foreach_trampoline(id: *const Oid, payload: *mut c_void) -> c_int {
     crate::util::export::barrier(|| {
-        // SAFETY: `payload` is the `&mut dyn FnMut` `PackBackend::foreach`
-        // passed for this call, used by this call alone.
+        // SAFETY: `payload` is the address of the `&mut dyn FnMut` local
+        // that `PackBackend::foreach` passes `git_midx_foreach_entry` with
+        // this trampoline, live until that call returns and not otherwise
+        // used meanwhile; C calls back one id at a time, so this `&mut` is
+        // the only reference to it.
         let f = unsafe { &mut *payload.cast::<&mut dyn FnMut(&Oid) -> c_int>() };
-        // SAFETY: a valid oid for the call (the midx's contract).
+        // SAFETY: `id` is `git_midx_foreach_entry`'s local `git_oid`, valid
+        // and unwritten during the callback.
         let id = unsafe { &*id };
         f(id)
     })
 }
 
+/// A C `git_odb_foreach_cb` and its payload, which may be called while the
+/// value lives (fields private: made only by the `unsafe` [`new`](Self::new)).
+pub(crate) struct CForeach {
+    cb: OdbForeachCb,
+    data: *mut c_void,
+}
+
+impl CForeach {
+    /// # Safety
+    ///
+    /// `cb` may be called with `data` and any valid id, on this thread,
+    /// while the value lives (the contract of a `git_odb_foreach_cb` with
+    /// its payload, for the duration of the backend's `foreach`).
+    pub(crate) unsafe fn new(cb: OdbForeachCb, data: *mut c_void) -> CForeach {
+        CForeach { cb, data }
+    }
+}
+
 /// A `foreach` callback: C's, or a Rust closure.
 pub(crate) enum ForeachCb<'a> {
     /// A C callback and its payload.
-    C(OdbForeachCb, *mut c_void),
+    C(CForeach),
     /// A Rust closure.
     Rust(&'a mut dyn FnMut(&Oid) -> c_int),
 }
@@ -188,9 +218,10 @@ pub(crate) enum ForeachCb<'a> {
 impl ForeachCb<'_> {
     fn call(&mut self, id: &Oid) -> c_int {
         match self {
-            // SAFETY: the contract of the C callback with its payload, which
-            // its supplier (the export's caller) states.
-            ForeachCb::C(cb, data) => unsafe { cb(id, *data) },
+            // SAFETY: `c` was made by `CForeach::new`, whose contract lets
+            // `cb` be called with `data` and a valid id while `c` lives;
+            // `id` is a `&Oid`.
+            ForeachCb::C(c) => unsafe { (c.cb)(id, c.data) },
             ForeachCb::Rust(f) => f(id),
         }
     }
@@ -466,7 +497,8 @@ impl PackBackend {
         }
         let path = pack_path.as_c_str().ok_or(ErrorCode::GENERIC)?;
         let p = mwindow::get_pack(path, self.oid_type)?;
-        // SAFETY: a reference `get_pack` gave us.
+        // SAFETY: `p` is what `get_pack` just returned: a live pack with a
+        // new reference, which passes to the `Pack` (as `from_raw` requires).
         st.midx_packs
             .push(unsafe { Pack::from_raw(NonNull::new(p).expect("a pack")) });
         Ok(())
@@ -534,7 +566,9 @@ impl PackBackend {
             }
             Err(e) => e.raw(),
             Ok(pk) => {
-                // SAFETY: a reference `get_pack` gave us.
+                // SAFETY: `pk` is what `get_pack` just returned: a live pack
+                // with a new reference, which passes to the `Pack` (as
+                // `from_raw` requires).
                 let pk = unsafe { Pack::from_raw(NonNull::new(pk).expect("a pack")) };
                 match st.insert_pack(pk) {
                     Ok(()) => 0,
@@ -589,14 +623,17 @@ impl PackBackend {
         };
         if let Some(midx) = midx {
             let error = match &mut cb {
-                // SAFETY: C's callback with C's payload, which keep the
-                // contract of a `git_odb_foreach_cb` (the export's caller).
-                ForeachCb::C(f, data) => unsafe { midx.foreach_entry(*f, *data) },
+                // SAFETY: `foreach_entry` requires that `cb` may be called
+                // with `data` for every entry: `c` was made by
+                // `CForeach::new`, whose contract says so while `c` lives,
+                // which it does for this call.
+                ForeachCb::C(c) => unsafe { midx.foreach_entry(c.cb, c.data) },
                 ForeachCb::Rust(f) => {
                     let mut f: &mut dyn FnMut(&Oid) -> c_int = &mut **f;
                     let payload = ptr::from_mut(&mut f).cast::<c_void>();
-                    // SAFETY: the trampoline reads `payload` as the `&mut
-                    // dyn FnMut` it is, for this call only.
+                    // SAFETY: the trampoline may be called with `payload`:
+                    // it reads it as the `&mut dyn FnMut` local `f`, which
+                    // outlives this call and is not used during it.
                     unsafe { midx.foreach_entry(foreach_trampoline, payload) }
                 }
             };
@@ -703,8 +740,8 @@ fn panicked() -> c_int {
 ///
 /// # Safety
 ///
-/// The pointers are aligned and writable, and no reference to their
-/// pointees is live.
+/// The pointers are valid for writes and aligned, and no reference to
+/// their pointees is live during the call.
 unsafe fn write_object(
     buffer_p: *mut *mut c_void,
     len_p: *mut usize,
@@ -728,6 +765,16 @@ ffibox::impl_cvtable! {
     // `writestream` and `readstream` may be NULL (the odb checks each slot
     // before it calls it), and every slot it calls unconditionally (`free`)
     // is set.
+    //
+    // Slot arguments (cited as such below): the odb (`odb.rs`: `read_1`,
+    // `read_prefix_1`, `read_header`, `exists_1`, `exists_prefix_1`,
+    // `foreach`, `write_pack`, `freshen_1`) passes its `&Oid` ids and its
+    // own locals as out-parameters, all valid and aligned for the call and
+    // reached by nothing else meanwhile, and a `foreach` callback that may
+    // be called with its payload during the call; a C caller of the slots
+    // of `git2/sys/odb_backend.h` must pass the same (C's `pack_backend__*`
+    // dereferenced them alike). The ids are `const`: nothing writes them
+    // during the call. An `&Oid` made from one lives only inside the slot.
     unsafe impl CVtable<PackBackend> for OdbBackend {}
     base = empty_backend();
     /// `pack_backend__read`.
@@ -735,10 +782,12 @@ ffibox::impl_cvtable! {
         on panic: panicked(),
         on busy: busy(),
         |b: &PackBackend| {
-            // SAFETY: a valid oid (the odb's contract).
+            // SAFETY: `oid` is a valid id, unwritten for the call (slot
+            // arguments, above).
             match b.read(unsafe { &*oid }) {
                 Ok((data, kind)) => {
-                    // SAFETY: the out-parameters are writable.
+                    // SAFETY: `buffer_p`, `len_p` and `type_p` are valid,
+                    // aligned and unaliased for the call (slot arguments).
                     unsafe { write_object(buffer_p, len_p, type_p, data, kind) };
                     0
                 }
@@ -759,12 +808,15 @@ ffibox::impl_cvtable! {
         on panic: panicked(),
         on busy: busy(),
         |b: &PackBackend| {
-            // SAFETY: a valid oid (the odb's contract).
+            // SAFETY: `short_oid` is a valid id, unwritten for the call
+            // (slot arguments, above).
             match b.read_prefix(unsafe { &*short_oid }, len) {
                 Ok((id, data, kind)) => {
-                    // SAFETY: the out-parameters are writable.
+                    // SAFETY: `buffer_p`, `len_p` and `type_p` are valid,
+                    // aligned and unaliased for the call (slot arguments).
                     unsafe { write_object(buffer_p, len_p, type_p, data, kind) };
-                    // SAFETY: writable.
+                    // SAFETY: `out_oid` is a valid, aligned `git_oid *` for
+                    // the call (slot arguments).
                     unsafe { out_oid.write(id) };
                     0
                 }
@@ -780,12 +832,14 @@ ffibox::impl_cvtable! {
             git_assert_arg!(!len_p.is_null(), "len_p", -1);
             git_assert_arg!(!type_p.is_null(), "type_p", -1);
             git_assert_arg!(!oid.is_null(), "oid", -1);
-            // SAFETY: a valid oid (checked not NULL; the odb's contract).
+            // SAFETY: `oid` is a valid id, unwritten for the call (slot
+            // arguments, above); NULL is refused above.
             match b.read_header(unsafe { &*oid }) {
                 Ok((len, kind)) => {
-                    // SAFETY: writable (checked not NULL).
+                    // SAFETY: `len_p` is a valid, aligned `size_t *` for the
+                    // call (slot arguments; NULL refused above).
                     unsafe { len_p.write(len) };
-                    // SAFETY: as above.
+                    // SAFETY: `type_p` likewise, a `git_object_t *`.
                     unsafe { type_p.write(kind) };
                     0
                 }
@@ -797,7 +851,8 @@ ffibox::impl_cvtable! {
     fn exists(@backend, oid: *const Oid) -> c_int {
         on panic: { errors::set_panic_error(); 0 },
         on busy: 0,
-        // SAFETY: a valid oid (the odb's contract).
+        // SAFETY: `oid` is a valid id, unwritten for the call (slot
+        // arguments, above).
         |b: &PackBackend| c_int::from(b.exists(unsafe { &*oid })),
     }
     /// `pack_backend__exists_prefix`.
@@ -805,10 +860,11 @@ ffibox::impl_cvtable! {
         on panic: panicked(),
         on busy: busy(),
         |b: &PackBackend| {
-            // SAFETY: a valid oid (the odb's contract).
+            // SAFETY: `short_id` is a valid id, unwritten for the call
+            // (slot arguments, above).
             let (r, id) = b.exists_prefix(unsafe { &*short_id }, len);
-            // SAFETY: writable (the odb's contract); C copies the entry's id
-            // whatever the result.
+            // SAFETY: `out` is a valid, aligned `git_oid *` for the call
+            // (slot arguments); C copies the entry's id whatever the result.
             unsafe { out.write(id) };
             match r {
                 Ok(()) => 0,
@@ -828,7 +884,11 @@ ffibox::impl_cvtable! {
         on busy: busy(),
         |b: &PackBackend| {
             git_assert_arg!(cb.is_some(), "cb", -1);
-            b.foreach(ForeachCb::C(cb.expect("checked"), data))
+            // SAFETY: `cb` may be called with `data` during this slot (slot
+            // arguments, above), on this thread; the `CForeach` is dropped
+            // when `foreach` returns, before the slot does.
+            let c = unsafe { CForeach::new(cb.expect("checked"), data) };
+            b.foreach(ForeachCb::C(c))
         },
     }
     /// `pack_backend__writepack`.
@@ -843,11 +903,16 @@ ffibox::impl_cvtable! {
         on busy: busy(),
         |b: &PackBackend| {
             git_assert_arg!(!out.is_null(), "out", -1);
-            // SAFETY: writable (checked not NULL).
+            // SAFETY: `out` is a valid, aligned `git_odb_writepack **` for
+            // the call (slot arguments; NULL refused above).
             unsafe { out.write(ptr::null_mut()) };
-            // SAFETY: the odb's contract: `odb` is the odb this backend is
-            // in, which outlives the writepack, and the callback may be
-            // called with its payload.
+            // SAFETY: `writepack`'s conditions: `odb` is the odb that calls
+            // (`write_pack` passes itself), and it outlives the writepack
+            // (`OdbPackWriter` borrows it; a C caller of `git_odb_write_pack`
+            // frees the writepack before the odb, as C's backend, which kept
+            // the odb in its indexer alike, required); `progress_cb` may be
+            // called with `progress_payload` (`write_pack`'s own contract,
+            // whose arguments arrive here unchanged).
             match unsafe { b.writepack(odb.cast(), progress_cb, progress_payload) } {
                 Ok(w) => {
                     let base = GitOdbWritepack {
@@ -859,8 +924,8 @@ ffibox::impl_cvtable! {
                     // SAFETY: the base's slots are all NULL (`install` sets
                     // every one); its `backend` is the table C reads it as.
                     let t = unsafe { CTable::<OdbWritepack, Writepack>::with_base(base, w) };
-                    // SAFETY: writable (checked not NULL); C frees it
-                    // through its `free` slot.
+                    // SAFETY: `out` as at the top of this slot; C frees the
+                    // writepack through its `free` slot.
                     unsafe { out.write(t.into_c().as_ptr()) };
                     0
                 }
@@ -878,7 +943,8 @@ ffibox::impl_cvtable! {
     fn freshen(@backend, oid: *const Oid) -> c_int {
         on panic: panicked(),
         on busy: busy(),
-        // SAFETY: a valid oid (the odb's contract).
+        // SAFETY: `oid` is a valid id, unwritten for the call (slot
+        // arguments, above).
         |b: &PackBackend| crate::util::export::status(b.freshen(unsafe { &*oid })),
     }
     release free;
@@ -892,6 +958,13 @@ pub struct Writepack {
 ffibox::impl_cvtable! {
     // SAFETY: libgit2 passes each slot of a `git_odb_writepack` the
     // writepack, first (`git2/odb_backend.h`), and every slot is set.
+    //
+    // Writepack slot arguments: `append` gets `data` readable for `size`
+    // bytes and `stats` NULL or a writable `git_indexer_progress`, `commit`
+    // the same `stats`, all for the call: `OdbPackWriter` (`odb/api.rs`)
+    // passes a slice and its own progress field; a C caller of
+    // `git_odb_writepack` must do the same (C's slots handed them to
+    // `git_indexer_append` / `_commit` alike).
     unsafe impl CVtable<Writepack> for OdbWritepack {}
     base = GitOdbWritepack {
         backend: ptr::null_mut(),
@@ -903,15 +976,17 @@ ffibox::impl_cvtable! {
     fn append(@writepack, data: *const c_void, size: usize, stats: *mut GitIndexerProgress) -> c_int {
         on panic: panicked(),
         on busy: git_error_set!(ErrorClass::INDEXER, "the writepack is in use").raw(),
-        // SAFETY: the caller's buffer and progress (C's contract with
-        // `git_indexer_append`).
+        // SAFETY: `data` is readable for `size` bytes and `stats` NULL or
+        // writable (writepack slot arguments, above), as `append_raw`
+        // requires.
         |w: &mut Writepack| unsafe { w.indexer.append_raw(data, size, stats) },
     }
     /// `pack_backend__writepack_commit`.
     fn commit(@writepack, stats: *mut GitIndexerProgress) -> c_int {
         on panic: panicked(),
         on busy: git_error_set!(ErrorClass::INDEXER, "the writepack is in use").raw(),
-        // SAFETY: the caller's progress.
+        // SAFETY: `stats` is NULL or writable (writepack slot arguments,
+        // above), as `commit` requires.
         |w: &mut Writepack| unsafe { w.indexer.commit(stats) },
     }
     release free;
@@ -957,7 +1032,8 @@ pub fn backend_one_pack(
     let backend = PackBackend::new(opts);
     let oid_type = opts.map_or(0, |o| o.oid_type);
     let p = mwindow::get_pack(idx, oid_type).map_err(|_| ErrorCode::GENERIC)?;
-    // SAFETY: a reference `get_pack` gave us.
+    // SAFETY: `p` is what `get_pack` just returned: a live pack with a new
+    // reference, which passes to the `Pack` (as `from_raw` requires).
     let p = unsafe { Pack::from_raw(NonNull::new(p).expect("a pack")) };
     backend
         .lock()
@@ -986,7 +1062,8 @@ impl core::fmt::Debug for OdbPackBackend {
 // `into_c(self)`. Dropping it on another thread drops the state, which is
 // `Send`, and frees the allocation.
 unsafe impl Send for OdbPackBackend {}
-// SAFETY: as above.
+// SAFETY: as for `Send` just above: `&OdbPackBackend` reaches only
+// `&PackBackend`, which is `Sync`.
 unsafe impl Sync for OdbPackBackend {}
 
 type ApiResult<T> = core::result::Result<T, errors::Error>;
