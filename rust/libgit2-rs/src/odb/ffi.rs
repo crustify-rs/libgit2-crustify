@@ -810,10 +810,12 @@ pub unsafe extern "C" fn git_odb_stream_write(
         // stream not opened for writing, which C dereferenced) is a
         // `git_hash_ctx` the odb initialized.
         let ctx = unsafe { (*stream).hash_ctx };
-        if !ctx.is_null() {
+        // SAFETY: as above: NULL or the odb's initialized context, which
+        // nothing else accesses during the call.
+        if let Some(ctx) = unsafe { ctx.cast::<crate::util::hash::HashCtx>().as_mut() } {
             // SAFETY: as above; the caller's `buffer`.
             let _ =
-                unsafe { crate::util::hash::ffi::git_hash_update(ctx.cast(), buffer.cast(), len) };
+                unsafe { crate::util::hash::ffi::git_hash_update(Some(ctx), buffer.cast(), len) };
         }
         // SAFETY: the caller's contract: the stream is the caller's alone
         // during the call (and no slot of it runs).
@@ -852,9 +854,11 @@ pub unsafe extern "C" fn git_odb_stream_finalize_write(
             return invalid_length(stream, "stream_finalize_write()");
         }
         let mut id = [0u8; crate::oid::GIT_OID_MAX_SIZE];
-        if !ctx.is_null() {
+        // SAFETY: NULL or the odb's initialized context, which nothing
+        // else accesses during the call (the caller's stream).
+        if let Some(ctx) = unsafe { ctx.cast::<crate::util::hash::HashCtx>().as_mut() } {
             // SAFETY: the odb's context; `id` holds any digest.
-            let _ = unsafe { crate::util::hash::ffi::git_hash_final(id.as_mut_ptr(), ctx.cast()) };
+            let _ = unsafe { crate::util::hash::ffi::git_hash_final(id.as_mut_ptr(), Some(ctx)) };
         }
         let oid = Oid::from_raw_parts(oid_type as u8, id);
         // SAFETY: the caller's contract.
