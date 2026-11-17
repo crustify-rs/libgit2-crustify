@@ -915,8 +915,15 @@ unsafe fn opt<'a>(p: *const c_char) -> Option<&'a CStr> {
 }
 
 ffibox::impl_cvtable! {
-    // SAFETY: libgit2 passes each slot its backend in the marked position,
-    // and every slot is set.
+    // SAFETY: libgit2 passes each slot its backend in the marked (`@cfg`)
+    // position, the only `git_config_backend *` argument; every slot runs
+    // through `impl_cvtable!`'s trampolines (state via `enter`, `free` via
+    // `release`) and keeps sys/config.h's contract (out-parameters written
+    // only on success, entries and iterators handed over); all twelve slots
+    // are set (`snapshot` in the base, to this crate's
+    // `git_config_backend_snapshot`); `version` is
+    // `GIT_CONFIG_BACKEND_VERSION` and `cfg` NULL until `add_backend` sets
+    // it, as C accepts.
     unsafe impl CVtable<FileBackend> for ConfigBackendCell {}
     base = git_config_backend {
         snapshot: Some(crate::config_snapshot::ffi::git_config_backend_snapshot),

@@ -829,9 +829,17 @@ pub struct GitConfig {
 
 crate::impl_ccounted!(GitConfig, std::alloc::Global);
 
-// SAFETY: C writes only `rc` (GIT_REFCOUNT_*, atomics); the backends are
-// behind an `RwLock`.
+// SAFETY: the fields are `rc` and `backends`. C writes only `rc`
+// (`GIT_REFCOUNT_INC` / `_DEC` / `_OWN`), whose count and owner are atomics;
+// holders through `&GitConfig` write only `backends`, an `RwLock` (so an
+// `UnsafeCell` behind its own synchronisation), replacing the `Arc` inside
+// it, never moving or freeing the field. `GitConfig` is `Sync` by its
+// fields (asserted below), which states those writes are synchronised.
 unsafe impl ffibox::CShareable for GitConfig {}
+const _: () = {
+    fn thread_safe<T: Send + Sync>() {}
+    let _ = thread_safe::<GitConfig>;
+};
 
 /// `git_vector_insert_sorted`'s position for `key` (with `git__bsearch` and
 /// comparison `cmp(key, element)`), or the position of an equal element.
@@ -1589,8 +1597,11 @@ fn iter_result(
 }
 
 ffibox::impl_cvtable! {
-    // SAFETY: libgit2 passes an iterator's `next` the iterator, second, and
-    // frees it once through `free`; both are set.
+    // SAFETY: libgit2 passes an iterator's slots the iterator in the marked
+    // (`@iter`) position, the only `git_config_iterator *` argument; `next`
+    // reaches the state through `enter` and writes `entry` only on success,
+    // `free` releases through `release`, once; both are set, and the base's
+    // `backend` (NULL) and `flags` (0) are values C accepts.
     unsafe impl CVtable<AllIter> for ConfigIterator {}
     base = git_config_iterator::default();
     /// `all_iter_next` / `all_iter_glob_next`.
@@ -4424,8 +4435,15 @@ mod rust_backend {
     }
 
     ffibox::impl_cvtable! {
-        // SAFETY: libgit2 passes each slot its backend, in the position
-        // marked; every slot libgit2 calls is set (`snapshot` and `free` too).
+        // SAFETY: libgit2 passes each slot its backend in the marked (`@cfg`)
+        // position, the only `git_config_backend *` argument; every slot runs
+        // through `impl_cvtable!`'s trampolines (state via `enter`, `free` via
+        // `release`) and keeps sys/config.h's contract (out-parameters written
+        // only on success, entries and iterators handed over); all twelve slots
+        // are set (`snapshot` in the base, to this crate's
+        // `git_config_backend_snapshot`); `version` is
+        // `GIT_CONFIG_BACKEND_VERSION` and `cfg` NULL until `add_backend` sets
+        // it, as C accepts.
         unsafe impl CVtable<State> for ConfigBackendCell {}
         base = git_config_backend {
             snapshot: Some(crate::config_snapshot::ffi::git_config_backend_snapshot),

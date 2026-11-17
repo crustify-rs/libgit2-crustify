@@ -548,8 +548,11 @@ impl ListIter {
 }
 
 ffibox::impl_cvtable! {
-    // SAFETY: libgit2 passes an iterator's `next` the iterator, second, and
-    // frees it once through `free`; `next` and `free` are both set.
+    // SAFETY: libgit2 passes an iterator's slots the iterator in the marked
+    // (`@iter`) position, the only `git_config_iterator *` argument; `next`
+    // reaches the state through `enter` and writes `entry` only on success,
+    // `free` releases through `release`, once; both are set, and the base's
+    // `backend` (NULL) and `flags` (0) are values C accepts.
     unsafe impl CVtable<ListIter> for ConfigIterator {}
     base = git_config_iterator::default();
     /// `config_iterator_next`.
