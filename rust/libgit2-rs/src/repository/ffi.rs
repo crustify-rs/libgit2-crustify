@@ -15,6 +15,9 @@
 //!   `git_repository_free` / `__cleanup` while anything else uses the
 //!   repository, or while a string returned by `git_repository_path`,
 //!   `workdir`, `commondir`, `get_namespace` or `ident` is still in use;
+//! - `__shallow_roots` and `__shallow_roots_write` while anything else
+//!   uses the repository (they refresh its grafts in place, which commit
+//!   parsing reads unlocked, as in C);
 //! - the setters that replace the odb, config, refdb or index
 //!   (`set_odb`, `set_config`, `set_refdb`, `set_index`,
 //!   `__set_objectformat`) while a weak pointer to the old object (from a
@@ -1770,7 +1773,10 @@ pub unsafe extern "C" fn git_repository_state_cleanup(repo_: Option<&GitReposito
 ///
 /// # Safety
 ///
-/// The module's contract; `out` and `out_len` writable.
+/// The module's contract; `out` and `out_len` writable. Not concurrent
+/// with any other use of `repo` (another thread's, or a graft of its
+/// `git_repository_*grafts__weakptr` in use): the call refreshes the
+/// repository's grafts in place, as C does, unlocked.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository__shallow_roots(
     mut out: Out<'_, *mut Oid>,
@@ -1778,7 +1784,9 @@ pub unsafe extern "C" fn git_repository__shallow_roots(
     repo_: Option<&GitRepository>,
 ) -> c_int {
     barrier(|| {
-        with_repo!(repo_, "repo", |r| match head::shallow_roots(r) {
+        // SAFETY: nothing else uses the repository's grafts during the
+        // call (this export's contract), as `shallow_roots` requires.
+        with_repo!(repo_, "repo", |r| match unsafe { head::shallow_roots(r) } {
             Ok((p, n)) => {
                 out.write(p);
                 out_len.write(n);
@@ -1794,7 +1802,9 @@ pub unsafe extern "C" fn git_repository__shallow_roots(
 /// # Safety
 ///
 /// The module's contract; `roots` NULL (rejected) or a valid
-/// `git_oidarray` (`count` ids at `ids`), unwritten during the call.
+/// `git_oidarray` (`count` ids at `ids`), unwritten during the call. Not
+/// concurrent with any other use of `repo`, as
+/// [`git_repository__shallow_roots`] (the call reloads the grafts).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_repository__shallow_roots_write(
     repo_: Option<&GitRepository>,
@@ -1814,7 +1824,10 @@ pub unsafe extern "C" fn git_repository__shallow_roots_write(
                 // allocation, so `<= isize::MAX`.
                 unsafe { core::slice::from_raw_parts(roots.ids, roots.count) }
             };
-            status(head::shallow_roots_write(r, ids))
+            // SAFETY: nothing else uses the repository's grafts during
+            // the call (this export's contract), as `shallow_roots_write`
+            // requires.
+            status(unsafe { head::shallow_roots_write(r, ids) })
         })
     })
 }

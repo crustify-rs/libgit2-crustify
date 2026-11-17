@@ -747,9 +747,20 @@ fn read_repository_format(repo: &GitRepository) -> Result<()> {
 }
 
 /// `load_grafts`.
-pub(crate) fn load_grafts(repo: &GitRepository) -> Result<()> {
+///
+/// # Safety
+///
+/// Nothing else uses the repository's grafts during the call: no other
+/// thread uses the repository (C's rule: a repository is used by one
+/// thread at a time), and no graft of [`find_graft`](crate::commit) /
+/// `git_grafts_get` is in use. Grafts that exist are refreshed in place,
+/// through `&mut` (they are not behind a lock: commit parsing reads them
+/// unlocked).
+pub(crate) unsafe fn load_grafts(repo: &GitRepository) -> Result<()> {
     if !repo.grafts_ptr().is_null() && !repo.shallow_grafts_ptr().is_null() {
-        // SAFETY: the repository's live grafts.
+        // SAFETY: the repository's live grafts (an owner it holds until it
+        // is freed), which nothing else uses during the call (this fn's
+        // contract): what `git_grafts_refresh` requires.
         check(unsafe { crate::grafts::ffi::git_grafts_refresh(repo.grafts_ptr()) })?;
         // SAFETY: as above.
         check(unsafe { crate::grafts::ffi::git_grafts_refresh(repo.shallow_grafts_ptr()) })?;
@@ -771,7 +782,9 @@ pub(crate) fn load_grafts(repo: &GitRepository) -> Result<()> {
     }
 
     path.joinpath_self(b"grafts")?;
-    if let Some(g) = open_or_refresh_grafts(repo.grafts_ptr(), &path, oid_type)? {
+    // SAFETY: the slots' grafts are NULL or the repository's live grafts,
+    // which nothing else uses during the call (this fn's contract).
+    if let Some(g) = unsafe { open_or_refresh_grafts(repo.grafts_ptr(), &path, oid_type) }? {
         repo.init_grafts(g);
     }
     path.clear();
@@ -779,7 +792,9 @@ pub(crate) fn load_grafts(repo: &GitRepository) -> Result<()> {
         repo.gitdir().map(CStr::to_bytes).unwrap_or_default(),
         b"shallow",
     )?;
-    if let Some(g) = open_or_refresh_grafts(repo.shallow_grafts_ptr(), &path, oid_type)? {
+    // SAFETY: as above.
+    if let Some(g) = unsafe { open_or_refresh_grafts(repo.shallow_grafts_ptr(), &path, oid_type) }?
+    {
         repo.init_shallow_grafts(g);
     }
     Ok(())
@@ -799,14 +814,18 @@ fn new_grafts(oid_type: git_oid_t) -> Result<super::GraftsBox> {
 /// `git_grafts_open_or_refresh(&slot, path, oid_type)` over the current
 /// grafts `cur` of a slot: `cur` refreshed (`None`), or, when `cur` is
 /// NULL, new grafts read from `path` for the slot.
-fn open_or_refresh_grafts(
+///
+/// # Safety
+///
+/// `cur` is NULL or live grafts that nothing else uses during the call.
+unsafe fn open_or_refresh_grafts(
     cur: *mut crate::grafts::Grafts,
     path: &GitStr,
     oid_type: git_oid_t,
 ) -> Result<Option<super::GraftsBox>> {
     let mut g = cur;
-    // SAFETY: a local slot holding NULL or the repository's live grafts;
-    // a NUL-terminated path.
+    // SAFETY: a local slot holding NULL or live grafts that nothing else
+    // uses during the call (this fn's contract); a NUL-terminated path.
     check(unsafe {
         crate::grafts::ffi::git_grafts_open_or_refresh(Some(&mut g), (&*cs(path)).into(), oid_type)
     })?;
@@ -919,7 +938,9 @@ fn open_ext_fill(repo: &GitRepository, paths: &mut RepoPaths, flags: u32) -> Res
     repo.set_is_worktree(wt);
 
     read_repository_format(repo)?;
-    load_grafts(repo)?;
+    // SAFETY: `repo` is the repository `open_ext` just allocated, not yet
+    // returned: no other thread has it and no graft of it is in use.
+    unsafe { load_grafts(repo) }?;
 
     if flags & GIT_REPOSITORY_OPEN_BARE != 0 {
         repo.set_is_bare(true);

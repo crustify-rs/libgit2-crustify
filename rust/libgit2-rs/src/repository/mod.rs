@@ -235,7 +235,10 @@ pub struct GitRepository {
 //   `CShared` / `GitCStr` / `GraftsBox`), published with compare-and-swap
 //   and replaced only by the `unsafe` setters, whose contracts keep other
 //   users away; the owned objects are refcounted with atomics or plain
-//   strings, released from any thread;
+//   strings, released from any thread; the grafts the two graft owners
+//   hold are written (refreshed in place) only by the `unsafe`
+//   `open::load_grafts` / `head::shallow_roots*`, whose contracts keep
+//   every other user of the repository away, and are otherwise only read;
 // - `objects`: `GitCache`, `Sync` (its map is behind its rwlock);
 // - `attrcache`, `diff_drivers`, `submodule_cache`: `AtomicPtr`s to C
 //   objects that C creates with compare-and-swap and guards with its own

@@ -225,9 +225,11 @@ fn quick_parse(walk: &git_revwalk, node: NodePtr, data: &[u8], id: &Oid) -> Resu
     commit::parse(data, oid_type, true, &mut sink).map_err(|_| ErrorCode::GENERIC)?;
 
     // Perform necessary grafts
-    // SAFETY: nothing changes the repository's grafts during the parse (C's
-    // rule: they are refreshed only by the repository's own calls), and the
-    // graft is used only within this call.
+    // SAFETY: nothing changes the repository's grafts during the parse:
+    // they are refreshed only by `open::load_grafts` (on a repository not
+    // yet returned) and `git_repository__shallow_roots*`, whose contracts
+    // exclude any concurrent use of the repository; the graft is used only
+    // within this call.
     let graft = unsafe { commit::find_graft(Some(repo), id) };
     let parents: &[Oid] = match graft {
         // SAFETY: a live graft of the unchanged grafts (above), read for

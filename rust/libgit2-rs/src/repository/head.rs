@@ -718,11 +718,20 @@ pub(crate) fn set_orig_head(repo: &GitRepository, id: &Oid) -> Result<()> {
 }
 
 /// `git_repository__shallow_roots`: an array of `git__allocator` memory.
-pub(crate) fn shallow_roots(repo: &GitRepository) -> Result<(*mut Oid, usize)> {
+///
+/// # Safety
+///
+/// As [`open::load_grafts`]: nothing else uses the repository's grafts
+/// during the call (no other thread uses the repository; no graft of it is
+/// in use), as they are refreshed in place.
+pub(crate) unsafe fn shallow_roots(repo: &GitRepository) -> Result<(*mut Oid, usize)> {
     if repo.shallow_grafts_ptr().is_null() {
-        open::load_grafts(repo)?;
+        // SAFETY: this fn's contract, which is `load_grafts`'s.
+        unsafe { open::load_grafts(repo) }?;
     }
-    // SAFETY: the repository's live shallow grafts.
+    // SAFETY: the repository's live shallow grafts (`load_grafts` set them
+    // if they were NULL, or failed), which nothing else uses during the
+    // call (this fn's contract).
     check(unsafe { crate::grafts::ffi::git_grafts_refresh(repo.shallow_grafts_ptr()) })?;
     let (mut out, mut len) = (ptr::null_mut(), 0usize);
     // SAFETY: as above, and local outs.
@@ -737,7 +746,11 @@ pub(crate) fn shallow_roots(repo: &GitRepository) -> Result<(*mut Oid, usize)> {
 }
 
 /// `git_repository__shallow_roots_write`.
-pub(crate) fn shallow_roots_write(repo: &GitRepository, roots: &[Oid]) -> Result<()> {
+///
+/// # Safety
+///
+/// As [`shallow_roots`] (it reloads the grafts).
+pub(crate) unsafe fn shallow_roots_write(repo: &GitRepository, roots: &[Oid]) -> Result<()> {
     use crate::util::filebuf::{Filebuf, GIT_FILEBUF_HASH_SHA1, GIT_FILEBUF_HASH_SHA256};
     let hash_flags = match repo.oid_type() {
         OidType::Sha1 => GIT_FILEBUF_HASH_SHA1,
@@ -762,7 +775,8 @@ pub(crate) fn shallow_roots_write(repo: &GitRepository, roots: &[Oid]) -> Result
     }
     // As C, a failed commit is not reported (it cleans the filebuf up).
     let _ = file.commit();
-    if open::load_grafts(repo).is_err() {
+    // SAFETY: this fn's contract, which is `load_grafts`'s.
+    if unsafe { open::load_grafts(repo) }.is_err() {
         return Err(ErrorCode::GENERIC);
     }
     if roots.is_empty() {

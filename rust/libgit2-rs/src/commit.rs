@@ -661,9 +661,12 @@ fn parents_from_graft(parents: &mut GitArray<Oid>, graft: &GitArray<Oid>) -> Res
 ///
 /// # Safety
 ///
-/// Nothing changes the repository's grafts during the call (C's rule: a
-/// graft refresh runs on the repository's own calls), and the result is
-/// used only while they are unchanged.
+/// Nothing changes the repository's grafts during the call, and the
+/// result is used only while they are unchanged. (They are refreshed only
+/// by `repository::open::load_grafts`, on a repository not yet returned,
+/// and by `git_repository__shallow_roots*` and the grafts exports on
+/// `git_repository_*grafts__weakptr`, whose contracts exclude concurrent
+/// use.)
 pub(crate) unsafe fn find_graft(
     repo: Option<&git_repository>,
     id: &Oid,
