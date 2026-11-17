@@ -29,12 +29,12 @@
 //! (`alloc_entry`): the entry, its name and room for an id, in one
 //! `git__allocator` block, freed with `git_tree_entry_free`.
 
-use crate::util::cabi::Out;
 use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::ptr;
 
 use crate::commit::deps::{self as pend, GitObjectHead, git_repository};
 use crate::commit::{OBJ_ANY, OBJ_BLOB, OBJ_COMMIT, OBJ_INVALID, OBJ_TREE, code, repo_odb};
+use crate::index::IndexPtr;
 use crate::oid::{Oid, OidType, git_oid_t};
 use crate::util::alloc;
 use crate::util::array::GitArray;
@@ -840,37 +840,45 @@ fn left_dir(path: &[u8], dirname: &[u8]) -> bool {
         || (!dirname.is_empty() && at(path, dirname.len()) != b'/')
 }
 
-/// The path of index entry `i`.
+/// The path, id and mode of index entry `i` (`git_index_get_byindex`,
+/// which sorts the entries first), or `None` past the last entry.
 ///
 /// # Safety
 ///
-/// `index` is live and unchanged while the bytes are used.
-unsafe fn index_entry<'a>(index: *mut pend::git_index, i: usize) -> (&'a [u8], Oid, u32) {
-    // SAFETY: a live index (contract).
-    let e = unsafe { crate::index::ffi::git_index_get_byindex(index, i) };
-    // SAFETY: a live entry of it, unchanged meanwhile (contract).
-    let e = unsafe { &*e };
-    // SAFETY: its path is NUL-terminated and lives with the entry.
+/// No reference into the index (from [`IndexPtr::get`] or
+/// [`IndexPtr::get_ref`]) is live during the call, and nothing but the
+/// caller changes or frees the index's entries during `'a`.
+unsafe fn index_entry<'a>(ix: IndexPtr, i: usize) -> Option<(&'a [u8], Oid, u32)> {
+    // SAFETY: no reference into the index is live (this fn's contract);
+    // the shared borrow ends with the statement, before any foreign call.
+    let e = unsafe { ix.sorted() }.entry_at(i)?;
+    // SAFETY: `e` is a live entry of the index (its invariant), which
+    // nothing changes or frees during `'a` (this fn's contract); the
+    // shared borrow covers only the entry's fixed fields.
+    let e = unsafe { &e.as_ref().entry };
+    // SAFETY: as above: an entry's `path` points to its own NUL-terminated
+    // copy of the path, which lives unwritten with the entry for `'a`.
     let path = unsafe { CStr::from_ptr(e.path) };
-    (path.to_bytes(), e.id, e.mode)
+    Some((path.to_bytes(), e.id, e.mode))
 }
 
 /// `find_next_dir`.
 ///
 /// # Safety
 ///
-/// As [`index_entry`].
-unsafe fn find_next_dir(dirname: &[u8], index: *mut pend::git_index, start: usize) -> usize {
-    // SAFETY: a live index.
-    let n = unsafe { crate::index::ffi::git_index_entrycount(index) };
+/// As [`index_entry`], for the call.
+unsafe fn find_next_dir(dirname: &[u8], ix: IndexPtr, start: usize) -> usize {
+    // SAFETY: no reference into the index is live (this fn's contract);
+    // the shared borrow ends with the statement.
+    let n = unsafe { ix.get_ref() }.entries.len();
     let mut i = start;
     while i < n {
-        // SAFETY: `i < n`.
-        let (path, _, _) = unsafe { index_entry(index, i) };
-        if left_dir(path, dirname) {
-            break;
+        // SAFETY: this fn's contract, which is `index_entry`'s; the path is
+        // used only in this iteration, which calls nothing.
+        match unsafe { index_entry(ix, i) } {
+            Some((path, _, _)) if !left_dir(path, dirname) => i += 1,
+            _ => break,
         }
-        i += 1;
     }
     i
 }
@@ -880,47 +888,53 @@ unsafe fn find_next_dir(dirname: &[u8], index: *mut pend::git_index, start: usiz
 ///
 /// # Safety
 ///
-/// `repo` and `index` are live, and the index unchanged during the call.
+/// `repo` is live; no reference into the index is live during the call,
+/// and nothing but this call uses the index meanwhile (the C that the
+/// builder's checks and the odb write run included): the entries' paths
+/// are borrowed across those calls, as C holds `entry->path`.
 unsafe fn write_tree(
     oid: &mut Oid,
     repo: *mut git_repository,
-    index: *mut pend::git_index,
+    ix: IndexPtr,
     dirname: &CStr,
     start: usize,
     shared_buf: &mut GitStr,
 ) -> Result<usize> {
     let dir = dirname.to_bytes();
-    // SAFETY: a live index's `tree` field, read in place.
-    let root: *const pend::git_tree_cache = unsafe { (*index).tree };
-    // SAFETY: the index's tree cache, NULL or live; `dirname` NUL-terminated.
-    let cache = unsafe { crate::tree_cache::ffi::git_tree_cache_get(root, dirname.into()) };
-    if !cache.is_null() {
-        // SAFETY: a live tree cache entry's `entry_count`.
-        let count = unsafe { (*cache).entry_count };
-        // SAFETY: the same entry's `oid`.
-        let cid = unsafe { (*cache).oid };
-        if count >= 0 {
-            *oid = cid;
-            // SAFETY: as above.
-            return Ok(unsafe { find_next_dir(dir, index, start) });
-        }
+    // SAFETY: no reference into the index is live (this fn's contract);
+    // the shared borrow ends with the statement.
+    let root: *const pend::git_tree_cache = unsafe { ix.get_ref() }.tree;
+    // SAFETY: the index's `tree` is NULL or a tree cache in its pool (the
+    // index's invariant), which nothing changes during the call (this fn's
+    // contract).
+    let cache = unsafe { crate::tree_cache::get(root, dir) };
+    // SAFETY: as above: NULL or a node of that tree cache, only read.
+    if let Some(c) = unsafe { cache.as_ref() }
+        && c.entry_count >= 0
+    {
+        *oid = c.oid;
+        // SAFETY: this fn's contract.
+        return Ok(unsafe { find_next_dir(dir, ix, start) });
     }
 
-    // SAFETY: `repo` live.
+    // SAFETY: `repo` live (this fn's contract); no source tree.
     let bld = unsafe { GitTreebuilder::new_raw(repo, ptr::null()) }?;
     let r = (|| -> Result<usize> {
         // SAFETY: the builder made above, ours alone until freed below (no
         // C reaches it).
         let b = unsafe { &mut *bld };
-        // SAFETY: a live index.
-        let entries = unsafe { crate::index::ffi::git_index_entrycount(index) };
+        // SAFETY: as for `root` above.
+        let entries = unsafe { ix.get_ref() }.entries.len();
         let mut i = start;
         // This loop is unfortunate, but necessary. The index doesn't have
         // any directories, so we need to handle that manually, and we need
         // to keep track of the current position.
         while i < entries {
-            // SAFETY: `i < entries`.
-            let (path, id, mode) = unsafe { index_entry(index, i) };
+            // SAFETY: this fn's contract: nothing else changes the index
+            // while `path` is used, across the builder's checks.
+            let Some((path, id, mode)) = (unsafe { index_entry(ix, i) }) else {
+                break;
+            };
             // If we've left our (sub)tree, exit the loop and return.
             if left_dir(path, dir) {
                 break;
@@ -935,9 +949,9 @@ unsafe fn write_tree(
                 let subdir_c = cstring(subdir)?;
                 let mut sub_oid = Oid::default();
                 // Write out the subtree
-                // SAFETY: the caller's contract.
+                // SAFETY: this fn's contract.
                 let written =
-                    unsafe { write_tree(&mut sub_oid, repo, index, &subdir_c, i, shared_buf) }?;
+                    unsafe { write_tree(&mut sub_oid, repo, ix, &subdir_c, i, shared_buf) }?;
                 i = written;
                 // We need to figure out what we want to insert into this
                 // tree. If we're traversing deps/zlib/, then we only want to
@@ -978,80 +992,83 @@ fn cstring(s: &[u8]) -> Result<std::ffi::CString> {
 ///
 /// # Safety
 ///
-/// `index` and `repo` are live, and nothing else uses the index meanwhile.
-unsafe fn write_index(
-    oid: &mut Oid,
-    index: *mut pend::git_index,
-    repo: *mut git_repository,
-) -> Result<()> {
-    // SAFETY: a live index.
-    if unsafe { crate::index::ffi::git_index_has_conflicts(index) } != 0 {
+/// As [`write_tree`].
+unsafe fn write_index(oid: &mut Oid, ix: IndexPtr, repo: *mut git_repository) -> Result<()> {
+    // SAFETY: no reference into the index is live (this fn's contract);
+    // the shared borrow ends with the statement.
+    if unsafe { ix.get_ref() }.has_conflicts() {
         let _ = git_error_set!(
             ErrorClass::INDEX,
             "cannot create a tree from a not fully merged index."
         );
         return Err(ErrorCode::UNMERGED);
     }
-    // SAFETY: a live index: its tree cache is NULL or live.
-    let root: *const pend::git_tree_cache = unsafe { (*index).tree };
-    if !root.is_null() {
-        // SAFETY: a live tree cache entry's `entry_count`.
-        let count = unsafe { (*root).entry_count };
-        // SAFETY: the same entry's `oid`.
-        let cid = unsafe { (*root).oid };
-        if count >= 0 {
-            *oid = cid;
-            return Ok(());
-        }
+    // SAFETY: as above.
+    let root = unsafe { ix.get_ref() }.tree;
+    // SAFETY: NULL or the root of the index's tree cache, in its pool (the
+    // index's invariant), unchanged during the call (this fn's contract).
+    if let Some(r) = unsafe { root.as_ref() }
+        && r.entry_count >= 0
+    {
+        *oid = r.oid;
+        return Ok(());
     }
 
     // The tree cache didn't help us; we'll have to write out a tree. If the
     // index is ignore_case, we must make it case-sensitive for the duration
     // of the tree-write operation.
-    // SAFETY: a live index, not written during the call (`bits` is
-    // atomic).
-    let old_ignore_case = unsafe { (*index).ignore_case() };
+    // SAFETY: as above (`bits` is atomic).
+    let old_ignore_case = unsafe { ix.get_ref() }.ignore_case();
     if old_ignore_case {
-        // SAFETY: a live index.
-        unsafe { crate::index::ffi::git_index__set_ignore_case(index, false) };
+        // SAFETY: no reference into the index is live (this fn's contract),
+        // and `set_ignore_case` calls no foreign code: the exclusive borrow
+        // ends with the statement.
+        unsafe { ix.get() }.set_ignore_case(false);
     }
     let mut shared_buf = GitStr::new();
-    // SAFETY: the caller's contract.
-    let ret = unsafe { write_tree(oid, repo, index, c"", 0, &mut shared_buf) };
+    // SAFETY: this fn's contract.
+    let ret = unsafe { write_tree(oid, repo, ix, c"", 0, &mut shared_buf) };
     drop(shared_buf);
-    if old_ignore_case {
-        // SAFETY: as above.
-        unsafe { crate::index::ffi::git_index__set_ignore_case(index, true) };
+    {
+        // SAFETY: as for `set_ignore_case` above: no foreign call in this
+        // block.
+        let index = unsafe { ix.get() };
+        if old_ignore_case {
+            index.set_ignore_case(true);
+        }
+        index.tree = ptr::null_mut();
     }
-    // SAFETY: the live index's `tree` field.
-    let tree_field = unsafe { &raw mut (*index).tree };
-    // SAFETY: a writable pointer field, not otherwise used meanwhile.
-    unsafe { tree_field.write(ptr::null_mut()) };
     ret?;
-
-    // SAFETY: the live index's tree pool, a `git_pool` by value.
-    let pool = unsafe { &raw mut (*index).tree_pool };
-    // SAFETY: not otherwise used meanwhile (its cache, which pointed into
-    // it, was just dropped).
-    unsafe { (*pool).clear() };
+    // (the cache, which pointed into the pool, was just dropped)
+    // SAFETY: as above.
+    unsafe { ix.get() }.tree_pool.clear();
 
     let mut tree = ptr::null_mut();
     // SAFETY: `repo` live; `tree` writable.
     ErrorCode::check(unsafe { pend::git_tree_lookup(&raw mut tree, repo, Some(oid)) })?;
-    // Read the tree cache into the index
-    // SAFETY: the live index's `oid_type`.
-    let oid_type: git_oid_t = unsafe { (*index).oid_type };
-    // SAFETY: the live index's `tree` field (aligned, writable), which
-    // nothing references meanwhile.
-    let tree_out = unsafe { Out::from_ptr(tree_field) };
-    // SAFETY: the tree just looked up; the index's `tree_pool` field
-    // (`pool`), not otherwise used meanwhile.
-    let ret = unsafe {
-        crate::tree_cache::ffi::git_tree_cache_read_tree(tree_out, tree.cast(), oid_type, pool)
+    // Read the tree cache into the index: into its pool, which is lent out
+    // while the tree lookups (C) run, as `git_index_read_tree` does.
+    let (oid_type, mut pool) = {
+        // SAFETY: as above.
+        let index = unsafe { ix.get() };
+        (index.oid_type, core::mem::take(&mut index.tree_pool))
     };
-    // SAFETY: freed once.
+    // SAFETY: the tree just looked up, live until it is freed below, after
+    // the last use of `src` and `root`.
+    let (src, root) = unsafe { crate::index::foreign::CTrees::borrow(tree.cast_const().cast()) };
+    let r = crate::tree_cache::read_tree(&src, &root, oid_type, &mut pool);
+    drop((src, root));
+    {
+        // SAFETY: as above.
+        let index = unsafe { ix.get() };
+        index.tree_pool = pool;
+        if let Ok(t) = r {
+            index.tree = t;
+        }
+    }
+    // SAFETY: the tree looked up above, freed once.
     unsafe { pend::git_tree_free(tree) };
-    ErrorCode::check_zero(ret)
+    r.map(|_| ())
 }
 
 // ---------------------------------------------------------------------------
@@ -1852,24 +1869,26 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `oid` writable; `index` and `repo` NULL or live, the index used by
-    /// nothing else meanwhile.
+    /// `oid` NULL or writable; `index` and `repo` NULL or live, the index
+    /// used by nothing else during the call (C called back included), and
+    /// no reference into it live.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_tree__write_index(
-        oid: *mut Oid,
-        index: *mut pend::git_index,
+        mut oid: Out<'_, Oid>,
+        index: Option<IndexPtr>,
         repo: *mut git_repository,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!oid.is_null(), "oid", -1);
-            git_assert_arg!(!index.is_null(), "index", -1);
+            let ix = git_arg!(index, "index", -1);
             git_assert_arg!(!repo.is_null(), "repo", -1);
             let mut out = Oid::default();
-            // SAFETY: the caller's contract.
-            let r = unsafe { write_index(&mut out, index, repo) };
+            // SAFETY: `repo` is live, and nothing else uses the index during
+            // the call (this export's contract); this export holds no
+            // reference into it.
+            let r = unsafe { write_index(&mut out, ix, repo) };
             if r.is_ok() || out != Oid::default() {
-                // SAFETY: writable (contract).
-                unsafe { oid.write(out) };
+                oid.write(out);
             }
             code(r)
         })

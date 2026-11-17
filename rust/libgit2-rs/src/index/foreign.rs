@@ -15,6 +15,7 @@ use core::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use core::marker::PhantomData;
 use core::ptr::{self, NonNull};
 
+use super::IndexPtr;
 use crate::git_error_set;
 use crate::oid::Oid;
 use crate::repository::GitRepository;
@@ -413,12 +414,14 @@ pub fn tree_walk_post(
 ///
 /// # Safety
 ///
-/// `index` is a live index that no reference covers during the call.
-pub unsafe fn tree_write_index(index: *mut super::GitIndex, repo: Repo) -> Result<Oid> {
+/// No reference into the index is live during the call, and nothing else
+/// uses the index meanwhile (the C that the tree write calls included:
+/// it borrows the entries' paths across those calls, as C does).
+pub unsafe fn tree_write_index(index: IndexPtr, repo: Repo) -> Result<Oid> {
     let mut id = Oid::default();
-    // SAFETY: `id` writable; the caller's contract for `index`; `repo`
-    // live.
-    let r = unsafe { t::git_tree__write_index(&raw mut id, index, repo.0.as_ptr()) };
+    // SAFETY: `id` writable; `repo` live (`Repo`); the index is live
+    // (`IndexPtr`), and the rest is this fn's contract.
+    let r = unsafe { t::git_tree__write_index(Out::from(&mut id), Some(index), repo.0.as_ptr()) };
     ErrorCode::check(r).map(|_| id)
 }
 

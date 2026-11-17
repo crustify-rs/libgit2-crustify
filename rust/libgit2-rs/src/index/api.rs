@@ -613,7 +613,7 @@ impl<'r> Index<'r> {
             )));
         };
         // SAFETY: the lock is held and no reference into the index is live.
-        unsafe { super::foreign::tree_write_index(ix.as_ptr(), repo) }.map_err(err)
+        unsafe { super::foreign::tree_write_index(ix, repo) }.map_err(err)
     }
 
     /// [`write_tree`](Self::write_tree) into `repo`'s object database
@@ -625,7 +625,7 @@ impl<'r> Index<'r> {
         let repo = unsafe { super::foreign::Repo::new(repo.raw_ptr().cast()) }
             .ok_or_else(|| err(crate::util::errors::assert_arg_failed("repo")))?;
         // SAFETY: the lock is held and no reference into the index is live.
-        unsafe { super::foreign::tree_write_index(ix.as_ptr(), repo) }.map_err(err)
+        unsafe { super::foreign::tree_write_index(ix, repo) }.map_err(err)
     }
 
     /// The number of entries (`git_index_entrycount`).

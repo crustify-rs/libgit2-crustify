@@ -3,6 +3,7 @@
 //! Miri).
 
 use super::*;
+use crate::util::cabi::Out;
 use crate::util::test_support;
 
 fn sha1() -> git_oid_t {
