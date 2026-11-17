@@ -2055,20 +2055,26 @@ pub mod ffi {
     /// `entry_out` NULL or writable; `bld` NULL or a live builder that
     /// nothing else uses during the call (neither another thread nor the C
     /// that the entry checks run: path rules, object lookups); `filename`
-    /// NULL or NUL-terminated; `id` NULL or readable.
+    /// NULL or NUL-terminated; `id` NULL or a readable id, which may be
+    /// the id of the builder's own entry for `filename` (the call
+    /// overwrites that entry's id, so `id` stays a raw pointer and is
+    /// copied before the update).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_treebuilder_insert(
         mut entry_out: Out<'_, *const GitTreeEntry>,
         bld: Option<&mut GitTreebuilder>,
         filename: CStrArg<'_>,
-        id: Option<&Oid>,
+        id: *const Oid,
         filemode: c_uint,
     ) -> c_int {
         barrier(|| {
             let b = git_arg!(bld, "bld", -1);
-            let id = git_arg!(id, "id", -1);
+            git_assert_arg!(!id.is_null(), "id", -1);
+            // SAFETY: `id` is non-null and a readable, aligned id (this
+            // export's contract); it is read once here, before the update
+            // that may overwrite it, and no reference to it is kept.
+            let id = unsafe { id.read() };
             let filename = git_arg!(filename.get(), "filename", -1);
-            let id = *id;
             // SAFETY: the builder's repository is live (`git_treebuilder_new`
             // 's contract: it outlives the builder).
             let r = unsafe { b.insert(filename, &id, filemode) };

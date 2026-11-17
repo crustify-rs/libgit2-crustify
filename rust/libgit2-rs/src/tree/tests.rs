@@ -307,6 +307,39 @@ fn builder_serialize_and_filter() {
     }
 }
 
+/// `git_treebuilder_insert` with the id of the builder's own entry for the
+/// name (re-adding an entry with a new mode): the call overwrites that id,
+/// so `id` must not be a reference argument (a protected `&Oid` written
+/// during the call is undefined behaviour). Needs the C path checks.
+#[test]
+#[cfg(all(feature = "link-c", not(miri)))]
+fn builder_insert_own_entry_id() {
+    let _g = test_support::init();
+    let mut b = GitTreebuilder::empty(ptr::null_mut());
+    let id = Oid::from_bytes(&[7; 20], OidType::Sha1).unwrap();
+    // SAFETY: a NUL-terminated name; no validation, so no repository is used.
+    unsafe { b.append_entry(c"m".as_ptr(), &id, FILEMODE_COMMIT, false) }.unwrap();
+    let p = &raw mut b;
+    // SAFETY: a live builder used by nothing else; `own` is the id of its
+    // entry "m", live until the entry is replaced or freed.
+    unsafe {
+        let e = ffi::git_treebuilder_get(p.as_ref(), c"m".into());
+        assert!(!e.is_null());
+        let own = &raw const (*e).oid;
+        assert_eq!(
+            ffi::git_treebuilder_insert(Out::null(), p.as_mut(), c"m".into(), own, FILEMODE_COMMIT),
+            0
+        );
+        // Another name with the same entry's id.
+        assert_eq!(
+            ffi::git_treebuilder_insert(Out::null(), p.as_mut(), c"n".into(), own, FILEMODE_COMMIT),
+            0
+        );
+        assert_eq!(ffi::git_treebuilder_entrycount(p.as_ref()), 2);
+        assert_eq!((*e).oid, id);
+    }
+}
+
 #[test]
 fn walks() {
     let _g = test_support::init();
