@@ -212,10 +212,13 @@ pub unsafe extern "C" fn git__percent_decode(
     input: *const c_char,
 ) -> c_int {
     barrier(|| {
+        // C asserts both before it reads `input`.
+        crate::git_assert_arg!(!decoded_out.is_null(), "decoded_out", -1);
+        crate::git_assert_arg!(!input.is_null(), "input", -1);
         // SAFETY: `str_args`' requirements are this export's contract.
-        let (out, [i]) = unsafe { str_args(decoded_out, [input]) };
-        let out = crate::git_arg!(out, "decoded_out", -1);
-        let i = crate::git_arg!(i, "input", -1);
+        let (Some(out), [Some(i)]) = (unsafe { str_args(decoded_out, [input]) }) else {
+            return -1; // Not reached: both are non-null.
+        };
         status(percent_decode(out, &i))
     })
 }
@@ -234,10 +237,13 @@ pub unsafe extern "C" fn git_fs_path_fromurl(
     file_url: *const c_char,
 ) -> c_int {
     barrier(|| {
+        // C asserts both before it reads `file_url`.
+        crate::git_assert_arg!(!local_path_out.is_null(), "local_path_out", -1);
+        crate::git_assert_arg!(!file_url.is_null(), "file_url", -1);
         // SAFETY: `str_args`' requirements are this export's contract.
-        let (out, [u]) = unsafe { str_args(local_path_out, [file_url]) };
-        let out = crate::git_arg!(out, "local_path_out", -1);
-        let u = crate::git_arg!(u, "file_url", -1);
+        let (Some(out), [Some(u)]) = (unsafe { str_args(local_path_out, [file_url]) }) else {
+            return -1; // Not reached: both are non-null.
+        };
         status(fromurl(out, &u))
     })
 }
@@ -550,10 +556,13 @@ pub unsafe extern "C" fn git_fs_path_join_unrooted(
     mut root_at: Out<'_, isize>,
 ) -> c_int {
     barrier(|| {
+        // C asserts both before it reads `path` or `base`.
+        crate::git_assert_arg!(!path_out.is_null(), "path_out", -1);
+        crate::git_assert_arg!(!path.is_null(), "path", -1);
         // SAFETY: `str_args`' requirements are this export's contract.
-        let (out, [p, b]) = unsafe { str_args(path_out, [path, base]) };
-        let out = crate::git_arg!(out, "path_out", -1);
-        let p = crate::git_arg!(p, "path", -1);
+        let (Some(out), [Some(p), b]) = (unsafe { str_args(path_out, [path, base]) }) else {
+            return -1; // Not reached: both are non-null.
+        };
         match join_unrooted(out, &p, b.as_deref()) {
             Ok(r) => {
                 root_at.write(r);
@@ -591,10 +600,14 @@ pub unsafe extern "C" fn git_fs_path_prettify(
     base: *const c_char,
 ) -> c_int {
     barrier(|| {
+        // C asserts both before it reads `path` or `base`.
+        crate::git_assert_arg!(!path_out.is_null(), "path_out", -1);
+        crate::git_assert_arg!(!path.is_null(), "path", -1);
         // SAFETY: `str_args`' requirements are this export's contract.
-        let (out, [p, b]) = unsafe { str_args(path_out, [path, base]) };
-        let out = crate::git_arg!(out, "path_out", -1);
-        let p = to_cstring(&crate::git_arg!(p, "path", -1));
+        let (Some(out), [Some(p), b]) = (unsafe { str_args(path_out, [path, base]) }) else {
+            return -1; // Not reached: both are non-null.
+        };
+        let p = to_cstring(&p);
         status(prettify(out, &p, b.as_deref()))
     })
 }
@@ -611,10 +624,14 @@ pub unsafe extern "C" fn git_fs_path_prettify_dir(
     base: *const c_char,
 ) -> c_int {
     barrier(|| {
+        // C asserts both before it reads `path` or `base`.
+        crate::git_assert_arg!(!path_out.is_null(), "path_out", -1);
+        crate::git_assert_arg!(!path.is_null(), "path", -1);
         // SAFETY: `str_args`' requirements are this export's contract.
-        let (out, [p, b]) = unsafe { str_args(path_out, [path, base]) };
-        let out = crate::git_arg!(out, "path_out", -1);
-        let p = to_cstring(&crate::git_arg!(p, "path", -1));
+        let (Some(out), [Some(p), b]) = (unsafe { str_args(path_out, [path, base]) }) else {
+            return -1; // Not reached: both are non-null.
+        };
+        let p = to_cstring(&p);
         status(prettify_dir(out, &p, b.as_deref()))
     })
 }

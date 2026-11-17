@@ -381,6 +381,10 @@ mod exports {
         // Not the C's result (C measures `strlen(base)` after writing the
         // join, root 9): the base is copied first (rust/DIVERGENCES.md).
         assert_eq!((r, b.as_bytes(), root), (0, &b"/base/x/y"[..], 5));
+        // The join reallocated `b`: the old `base` dangles. C asserts `path`
+        // before it reads `base`, and so does the export, but pass a live
+        // one.
+        let base = b.as_ptr();
         // SAFETY: NULL path: the assertion.
         let r = unsafe {
             git_fs_path_join_unrooted(&raw mut b, core::ptr::null(), base, Out::from(&mut root))
