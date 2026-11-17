@@ -8,8 +8,9 @@
 //! Character classes (`[:alpha:]`, …) are the C locale's, restricted to
 //! ASCII (the C's `ISASCII(c) && isalpha(c)`, …).
 
+use crate::util::cabi::CStrArg;
 use core::cell::Cell;
-use core::ffi::{CStr, c_char, c_int, c_uint};
+use core::ffi::{CStr, c_int, c_uint};
 use core::marker::PhantomData;
 
 /// `WM_CASEFOLD`
@@ -107,11 +108,16 @@ struct CStrLazy<'a> {
     _s: PhantomData<&'a [u8]>,
 }
 
-impl CStrLazy<'_> {
-    /// # Safety
-    ///
-    /// `p` is a NUL-terminated string, readable and unwritten for `'a`.
-    unsafe fn new(p: *const c_char) -> Self {
+impl<'a> CStrLazy<'a> {
+    /// The string `s` (C's NULL, which C dereferences, reads as `""`).
+    fn new(s: CStrArg<'a>) -> Self {
+        // `CStrArg`'s invariant: a non-null pointer is a NUL-terminated
+        // string, readable and unwritten for `'a`, which is this type's.
+        let p = if s.is_null() {
+            c"".as_ptr()
+        } else {
+            s.as_ptr()
+        };
         CStrLazy {
             p: p.cast(),
             known: Cell::new(0),
@@ -124,12 +130,9 @@ impl CStrLazy<'_> {
     #[inline(always)]
     fn read(&self, j: usize) -> u8 {
         // SAFETY: `j <=` the NUL's index (every byte before `j` is
-        // non-NUL: `known`), so `p + j` lies in the string `new` vouches
-        // for, and the read is of a byte of it.
-        #[allow(clippy::multiple_unsafe_ops_per_block)]
-        unsafe {
-            self.p.add(j).read()
-        }
+        // non-NUL: `known`), so `p + j` lies in the string `new` got, which
+        // is readable and unwritten for `'a`.
+        unsafe { self.p.wrapping_add(j).read() }
     }
 }
 
@@ -138,13 +141,14 @@ impl CStrLazy<'_> {
     fn all(&self) -> &[u8] {
         let mut n = self.nul.get();
         if n == usize::MAX {
-            // SAFETY: `p` is NUL-terminated (`new`'s contract).
+            // SAFETY: `p` is NUL-terminated and unwritten for `'a` (`new`'s
+            // `CStrArg`).
             n = unsafe { CStr::from_ptr(self.p.cast()) }.count_bytes();
             self.nul.set(n);
             self.known.set(n);
         }
         // SAFETY: the `n` bytes before the NUL, readable and unwritten for
-        // `'a` (`new`'s contract), which outlives `&self`.
+        // `'a` (`new`'s `CStrArg`), which outlives `&self`.
         unsafe { core::slice::from_raw_parts(self.p, n) }
     }
 }
@@ -531,15 +535,13 @@ pub mod ffi {
     /// the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn wildmatch(
-        pattern: *const c_char,
-        text: *const c_char,
+        pattern: CStrArg<'_>,
+        text: CStrArg<'_>,
         flags: c_uint,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
-            let p = unsafe { CStrLazy::new(pattern) };
-            // SAFETY: the caller's contract.
-            let t = unsafe { CStrLazy::new(text) };
+            let p = CStrLazy::new(pattern);
+            let t = CStrLazy::new(text);
             dowild(&p, 0, &t, 0, flags)
         })
     }

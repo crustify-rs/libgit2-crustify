@@ -221,27 +221,28 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `*r` is NULL or a pattern from `git_regexp_compile` that is not in
-    /// use.
+    /// `r` is a valid `git_regexp` that nothing else accesses during the
+    /// call; `*r` is NULL or a pattern from `git_regexp_compile` that is
+    /// not in use.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_regexp_dispose(r: *mut GitRegexp) {
+    pub unsafe extern "C" fn git_regexp_dispose(r: Option<&mut GitRegexp>) {
         barrier(|| {
-            // SAFETY: `r` is valid (the caller's contract).
-            let code = unsafe { r.replace(core::ptr::null_mut()) };
-            // SAFETY: `code` is NULL or an owned compiled pattern, freed
-            // once: C's copy is cleared.
+            let code = core::mem::replace(crate::git_arg!(r, "r", ()), core::ptr::null_mut());
+            // SAFETY: `code` is NULL or an owned compiled pattern not in use
+            // (this export's contract), freed once: C's copy is cleared.
             drop(unsafe { CodeBox::from_c(code) });
         })
     }
 
+    /// The pattern `code` (C's `*r`) for the call.
+    ///
     /// # Safety
     ///
-    /// `*r` is NULL or a live pattern from `git_regexp_compile`, not freed
-    /// during `'a`.
-    unsafe fn code<'a>(r: *const GitRegexp) -> Option<CodeRef<'a>> {
-        // SAFETY: `r` is a readable `git_regexp` (the caller's contract).
-        let code = unsafe { r.read() };
-        // SAFETY: the caller's contract on the pattern.
+    /// `code` is NULL or a live pattern from `git_regexp_compile`, not
+    /// freed during `'a`.
+    unsafe fn code<'a>(code: GitRegexp) -> Option<CodeRef<'a>> {
+        // SAFETY: NULL or a live compiled pattern for `'a` (this fn's
+        // contract), as `code_ref` requires.
         unsafe { pcre2::code_ref(code) }
     }
 
@@ -250,11 +251,13 @@ pub mod ffi {
     /// # Safety
     ///
     /// `r` points to a `git_regexp` that is NULL or compiled, and not
-    /// disposed during the call; `string` is NUL-terminated.
+    /// written or disposed during the call; `string` is NUL-terminated.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git_regexp_match(r: *const GitRegexp, string: CStrArg<'_>) -> c_int {
+    pub unsafe extern "C" fn git_regexp_match(r: Option<&GitRegexp>, string: CStrArg<'_>) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
+            let r = *crate::git_arg!(r, "r", -1);
+            // SAFETY: `*r` is NULL or compiled, not disposed during the call
+            // (this export's contract).
             let code = unsafe { code(r) };
             let s = string.to_bytes();
             status(match_code(code, s))
@@ -266,23 +269,28 @@ pub mod ffi {
     /// # Safety
     ///
     /// As `git_regexp_match`; `matches` is writable for `nmatches`
-    /// entries (or `nmatches` is 0).
+    /// entries (or `nmatches` is 0), which nothing else accesses during the
+    /// call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_regexp_search(
-        r: *const GitRegexp,
+        r: Option<&GitRegexp>,
         string: CStrArg<'_>,
         nmatches: usize,
         matches: *mut RegMatch,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: the caller's contract.
+            let r = *crate::git_arg!(r, "r", -1);
+            // SAFETY: as in `git_regexp_match` (the same contract).
             let code = unsafe { code(r) };
             let s = string.to_bytes();
             let m: &mut [MaybeUninit<RegMatch>] = if nmatches == 0 || matches.is_null() {
                 &mut []
             } else {
-                // SAFETY: the caller passes `nmatches` writable entries
-                // (maybe uninitialized: they are only written).
+                // SAFETY: `matches` is non-null (checked), aligned and
+                // writable for `nmatches` entries, which nothing else
+                // accesses during the call (this export's contract); they
+                // may be uninitialized, which `MaybeUninit` admits (they are
+                // only written).
                 unsafe {
                     core::slice::from_raw_parts_mut(
                         matches.cast::<MaybeUninit<RegMatch>>(),
