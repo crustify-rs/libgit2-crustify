@@ -3,7 +3,7 @@
 //! and pathspec (C that stays, `sys::{revparse, diff, pathspec}`), as
 //! small owners and safe functions over them.
 
-use crate::util::cabi::CStrArg;
+use crate::util::cabi::{CStrArg, Out};
 use core::ffi::{CStr, c_int, c_uint};
 use core::ptr::{self, NonNull};
 
@@ -309,31 +309,35 @@ impl Drop for Commit {
 impl Commit {
     fn lookup(repo: Repo, id: &Oid) -> Option<Commit> {
         let mut out = ptr::null_mut();
-        // SAFETY: `out` writable; `repo` live; `id` readable.
+        // SAFETY: `out` writable; `repo` NULL or live; `id` readable.
         if unsafe { p::git_commit_lookup(&raw mut out, repo.0, Some(id)) } != 0 {
             return None;
         }
         NonNull::new(out).map(Commit)
     }
 
+    /// The commit module's handle.
+    fn get(&self) -> crate::commit::CommitRef<'_> {
+        // SAFETY: a live commit of the object table that this value holds a
+        // reference to, not freed while it is borrowed.
+        unsafe { crate::commit::CommitRef::from_ptr(self.0) }
+    }
+
     fn tree(&self) -> Option<Tree> {
         let mut out = ptr::null_mut();
-        // SAFETY: a live commit; `out` writable.
-        if unsafe { crate::commit::ffi::git_commit_tree(&raw mut out, self.0.as_ptr()) } != 0 {
+        if crate::commit::ffi::commit_tree(Out::from(&mut out), self.get()) != 0 {
             return None;
         }
         NonNull::new(out).map(Tree)
     }
 
     fn parentcount(&self) -> c_uint {
-        // SAFETY: a live commit.
-        unsafe { crate::commit::ffi::git_commit_parentcount(self.0.as_ptr()) }
+        self.get().parent_ids().len() as c_uint
     }
 
     fn parent(&self, n: c_uint) -> Option<Commit> {
         let mut out = ptr::null_mut();
-        // SAFETY: a live commit; `out` writable.
-        if unsafe { crate::commit::ffi::git_commit_parent(&raw mut out, self.0.as_ptr(), n) } != 0 {
+        if crate::commit::ffi::commit_parent(Out::from(&mut out), self.get(), n) != 0 {
             return None;
         }
         NonNull::new(out).map(Commit)

@@ -1050,7 +1050,9 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_signature_free(sig: *mut GitSignature) {
         barrier(|| {
-            // SAFETY: the caller's contract.
+            // SAFETY: NULL or a `git__allocator` signature block whose
+            // strings are NULL or `git__allocator` strings, unused after
+            // (this export's contract): `free_raw`'s.
             unsafe { free_raw(sig) }
         })
     }

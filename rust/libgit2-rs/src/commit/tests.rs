@@ -2,6 +2,7 @@
 //! signature extraction and the commit buffer: pure Rust (run under Miri).
 
 use super::*;
+use crate::util::cabi::Out;
 use crate::util::test_support;
 
 const T: &str = "1810dff58d8a660512d4832e740f692884338ccd";
@@ -494,37 +495,36 @@ fn c_abi_parse_and_accessors() {
             ffi::git_commit__parse_raw(c.0.cast(), data.as_ptr().cast(), data.len(), sha1()),
             0
         );
-        assert_eq!(ffi::git_commit_parentcount(c.0), 1);
-        assert_eq!(ffi::git_commit_time(c.0), 3);
-        assert_eq!(ffi::git_commit_time_offset(c.0), -90);
+        // The commit just parsed, ours, live until `c` drops.
+        let r = CommitRef::from_raw(c.0);
+        assert_eq!(ffi::git_commit_parentcount(r), 1);
+        assert_eq!(ffi::git_commit_time(r), 3);
+        assert_eq!(ffi::git_commit_time_offset(r), -90);
         assert_eq!(
-            *ffi::git_commit_tree_id(c.0),
+            *ffi::git_commit_tree_id(r),
             Oid::parse_hex(T.as_bytes(), OidType::Sha1).unwrap()
         );
-        assert!(ffi::git_commit_parent_id(c.0, 1).is_null());
+        assert!(ffi::git_commit_parent_id(r, 1).is_null());
         assert_eq!(
-            CStr::from_ptr(ffi::git_commit_message(c.0)).to_bytes(),
+            CStr::from_ptr(ffi::git_commit_message(r)).to_bytes(),
             b"Sum\nmary\n\nBody\n"
         );
-        let s = ffi::git_commit_summary(c.0);
+        let s = ffi::git_commit_summary(r);
         assert_eq!(CStr::from_ptr(s).to_bytes(), b"Sum mary");
-        assert_eq!(ffi::git_commit_summary(c.0), s, "kept in the commit");
-        assert_eq!(
-            CStr::from_ptr(ffi::git_commit_body(c.0)).to_bytes(),
-            b"Body"
-        );
+        assert_eq!(ffi::git_commit_summary(r), s, "kept in the commit");
+        assert_eq!(CStr::from_ptr(ffi::git_commit_body(r)).to_bytes(), b"Body");
         let mut out = GitStr::new();
         assert_eq!(
-            ffi::git_commit__header_field(Some(&mut out), c.0, c"author".as_ptr()),
+            ffi::git_commit__header_field(Some(&mut out), r, c"author".into()),
             0
         );
         assert_eq!(out.as_bytes(), b"A <a@b> 1 +0000");
-        assert!(ffi::git_commit_author(core::ptr::null()).is_null());
+        assert!(ffi::git_commit_author(None).is_null());
         assert_eq!(
             errors::last_message().unwrap(),
             b"invalid argument: 'commit'"
         );
-        assert_eq!(ffi::git_commit_time(core::ptr::null()), i64::MIN);
+        assert_eq!(ffi::git_commit_time(None), i64::MIN);
     }
     // A failed parse leaves a commit that frees cleanly.
     let mut c = Fresh::new();
@@ -544,17 +544,14 @@ fn options_init() {
     let mut o = core::mem::MaybeUninit::<GitCommitCreateOptions>::uninit();
     // SAFETY: writable.
     unsafe {
-        assert_eq!(ffi::git_commit_create_options_init(o.as_mut_ptr(), 7), 0);
+        assert_eq!(ffi::git_commit_create_options_init(Out::from(&mut o), 7), 0);
         let o = o.assume_init();
         assert_eq!(
             (o.version, o.flags.into_inner(), o.extra_headers_len),
             (7, 0, 0)
         );
         assert!(o.sign.is_none());
-        assert_eq!(
-            ffi::git_commit_create_ext_options_init(core::ptr::null_mut(), 1),
-            -1
-        );
+        assert_eq!(ffi::git_commit_create_ext_options_init(Out::null(), 1), -1);
     }
 }
 
@@ -567,8 +564,8 @@ fn commitarray_dispose_empty() {
     };
     // SAFETY: an empty array.
     unsafe {
-        ffi::git_commitarray_dispose(&raw mut a);
-        ffi::git_commitarray_dispose(core::ptr::null_mut());
+        ffi::git_commitarray_dispose(Some(&mut a));
+        ffi::git_commitarray_dispose(None);
     }
     assert!(a.commits.is_null());
 }
@@ -649,4 +646,58 @@ fn header_field_line_walk_matches_slices() {
             assert_eq!(a.as_bytes(), b.as_bytes(), "{h:?} {f:?}");
         }
     }
+}
+
+/// NULL arguments that the C asserts on (or crashes on) are invalid
+/// arguments, with nothing read through them.
+#[test]
+fn c_abi_null_arguments() {
+    let _g = test_support::init();
+    let tree = Oid::parse_hex(T.as_bytes(), OidType::Sha1).unwrap();
+    let mut id = Oid::default();
+    let mut sig = GitStr::new();
+    let mut signed = GitStr::new();
+    // SAFETY: NULL repositories and commits; writable locals; strings.
+    unsafe {
+        // Strict validation (the default) asks the NULL repository's odb.
+        let r = ffi::git_commit_create_from_ids(
+            Out::from(&mut id),
+            None,
+            core::ptr::null(),
+            None,
+            None,
+            core::ptr::null(),
+            c"m".into(),
+            &raw const tree,
+            0,
+            core::ptr::null(),
+        );
+        assert_eq!(r, -1);
+        assert_eq!(errors::last_message().unwrap(), b"invalid argument: 'repo'");
+        let r = ffi::git_commit__extract_signature(
+            &raw mut sig,
+            &raw mut signed,
+            None,
+            Some(&tree),
+            CStrArg::NULL,
+        );
+        assert_eq!(r, -1);
+        assert_eq!(errors::last_message().unwrap(), b"invalid argument: 'repo'");
+        let mut out = core::ptr::null_mut();
+        let r = ffi::git_commit_committer_with_mailmap(&raw mut out, None, core::ptr::null());
+        assert_eq!(r, -1);
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"invalid argument: 'commit'"
+        );
+        let r = ffi::git_commit_tree(Out::null(), None);
+        assert_eq!(r, -1);
+        let r = ffi::git_commitbuilder_add_header(None, c"f".into(), c"v".into());
+        assert_eq!(r, -1);
+        assert_eq!(
+            errors::last_message().unwrap(),
+            b"invalid argument: 'builder'"
+        );
+    }
+    assert_eq!(id, Oid::default());
 }

@@ -386,10 +386,17 @@ impl CommitBox {
         NonNull::new(out).map(CommitBox).ok_or(ErrorCode::GENERIC)
     }
 
+    /// The commit as the commit module's handle.
+    fn commit(&self) -> crate::commit::CommitRef<'_> {
+        // SAFETY: a live commit of the object table that this value holds a
+        // reference to, not freed while it is borrowed.
+        unsafe { crate::commit::CommitRef::from_ptr(self.0) }
+    }
+
     /// `git_commit_parentcount`.
     pub fn parentcount(&self) -> c_uint {
         // SAFETY: a live commit.
-        unsafe { crate::commit::ffi::git_commit_parentcount(self.0.as_ptr()) }
+        unsafe { crate::commit::ffi::git_commit_parentcount(Some(self.commit())) }
     }
 
     /// `git_commit_summary`'s value, computed here: C's caches it in the
@@ -410,7 +417,7 @@ impl CommitBox {
     /// `git_commit_committer`, alive as long as the commit.
     pub fn committer(&self) -> *const git_signature {
         // SAFETY: a live commit.
-        unsafe { crate::commit::ffi::git_commit_committer(self.0.as_ptr()) }
+        unsafe { crate::commit::ffi::git_commit_committer(Some(self.commit())) }
     }
 }
 
