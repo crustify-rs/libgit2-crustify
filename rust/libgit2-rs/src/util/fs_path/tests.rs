@@ -498,7 +498,7 @@ mod exports {
         let _g = test_support::init();
         let mut it = GitFsPathDiriter::new();
         // SAFETY: an initialized (GIT_FS_PATH_DIRITER_INIT) iterator.
-        assert_eq!(unsafe { git_fs_path_diriter_next(&raw mut it) }, -1);
+        assert_eq!(unsafe { git_fs_path_diriter_next(Some(&mut it)) }, -1);
         assert_eq!(
             errors::last_message().unwrap(),
             b"unrecoverable internal error: 'diriter->dir'"
@@ -506,11 +506,13 @@ mod exports {
         let (mut out, mut len) = (core::ptr::null(), 0usize);
         assert_eq!(
             // SAFETY: as above, with writable outputs.
-            unsafe { git_fs_path_diriter_filename(&raw mut out, &raw mut len, &raw mut it) },
+            unsafe {
+                git_fs_path_diriter_filename(Out::from(&mut out), Out::from(&mut len), Some(&it))
+            },
             -1
         );
         // SAFETY: as above.
-        unsafe { git_fs_path_diriter_free(&raw mut it) };
+        unsafe { git_fs_path_diriter_free(Some(&mut it)) };
         // An empty path fails cleanly (C dereferences NULL).
         assert_eq!(it.init(b"", 0), Err(ErrorCode::GENERIC));
         assert_eq!(
