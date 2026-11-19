@@ -87,11 +87,19 @@ pub static git_mwindow__mutex: GitMutex = GitMutex::new();
 #[repr(transparent)]
 pub struct MutexProtected<T>(UnsafeCell<T>);
 
-// SAFETY: every access to the contents, Rust's ([`Ctl`]) and C's (the
-// tests), is made with `git_mwindow__mutex` held, which serializes them and
-// orders them across threads. The contents (raw pointers to files and
-// packs that live on the heap) are not tied to a thread.
-unsafe impl<T> Sync for MutexProtected<T> {}
+// SAFETY: (for the two globals' types only, not for any `T`) every access
+// to the contents, Rust's ([`Ctl`]) and C's (the tests), is made with
+// `git_mwindow__mutex` held, which serializes them and orders them across
+// threads, so a shared `&MutexProtected` gives each thread in turn the
+// exclusive use a `Send` value would need. The contents are not tied to a
+// thread: `GitMwindowCtl` holds counters and a vector of pointers to
+// mapped files (heap objects whose windows any thread may map or unmap
+// under the same mutex).
+unsafe impl Sync for MutexProtected<GitMwindowCtl> {}
+// SAFETY: as above: `PackMap` holds pointers to heap packs (`GitPackFile`
+// is `Send + Sync`) keyed by their own names; it is only reached with
+// `git_mwindow__mutex` held.
+unsafe impl Sync for MutexProtected<PackMap> {}
 
 impl<T> MutexProtected<T> {
     const fn new(v: T) -> Self {

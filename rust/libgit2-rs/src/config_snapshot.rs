@@ -32,12 +32,15 @@ pub struct SnapshotBackend {
 
 // SAFETY: the fields are `list` (a `Mutex` of a `Send + Sync` list) and
 // `source`, a pointer to another backend that is dereferenced only by
-// `open`, when `backend_snapshot`'s contract keeps it live; a backend may
-// be used from any thread and from several at once (sys/config.h; see
-// `ConfigBackendCell`), so `open` may run on any thread.
+// `open`, when `backend_snapshot`'s contract keeps it live, through that
+// backend's slots: those may run on any thread and on several at once
+// (proved for this crate's backends, required of C tables by
+// `git_config_add_backend`: see `ConfigBackendCell`), so `open` may run on
+// any thread.
 unsafe impl Send for SnapshotBackend {}
 // SAFETY: as for `Send`: through `&SnapshotBackend` only `open` reaches
-// `source`, which C calls on any thread, and `list` is behind its lock.
+// `source`, whose slots may run concurrently (as above), and `list` is
+// behind its lock.
 unsafe impl Sync for SnapshotBackend {}
 
 impl SnapshotBackend {

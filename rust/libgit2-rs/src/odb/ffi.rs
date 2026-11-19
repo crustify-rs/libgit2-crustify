@@ -960,7 +960,7 @@ pub unsafe extern "C" fn git_odb_open_rstream(
 ///
 /// `out` is NULL or writable; `db` NULL or a live odb; `progress_cb` is
 /// NULL or may be called with `progress_payload` until the writepack is
-/// freed.
+/// freed, on whichever thread uses the writepack.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_odb_write_pack(
     mut out: Out<'_, *mut GitOdbWritepack>,

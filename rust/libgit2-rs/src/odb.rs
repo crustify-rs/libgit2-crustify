@@ -2052,7 +2052,8 @@ impl GitOdb {
     ///
     /// # Safety
     ///
-    /// `progress_cb` may be called with `progress_payload`.
+    /// `progress_cb` may be called with `progress_payload` until the
+    /// writepack is freed, on whichever thread uses the writepack.
     pub(crate) unsafe fn write_pack(
         &self,
         progress_cb: IndexerProgressCb,

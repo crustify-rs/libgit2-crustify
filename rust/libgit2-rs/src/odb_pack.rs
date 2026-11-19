@@ -687,7 +687,8 @@ impl PackBackend {
     /// # Safety
     ///
     /// `odb` is NULL or a live odb that outlives the writepack;
-    /// `progress_cb`, if set, may be called with `progress_payload`.
+    /// `progress_cb`, if set, may be called with `progress_payload` until
+    /// the writepack is freed, on whichever thread uses the writepack.
     unsafe fn writepack(
         &self,
         odb: *mut c_void,
@@ -702,8 +703,9 @@ impl PackBackend {
             ..GitIndexerOptions::default()
         };
         // SAFETY: `odb` is NULL or a live odb that outlives the writepack,
-        // and the callback may be called with its payload (this fn's
-        // contract), as `Indexer::new` requires.
+        // and the callback may be called with its payload on whichever
+        // thread uses the writepack, which is the thread that uses the
+        // indexer (this fn's contract), as `Indexer::new` requires.
         let indexer = unsafe { Indexer::new(self.pack_folder.as_deref(), &mut opts) }
             .map_err(|_| ErrorCode::GENERIC)?;
         Ok(Writepack { indexer })
@@ -911,8 +913,9 @@ ffibox::impl_cvtable! {
             // (`OdbPackWriter` borrows it; a C caller of `git_odb_write_pack`
             // frees the writepack before the odb, as C's backend, which kept
             // the odb in its indexer alike, required); `progress_cb` may be
-            // called with `progress_payload` (`write_pack`'s own contract,
-            // whose arguments arrive here unchanged).
+            // called with `progress_payload` on whichever thread uses the
+            // writepack (`write_pack`'s own contract, whose arguments arrive
+            // here unchanged).
             match unsafe { b.writepack(odb.cast(), progress_cb, progress_payload) } {
                 Ok(w) => {
                     let base = GitOdbWritepack {

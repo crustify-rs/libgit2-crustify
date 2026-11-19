@@ -242,8 +242,16 @@ pub struct GitRepository {
 //   every other user of the repository away, and are otherwise only read;
 // - `objects`: `GitCache`, `Sync` (its map is behind its rwlock);
 // - `attrcache`, `diff_drivers`, `submodule_cache`: `AtomicPtr`s to C
-//   objects that C creates with compare-and-swap and guards with its own
-//   locks (as in C, which shares them between threads);
+//   objects, which the Rust never dereferences (it only creates, swaps out
+//   and frees them: `submodule_cache_clear` is `unsafe`, with a contract
+//   that keeps other users away). The C that reaches their contents does
+//   so under C's rules: the attribute cache has its own lock; the diff
+//   driver registry (`git_diff_driver_load` inserts into its map
+//   unlocked) and the submodule cache (a plain map) have none, so C uses
+//   them, as in C, only from one thread at a time on a repository (libgit2
+//   documents no thread safety for them: docs/threading.md). The safe API
+//   reaches the submodule cache only through `&mut Repository`, and loads
+//   no diff content;
 // - `bits`, `oid_type`, `refdb_type`, `lru_counter`, `attr_session_key`,
 //   `configmap_cache`: atomics;
 // - `reserved_names`: an `UnsafeCell`, written only by `alloc` (before the

@@ -265,15 +265,24 @@ ffibox::define_ctype!(
 
 // SAFETY: the table's fields are `version` and `readonly` (plain data),
 // `cfg` (a pointer the backend only stores and hands back) and the slots
-// (function pointers). libgit2's contract for config backends
-// (sys/config.h) is that a backend may be used from any thread, and from
-// several at once, as a repository's config is (`tests/libgit2/threads`):
-// the slots synchronise the state they share. The handles only read the
-// fields and call the slots; the one Rust write of a field (`cfg` in
-// `add_backend`, `readonly` in `rust_backend::new`) happens before the
-// table is shared.
+// (function pointers). The handles only read the fields and call the
+// slots; the one Rust write of a field (`cfg` in `add_backend`, `readonly`
+// in `rust_backend::new`) happens before the table is shared. What remains
+// is that the slots may run on any thread, and on several at once:
+// - for this crate's tables (the file, memory and snapshot backends, and
+//   `rust_backend` over a `ConfigBackend: Send + Sync`) it is proved by
+//   their state (locks and atomics: see each);
+// - for a C table (`git_config_add_backend`, and the snapshot a C table's
+//   `snapshot` slot returns) it is not something libgit2's documentation
+//   promises (docs/threading.md: objects are single-threaded unless said
+//   otherwise; sys/config.h says nothing of threads). It is a requirement
+//   this crate states on `git_config_add_backend` (its `# Safety`), which
+//   is the only way a C table enters a config: libgit2 itself uses a
+//   repository's config from several threads (`tests/libgit2/threads`).
 unsafe impl Send for ConfigBackendCell {}
-// SAFETY: as for `Send`: every slot may run concurrently with the others.
+// SAFETY: as for `Send`: every slot may run concurrently with the others
+// (proved for this crate's tables; required of C tables by
+// `git_config_add_backend`'s contract).
 unsafe impl Sync for ConfigBackendCell {}
 // SAFETY: the table's fields are `backend` (a pointer the iterator only
 // stores), `flags` and the `next` / `free` slots. An iterator is used by
@@ -2312,7 +2321,11 @@ pub mod ffi {
     /// # Safety
     ///
     /// `config` is NULL or live; `backend` is NULL or a valid backend table
-    /// (sys/config.h), not owned by anything else; `repo` as for
+    /// (sys/config.h), not owned by anything else, whose slots (and those
+    /// of the snapshots its `snapshot` slot makes) may be called from any
+    /// thread and from several threads at once (a config is shared between
+    /// threads, as a repository's is: this crate relies on it, see
+    /// `ConfigBackendCell`'s `Sync`); `repo` as for
     /// `git_config_add_file_ondisk`.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_add_backend(
