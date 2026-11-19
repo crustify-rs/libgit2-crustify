@@ -188,16 +188,15 @@ pub mod ffi {
         cnt: usize,
     ) -> c_int {
         barrier(|| {
-            let fns: &[Option<InitFn>] = if cnt == 0 || init_fns.is_null() {
-                &[]
-            } else {
-                // SAFETY: `init_fns` has `cnt` readable entries (this
-                // export's contract), unwritten during the call, so their
-                // size fits a readable range (at most `isize::MAX`); an
-                // `Option` of a function pointer is valid for any pointer
-                // value C stores (NULL is `None`).
-                unsafe { core::slice::from_raw_parts(init_fns, cnt) }
-            };
+            // SAFETY: `init_fns` is NULL or has `cnt` readable entries (this
+            // export's contract), unwritten during the call; an `Option` of
+            // a function pointer is valid for any pointer value C stores
+            // (NULL is `None`).
+            let fns: &[Option<InitFn>] =
+                match unsafe { crate::util::cabi::slice_arg(init_fns, cnt, "init_fns") } {
+                    Ok(f) => f,
+                    Err(e) => return e.raw(),
+                };
             // A NULL entry would crash the C; treat the list as ending there.
             let fns: Vec<InitFn> = fns.iter().map_while(|f| *f).collect();
             // SAFETY: each entry is sound to call during initialization

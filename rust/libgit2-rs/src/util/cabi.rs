@@ -303,6 +303,27 @@ pub unsafe fn slice<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
     unsafe { core::slice::from_raw_parts(ptr, len) }
 }
 
+/// [`slice`] for a C array that C reads without checking it: a NULL `ptr`
+/// with `len > 0`, where C crashes on the first element, is C's argument
+/// error instead (`invalid argument: '<text>'`, rust/DEFECTS.md), not an
+/// empty array.
+///
+/// # Safety
+///
+/// As [`slice`].
+#[inline(always)]
+pub unsafe fn slice_arg<'a, T>(
+    ptr: *const T,
+    len: usize,
+    text: &str,
+) -> super::errors::Result<&'a [T]> {
+    if len > 0 && ptr.is_null() {
+        return Err(super::errors::assert_arg_failed(text));
+    }
+    // SAFETY: this fn's contract is `slice`'s.
+    Ok(unsafe { slice(ptr, len) })
+}
+
 /// `GIT_ASSERT_ARG(x)` for an `Option<&T>` / `Option<&mut T>` argument:
 /// the reference, or set `invalid argument: '<text>'` and return `$ret`
 /// (`Err(GENERIC)` without it), as [`git_assert_arg!`](crate::git_assert_arg).
@@ -367,6 +388,21 @@ mod tests {
         assert_eq!(CStrArg::NULL.get(), None);
         assert_eq!(CStrArg::NULL.to_bytes(), b"");
         assert_eq!(CStrArg::from(None).as_ptr(), ptr::null());
+    }
+
+    #[test]
+    fn slices_of_c_arrays() {
+        let v = [1u32, 2, 3];
+        // SAFETY: a readable array of 3, and NULL with 0.
+        unsafe {
+            assert_eq!(slice(v.as_ptr(), 3), &v[..]);
+            assert_eq!(slice::<u32>(ptr::null(), 0), &[] as &[u32]);
+            assert_eq!(slice_arg::<u32>(ptr::null(), 0, "v").unwrap(), &[] as &[u32]);
+            assert_eq!(slice_arg(v.as_ptr(), 2, "v").unwrap(), &v[..2]);
+        }
+        // SAFETY: NULL is never read.
+        let e = unsafe { slice_arg::<u32>(ptr::null(), 2, "v") }.unwrap_err();
+        assert_eq!(e, crate::util::errors::ErrorCode::GENERIC);
     }
 
     #[test]

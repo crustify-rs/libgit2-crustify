@@ -410,13 +410,12 @@ pub mod ffi {
         opts: Option<&git_config_backend_memory_options>,
     ) -> c_int {
         barrier(|| {
-            let ptrs = if len == 0 {
-                &[][..]
-            } else {
-                // SAFETY: `values` is an aligned C array of `len` pointers
-                // (so at most `isize::MAX` bytes), readable and unwritten
-                // during the call (this export's contract).
-                unsafe { core::slice::from_raw_parts(values, len) }
+            // SAFETY: `values` is NULL or an aligned C array of `len`
+            // pointers, readable and unwritten during the call (this
+            // export's contract).
+            let ptrs = match unsafe { crate::util::cabi::slice_arg(values, len, "values") } {
+                Ok(p) => p,
+                Err(e) => return e.raw(),
             };
             // SAFETY: each pointer is a NUL-terminated string, unwritten
             // during the call (this export's contract).

@@ -1330,12 +1330,19 @@ out-of-memory error instead.
 ### NULL object, string or out-parameter arguments that the C dereferences unchecked
 - C: exports without `GIT_ASSERT_ARG` for a pointer they dereference
   (e.g. `git_config_snapshot(out, NULL)`, `git_config_set_string(NULL, …)`,
-  `git_oid_cmp(NULL, b)`, `git_repository_odb(NULL, repo)`): a NULL
-  argument crashes.
+  `git_oid_cmp(NULL, b)`, `git_repository_odb(NULL, repo)`), or for an
+  array they read with a non-zero count (`git_config_set_writeorder(cfg,
+  NULL, 2)`, `git_config_lookup_map_value(&o, NULL, 3, v)`,
+  `git_tree_create_updated(.., 1, NULL)`, `git_config_backend_from_values`,
+  `git_hash_vec`, `git_runtime_init`, the repository extension and
+  shallow-root lists): a NULL argument crashes.
 - Trigger: any such export called with NULL for that argument.
 - Rust: an export parameter typed `Option<&T>` / `Option<&mut T>` that the C
   dereferences unchecked fails as `GIT_ASSERT_ARG` would (`invalid
-  argument: '<name>'`, -1 / NULL / nothing, per the return type); a NULL
+  argument: '<name>'`, -1 / NULL / nothing, per the return type), at the
+  point where the C dereferences it (after the C's own checks and early
+  returns, which keep their results); a NULL array with a non-zero count
+  likewise (`util::cabi::slice_arg`); a NULL
   `Out<'_, T>` out-parameter is not written; a NULL `CStrArg` string reads
   as the code reading it decides (absent, or empty where the C would read
   it as a string). Before, such a NULL was a NULL reference or a write
@@ -1367,3 +1374,15 @@ out-of-memory error instead.
   allocation, unregistered first in `git_repository_free`, which waits for
   in-flight uses); afterwards the conditions are evaluated as with no
   repository (they do not match), as when `repo` is NULL.
+
+### commit: `git_commit_create_buffer` with a message in the output buffer
+- C: `src/libgit2/commit.c`, `git_commit__create_buffer` writes the tree,
+  parent, author and committer lines into `out` before it reads
+  `message_encoding` and `message`; if either lies in `out`'s buffer, C
+  reads what it has just written over it (or freed memory, if `out`
+  grew).
+- Trigger: `git_commit_create_buffer(&buf, repo, a, c, NULL, buf.ptr, tree,
+  0, NULL)` with `buf` holding a message.
+- Rust: both strings are read after the sanitize and before any write
+  (copied if they lie in `out`'s buffer), so the commit carries the
+  message the caller passed.

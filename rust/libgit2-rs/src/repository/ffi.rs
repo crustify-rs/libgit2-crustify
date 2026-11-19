@@ -959,14 +959,13 @@ pub unsafe extern "C" fn git_repository__set_extensions(
     len: usize,
 ) -> c_int {
     barrier(|| {
-        let ptrs: &[*const c_char] = if len == 0 || extensions.is_null() {
-            &[]
-        } else {
-            // SAFETY: `len` readable, aligned pointers at `extensions`,
-            // within `isize::MAX` bytes and unwritten during the call (this
-            // export's contract).
-            unsafe { core::slice::from_raw_parts(extensions, len) }
-        };
+        // SAFETY: `extensions` is NULL or `len` readable, aligned pointers,
+        // unwritten during the call (this export's contract).
+        let ptrs: &[*const c_char] =
+            match unsafe { crate::util::cabi::slice_arg(extensions, len, "extensions") } {
+                Ok(p) => p,
+                Err(e) => return e.raw(),
+            };
         let v: Vec<&[u8]> = ptrs
             .iter()
             // SAFETY: each NULL or a string unwritten during the call (this
@@ -1733,14 +1732,13 @@ pub unsafe extern "C" fn git_repository__cleanup_files(
 ) -> c_int {
     barrier(|| {
         with_repo!(repo_, "repo", |r| {
-            let ptrs: &[*const c_char] = if files_len == 0 || files.is_null() {
-                &[]
-            } else {
-                // SAFETY: `files_len` readable, aligned pointers, within
-                // `isize::MAX` bytes and unwritten during the call (this
-                // export's contract).
-                unsafe { core::slice::from_raw_parts(files, files_len) }
-            };
+            // SAFETY: `files` is NULL or `files_len` readable, aligned
+            // pointers, unwritten during the call (this export's contract).
+            let ptrs: &[*const c_char] =
+                match unsafe { crate::util::cabi::slice_arg(files, files_len, "files") } {
+                    Ok(p) => p,
+                    Err(e) => return e.raw(),
+                };
             let v: Vec<&[u8]> = ptrs
                 .iter()
                 // SAFETY: each NULL or a string unwritten during the call

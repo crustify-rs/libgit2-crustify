@@ -2393,12 +2393,11 @@ pub mod ffi {
         updates: *const GitTreeUpdate,
     ) -> c_int {
         barrier(|| {
-            let ups = if nupdates == 0 {
-                &[][..]
-            } else {
-                // SAFETY: `nupdates` readable, unwritten updates in one array
-                // (so within `isize::MAX` bytes; this export's contract).
-                unsafe { core::slice::from_raw_parts(updates, nupdates) }
+            // SAFETY: `updates` is NULL or `nupdates` readable, unwritten
+            // updates in one array (this export's contract).
+            let ups = match unsafe { crate::util::cabi::slice_arg(updates, nupdates, "updates") } {
+                Ok(u) => u,
+                Err(e) => return e.raw(),
             };
             let mut id = Oid::default();
             // SAFETY: `repo` live, `baseline` NULL or a live tree, and the

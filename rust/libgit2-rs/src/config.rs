@@ -2371,15 +2371,14 @@ pub mod ffi {
         barrier(|| {
             let config = git_arg!(config, "config", -1);
             git_assert!(len < c_int::MAX as usize, "len < INT_MAX", -1);
-            let levels = if len == 0 {
-                &[][..]
-            } else {
-                // SAFETY: `levels` is aligned and readable for `len` ints,
-                // which nothing writes during the call (this export's
-                // contract); `len < INT_MAX` (asserted above), so the
-                // slice is shorter than `isize::MAX` bytes.
-                unsafe { core::slice::from_raw_parts(levels, len) }
-            };
+            // SAFETY: `levels` is NULL or aligned and readable for `len`
+            // ints, which nothing writes during the call (this export's
+            // contract).
+            let levels =
+                match unsafe { crate::util::cabi::slice_arg(levels.cast_const(), len, "levels") } {
+                    Ok(l) => l,
+                    Err(e) => return e.raw(),
+                };
             match config.set_writeorder(levels) {
                 Ok(()) => 0,
                 Err(e) => e.raw(),
@@ -2885,11 +2884,15 @@ pub mod ffi {
         map_n: usize,
     ) -> c_int {
         barrier(|| {
-            // SAFETY: `maps` is readable for `map_n` maps whose strings are
-            // NULL or NUL-terminated, unwritten during the call (this
-            // export's contract), which is `configmaps`'.
-            let maps = unsafe { configmaps(maps, map_n) };
-            match with_value(config, name, |v| lookup_map_value(&maps, v)) {
+            // C reads the maps after the lookup.
+            let lookup = |v: Option<&[u8]>| {
+                // SAFETY: `maps` is NULL or readable for `map_n` maps whose
+                // strings are NULL or NUL-terminated, unwritten during the
+                // call (this export's contract), which is `configmaps`'.
+                let maps = unsafe { configmaps(maps, map_n) }?;
+                lookup_map_value(&maps, v)
+            };
+            match with_value(config, name, lookup) {
                 Ok(v) => {
                     out.write(v);
                     0
@@ -2903,17 +2906,17 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// `maps` is aligned and readable for `n` maps (or `n` is 0) whose
-    /// strings are NULL or NUL-terminated, all unwritten for `'a`.
-    unsafe fn configmaps<'a>(maps: *const git_configmap, n: usize) -> Vec<RawConfigMap<'a>> {
-        if n == 0 {
-            return Vec::new();
-        }
-        // SAFETY: `maps` is aligned and readable for `n` maps, one C array
-        // (so at most `isize::MAX` bytes), unwritten for `'a` (this
-        // function's contract).
-        let maps = unsafe { core::slice::from_raw_parts(maps, n) };
-        maps.iter()
+    /// `maps` is NULL or aligned and readable for `n` maps whose strings
+    /// are NULL or NUL-terminated, all unwritten for `'a`. A NULL `maps`
+    /// with `n > 0` (which C reads) is an invalid argument.
+    unsafe fn configmaps<'a>(
+        maps: *const git_configmap,
+        n: usize,
+    ) -> Result<Vec<RawConfigMap<'a>>> {
+        // SAFETY: this function's contract.
+        let maps = unsafe { crate::util::cabi::slice_arg(maps, n, "maps") }?;
+        Ok(maps
+            .iter()
             .map(|m| RawConfigMap {
                 kind: m.type_,
                 // SAFETY: each `str_match` is NULL or a NUL-terminated
@@ -2923,7 +2926,7 @@ pub mod ffi {
                     .map(CStr::to_bytes),
                 map_value: m.map_value,
             })
-            .collect()
+            .collect())
     }
 
     /// `git_config_get_int64`.
@@ -3258,7 +3261,10 @@ pub mod ffi {
             let value = value.get();
             // SAFETY: `maps` is as `configmaps` requires (this export's
             // contract, as `git_config_get_mapped`'s).
-            let maps = unsafe { configmaps(maps, map_n) };
+            let maps = match unsafe { configmaps(maps, map_n) } {
+                Ok(m) => m,
+                Err(e) => return e.raw(),
+            };
             match lookup_map_value(&maps, value.map(CStr::to_bytes)) {
                 Ok(v) => {
                     out.write(v);
@@ -3284,13 +3290,11 @@ pub mod ffi {
         enum_val: c_int,
     ) -> c_int {
         barrier(|| {
-            let maps = if map_n == 0 {
-                &[][..]
-            } else {
-                // SAFETY: `maps` is aligned and readable for `map_n` maps,
-                // one C array (at most `isize::MAX` bytes), unwritten during
-                // the call (this export's contract).
-                unsafe { core::slice::from_raw_parts(maps, map_n) }
+            // SAFETY: `maps` is NULL or aligned and readable for `map_n`
+            // maps, unwritten during the call (this export's contract).
+            let maps = match unsafe { crate::util::cabi::slice_arg(maps, map_n, "maps") } {
+                Ok(m) => m,
+                Err(e) => return e.raw(),
             };
             match maps.iter().find(|m| m.map_value == enum_val) {
                 Some(m) => {

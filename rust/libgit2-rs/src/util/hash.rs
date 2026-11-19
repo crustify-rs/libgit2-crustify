@@ -648,15 +648,10 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             let r = super::algorithm(algorithm).and_then(|a| {
-                let vec: &[GitStrVec] = if n == 0 || vec.is_null() {
-                    &[]
-                } else {
-                    // SAFETY: `vec` holds `n` readable entries, unwritten
-                    // during the call (this export's contract), so `n *
-                    // size_of::<GitStrVec>()` fits a readable range (at most
-                    // `isize::MAX`); `GitStrVec` is plain data.
-                    unsafe { core::slice::from_raw_parts(vec, n) }
-                };
+                // SAFETY: `vec` is NULL or holds `n` readable entries,
+                // unwritten during the call (this export's contract);
+                // `GitStrVec` is plain data.
+                let vec: &[GitStrVec] = unsafe { crate::util::cabi::slice_arg(vec, n, "vec") }?;
                 with_oneshot(a, |h| {
                     for v in vec {
                         // SAFETY: each entry's `data` is readable for its
