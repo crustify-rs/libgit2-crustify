@@ -44,9 +44,12 @@ if [ $miri = 1 ]; then
 fi
 if [ $difft = 1 ]; then
 	step difftests
+	dl=$(mktemp)
 	for d in "$here"/difftest/*_diff.c; do
-		RUST_BUILD=$rb timeout 1800 "$here/difftest/run.sh" "$d" 2>&1 | grep -E 'same output|DIFFERENT|FAIL' | head -n 1
-	done | tee /dev/stderr | grep -qE 'DIFFERENT|FAIL' && fail=1
+		RUST_BUILD=$rb timeout 1800 "$here/difftest/run.sh" "$d" 2>&1 | grep -E 'same output|DIFFERENT|FAIL|exited' >>"$dl"
+	done
+	cat "$dl"
+	grep -qE 'DIFFERENT|FAIL' "$dl" && fail=1
 fi
 step fixtures
 "$here/check_fixtures.sh" || fail=1

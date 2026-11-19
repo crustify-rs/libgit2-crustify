@@ -271,12 +271,13 @@ fn names() {
         assert_eq!(git_reference__name_is_valid(&mut valid, null(), 0), -1);
         assert_eq!(last(), "unrecoverable internal error: 'valid && refname'");
 
-        // The name may point into the output buffer.
+        // The name may point into the output buffer: as C, it is read
+        // after the buffer is cleared, which empties a name at its start
+        // (an invalid name, as in C: rust/difftest/args_diff.c).
         let mut s = GitStr::new();
         s.puts(b"refs//heads//y").unwrap();
         let p = s.as_ptr();
-        assert_eq!(git_reference__normalize_name(&mut s, p, 0), 0);
-        assert_eq!(s.as_bytes(), b"refs/heads/y");
+        assert_eq!(git_reference__normalize_name(&mut s, p, 0), -12);
         assert_eq!(
             git_reference__normalize_name(&mut s, c"a..b".as_ptr(), 1),
             -12
