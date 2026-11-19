@@ -19,4 +19,6 @@ for d in "${drivers[@]}"; do
 		echo "$name: DIFFERENT"; diff "$OUT/$name.c.txt" "$OUT/$name.rust.txt" | head -40; fail=1
 	fi
 done
+# The drivers write only to scratch copies of the fixtures.
+"$HERE/../check_fixtures.sh" || fail=1
 exit $fail

@@ -1386,3 +1386,16 @@ out-of-memory error instead.
 - Rust: both strings are read after the sanitize and before any write
   (copied if they lie in `out`'s buffer), so the commit carries the
   message the caller passed.
+
+### refs: `git_reference__normalize_name` with the name inside its output
+- C: `src/libgit2/refs.c`, `git_reference__normalize_name` clears `buf` and
+  then writes the normalized name into it segment by segment while it
+  still reads `name`; a `name` that lies in `buf`'s buffer is read partly
+  after the C has written over it.
+- Trigger: `git_str_sets(&s, "xxq//w");
+  git_reference__normalize_name(&s, s.ptr + 2, 0)`: C returns
+  `GIT_EINVALIDSPEC` (it reads its own output as the rest of the name).
+- Rust: the name is read as the C sees it when it starts (after the
+  leading-`/` check and the clear: a name at the start of the buffer is
+  then empty, as in C) and copied, so the result is the normalization of
+  that name (`"q/w"` here).

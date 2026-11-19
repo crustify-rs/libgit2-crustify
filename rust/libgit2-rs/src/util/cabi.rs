@@ -393,13 +393,15 @@ mod tests {
     #[test]
     fn slices_of_c_arrays() {
         let v = [1u32, 2, 3];
-        // SAFETY: a readable array of 3, and NULL with 0.
-        unsafe {
-            assert_eq!(slice(v.as_ptr(), 3), &v[..]);
-            assert_eq!(slice::<u32>(ptr::null(), 0), &[] as &[u32]);
-            assert_eq!(slice_arg::<u32>(ptr::null(), 0, "v").unwrap(), &[] as &[u32]);
-            assert_eq!(slice_arg(v.as_ptr(), 2, "v").unwrap(), &v[..2]);
-        }
+        // SAFETY: a readable array of 3.
+        assert_eq!(unsafe { slice(v.as_ptr(), 3) }, &v[..]);
+        // SAFETY: NULL with 0 is never read.
+        assert_eq!(unsafe { slice::<u32>(ptr::null(), 0) }, &[] as &[u32]);
+        // SAFETY: as above.
+        let e = unsafe { slice_arg::<u32>(ptr::null(), 0, "v") };
+        assert_eq!(e.unwrap(), &[] as &[u32]);
+        // SAFETY: the first 2 of a readable array of 3.
+        assert_eq!(unsafe { slice_arg(v.as_ptr(), 2, "v") }.unwrap(), &v[..2]);
         // SAFETY: NULL is never read.
         let e = unsafe { slice_arg::<u32>(ptr::null(), 2, "v") }.unwrap_err();
         assert_eq!(e, crate::util::errors::ErrorCode::GENERIC);

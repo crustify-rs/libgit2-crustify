@@ -535,6 +535,16 @@ fn c_abi_parse_and_accessors() {
             0
         );
         assert_eq!(out.as_bytes(), b"A <a@b> 1 +0000");
+        // A field name inside `out`'s own buffer is read after the clear
+        // (as C): at byte 1 on, still "author".
+        out.sets(b"xauthor").unwrap();
+        let field = out.as_ptr().wrapping_add(1);
+        assert_eq!(ffi::git_commit__header_field(Some(&mut out), r, field), 0);
+        assert_eq!(out.as_bytes(), b"A <a@b> 1 +0000");
+        // At byte 0 the clear empties it: C looks up "", which fails.
+        out.sets(b"author").unwrap();
+        let field = out.as_ptr();
+        assert!(ffi::git_commit__header_field(Some(&mut out), r, field) < 0);
         assert!(ffi::git_commit_author(None).is_null());
         assert_eq!(
             errors::last_message().unwrap(),

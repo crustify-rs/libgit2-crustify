@@ -389,6 +389,13 @@ Every WP delivers:
 5. **Differential tests** for parsers and encoders: feed the same inputs to
    the C reference and to your Rust (e.g. via a C driver linked against each
    build) and compare. Keep drivers and corpora under `rust/difftest/`.
+6. **Fixtures stay untouched.** No test, difftest driver or consumer test
+   writes under `tests/resources` (the clar suites read them, on both
+   builds): copy what you write to a scratch directory first.
+   `rust/check_fixtures.sh` fails if `git status --porcelain --ignored
+   tests/resources` is not empty; `difftest/run.sh` runs it after the
+   drivers, and `rust/gates.sh <rust-build> <c-build>` runs every gate
+   above and then it.
 
 ## 7. Benchmarks
 

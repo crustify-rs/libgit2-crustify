@@ -2617,8 +2617,9 @@ pub mod ffi {
         field: *const c_char,
     ) -> Result<()> {
         let commit = commit.ok_or_else(|| errors::assert_arg_failed("commit"))?;
-        // `field` may lie in `out`'s buffer, which the search writes: read
-        // now (after the sanitize, as C) and copied if so.
+        // C clears `out`, then reads `field`, which may lie in `out`'s
+        // buffer (which the search writes): so here, copied if so.
+        out.clear();
         // SAFETY: this fn's contract is `arg_bytes`'s.
         let field = unsafe { out.arg_bytes(field) }.unwrap_or_default();
         // (A quick-parsed commit has no header: `""`.)
