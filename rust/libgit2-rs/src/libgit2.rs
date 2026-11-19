@@ -291,10 +291,16 @@ pub(crate) fn init() -> c_int {
     unsafe { crate::util::runtime::init(&fns) }
 }
 
-/// `git_libgit2_shutdown`: the remaining init count. Crate-internal: a
-/// shutdown not paired with an init would tear down what live objects use.
-pub(crate) fn shutdown() -> c_int {
-    crate::util::runtime::shutdown()
+/// `git_libgit2_shutdown`: the remaining init count.
+///
+/// # Safety
+///
+/// As [`Runtime::shutdown`](crate::util::runtime::Runtime::shutdown): it
+/// pairs with an init the caller made, and after the last one nothing uses
+/// the library until the next init.
+pub(crate) unsafe fn shutdown() -> c_int {
+    // SAFETY: this fn's contract is `runtime::shutdown`'s.
+    unsafe { crate::util::runtime::shutdown() }
 }
 
 /// Initialize the library once for the process, for the safe API, and
@@ -468,10 +474,13 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// Nothing of the library is used after the last shutdown.
+    /// It pairs with a `git_libgit2_init` of the caller, and after the last
+    /// shutdown nothing of the library is used until the next init (C's
+    /// contract).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_libgit2_shutdown() -> c_int {
-        barrier(shutdown)
+        // SAFETY: this export's contract is `shutdown`'s.
+        barrier(|| unsafe { shutdown() })
     }
 
     /// `git_libgit2_version`.

@@ -10,7 +10,8 @@
 //!
 //! | C parameter | Export parameter | Read with |
 //! |---|---|---|
-//! | `const char *s` (NULL or a string) | [`CStrArg<'_>`] | [`get`](CStrArg::get), [`to_bytes`](CStrArg::to_bytes) |
+//! | `const char *s` (NULL or a string the call does not write) | [`CStrArg<'_>`] | [`get`](CStrArg::get), [`to_bytes`](CStrArg::to_bytes) |
+//! | `const char *s` that may lie in an output buffer the call writes | `*const c_char` | [`GitStr::arg_cstr`](crate::util::str::GitStr::arg_cstr) (`unsafe`) where C reads it |
 //! | `T *out` written, not read | [`Out<'_, T>`] | [`write`](Out::write) |
 //! | `const T *x` read, nothing writes it during the call | `Option<&T>` | [`git_arg!`](crate::git_arg) |
 //! | `T *x`, the call has the only access | `Option<&mut T>` | [`git_arg!`](crate::git_arg) |
@@ -35,13 +36,22 @@
 //!
 //! [`CStrArg`] and [`Out`] form no reference to the pointee until it is
 //! read or written, and then only for that read or write, so they keep the
-//! raw pointer's aliasing behaviour: they apply wherever the export reads
-//! the string or writes the out-parameter at a single point, as the code
-//! before them did with `CStr::from_ptr` / `ptr.write`. A string the call
-//! itself frees or rewrites (a path in the output `git_str`'s buffer, an
-//! entry's name in the block the call frees) is read or copied before
-//! that point, and no `&CStr` of it is passed to a fn that frees it (a
-//! reference argument is protected for that fn's whole call).
+//! raw pointer's aliasing behaviour.
+//!
+//! What C's contract gives for a `const char *` is a string that is valid
+//! when the call starts and that *others* (the caller, other threads) do
+//! not write during the call. It does not say that the call itself leaves
+//! it alone: a caller may pass a string that lies in the call's own output
+//! buffer (`git_config_parse_path(&buf, buf.ptr)`), and C reads such a
+//! string where the code uses it, after the call's earlier writes (the
+//! sanitize of `GIT_BUF_WRAP_PRIVATE`, a `git_str_clear`). So a parameter
+//! is a `CStrArg` (whose invariant is "unwritten for the call") only when
+//! the call writes no memory the string may lie in. Otherwise it stays a
+//! `*const c_char` and is read at C's point with
+//! [`GitStr::arg_cstr`](crate::util::str::GitStr::arg_cstr), which copies
+//! it if it lies in the buffer about to be written; no `&CStr` of it is
+//! kept, or passed to a fn, across a write of that buffer (a reference
+//! argument is protected for that fn's whole call).
 //!
 //! Rust code obtains these values safely only from Rust references
 //! (`From<&CStr>`, `From<&mut T>`); from a raw pointer only through the
@@ -58,8 +68,11 @@ use core::ptr;
 ///
 /// It has the ABI of `*const c_char`. In an export's signature `'a` is the
 /// call, and the export's `# Safety` states the requirement above as the
-/// C's contract. Nothing is read until [`get`](Self::get) or
-/// [`to_bytes`](Self::to_bytes) (no `strlen` up front, as the C reads).
+/// C's contract, which gives it only for a string the call itself does not
+/// write (see the [module documentation](self): a string that may lie in
+/// the call's output buffer is not a `CStrArg`). Nothing is read until
+/// [`get`](Self::get) or [`to_bytes`](Self::to_bytes) (no `strlen` up
+/// front, as the C reads).
 ///
 /// Invariant (established by every constructor): `ptr` is NULL or points
 /// to a NUL-terminated string that is readable, and written by nothing,

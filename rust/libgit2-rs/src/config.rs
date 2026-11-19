@@ -2835,6 +2835,27 @@ pub mod ffi {
         config.with_value(or_null(name), f)
     }
 
+    /// [`with_value`] for a `name` that may lie in `out`'s buffer, which
+    /// `f` writes: `name` is read now (copied if it lies there), and the
+    /// lookup's copy of the value is what `f` gets.
+    ///
+    /// # Safety
+    ///
+    /// `name` is NULL or a string readable now that, outside `out`'s
+    /// buffer, nothing writes during the call.
+    unsafe fn with_value_into<T>(
+        out: &mut GitStr,
+        config: Option<&GitConfig>,
+        name: *const c_char,
+        f: impl FnOnce(&mut GitStr, Option<&[u8]>) -> Result<T>,
+    ) -> Result<T> {
+        let config = git_arg!(config, "config");
+        // SAFETY: this fn's contract is `arg_cstr`'s.
+        let name = unsafe { out.arg_cstr(name) };
+        let name = name.as_deref().unwrap_or(c"(null)");
+        config.with_value(name, |v| f(out, v))
+    }
+
     /// `git_config_get_mapped`.
     ///
     /// # Safety
@@ -2963,19 +2984,29 @@ pub mod ffi {
     pub unsafe extern "C" fn git_config__get_path(
         out: Option<&mut GitStr>,
         config: Option<&GitConfig>,
-        name: CStrArg<'_>,
+        name: *const c_char,
     ) -> c_int {
         barrier(|| {
-            let parse = |v: Option<&[u8]>| {
-                // `GIT_ASSERT_ARG(out)` and `(value)` in
-                // `git_config__parse_path`, after the lookup, as C.
-                let out = git_arg!(out, "out");
+            let parse = |out: &mut GitStr, v: Option<&[u8]>| {
+                // `GIT_ASSERT_ARG(value)` in `git_config__parse_path`,
+                // after the lookup, as C.
                 let Some(v) = v else {
                     return Err(errors::assert_arg_failed("value"));
                 };
                 parse_path(out, v)
             };
-            let r = with_value(config, name, parse);
+            // (`GIT_ASSERT_ARG(out)` of `git_config__parse_path` comes after
+            // the lookup in C: so here.)
+            let r = match out {
+                // SAFETY: `name` as `with_value_into` requires (this
+                // export's contract).
+                Some(out) => unsafe { with_value_into(out, config, name, parse) },
+                None => {
+                    // SAFETY: as above; no buffer to lie in.
+                    let name = unsafe { CStrArg::from_ptr(name) };
+                    with_value(config, name, |_| Err(errors::assert_arg_failed("out")))
+                }
+            };
             crate::util::export::status(r)
         })
     }
@@ -2990,7 +3021,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_config_get_path(
         out: Option<&mut GitBuf>,
         config: Option<&GitConfig>,
-        name: CStrArg<'_>,
+        name: *const c_char,
     ) -> c_int {
         barrier(|| {
             let get = |s: &mut GitStr| {
@@ -3008,19 +3039,25 @@ pub mod ffi {
     /// # Safety
     ///
     /// `out` is NULL or a valid `git_buf` that nothing else accesses during
-    /// the call; `value` is NULL or NUL-terminated.
+    /// the call; `value` is NULL or a NUL-terminated string, which may lie
+    /// in `out`'s buffer (it is then read, as in C, after `out` is
+    /// sanitized).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_config_parse_path(
         out: Option<&mut GitBuf>,
-        value: CStrArg<'_>,
+        value: *const c_char,
     ) -> c_int {
         barrier(|| {
-            let value = value.get();
             crate::buf::wrap(out, |s| {
-                let Some(v) = value else {
+                // Read where C reads it: after `git_buf_tostr` sanitized
+                // `out`.
+                // SAFETY: `value` is NULL or a string readable now; outside
+                // `out`'s buffer nothing writes it during the call (this
+                // export's contract); in it, `arg_bytes` copies it.
+                let Some(v) = (unsafe { s.arg_bytes(value) }) else {
                     return Err(errors::assert_arg_failed("value"));
                 };
-                parse_path(s, v.to_bytes())
+                parse_path(s, &v)
             })
         })
     }
@@ -3074,12 +3111,16 @@ pub mod ffi {
     pub unsafe extern "C" fn git_config__get_string_buf(
         out: Option<&mut GitStr>,
         config: Option<&GitConfig>,
-        name: CStrArg<'_>,
+        name: *const c_char,
     ) -> c_int {
         barrier(|| {
             let out = git_arg!(out, "out", -1);
             git_assert_arg!(config.is_some(), "config", -1);
-            let r = with_value(config, name, |v| out.puts(v.unwrap_or(b"")));
+            // SAFETY: `name` as `with_value_into` requires (this export's
+            // contract).
+            let r = unsafe {
+                with_value_into(out, config, name, |out, v| out.puts(v.unwrap_or(b"")))
+            };
             crate::util::export::status(r)
         })
     }
@@ -3094,7 +3135,7 @@ pub mod ffi {
     pub unsafe extern "C" fn git_config_get_string_buf(
         out: Option<&mut GitBuf>,
         config: Option<&GitConfig>,
-        name: CStrArg<'_>,
+        name: *const c_char,
     ) -> c_int {
         barrier(|| {
             let get = |s: &mut GitStr| {

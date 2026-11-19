@@ -531,7 +531,7 @@ fn c_abi_parse_and_accessors() {
         assert_eq!(CStr::from_ptr(ffi::git_commit_body(r)).to_bytes(), b"Body");
         let mut out = GitStr::new();
         assert_eq!(
-            ffi::git_commit__header_field(Some(&mut out), r, c"author".into()),
+            ffi::git_commit__header_field(Some(&mut out), r, c"author".as_ptr()),
             0
         );
         assert_eq!(out.as_bytes(), b"A <a@b> 1 +0000");
@@ -695,7 +695,7 @@ fn c_abi_null_arguments() {
             &raw mut signed,
             None,
             Some(&tree),
-            CStrArg::NULL,
+            ptr::null(),
         );
         assert_eq!(r, -1);
         assert_eq!(errors::last_message().unwrap(), b"invalid argument: 'repo'");

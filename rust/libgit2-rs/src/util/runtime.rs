@@ -82,7 +82,14 @@ impl Runtime {
     /// them. Returns the new count.
     ///
     /// Calling it more often than `init` makes the count negative, as in C.
-    pub fn shutdown(&self) -> c_int {
+    ///
+    /// # Safety
+    ///
+    /// The caller gives up a count it took with [`init`](Self::init), and
+    /// if it is the last one (the teardowns run), nothing uses what the
+    /// registered callbacks tear down (the library's subsystems, objects
+    /// made with them) after this call until the next `init`.
+    pub unsafe fn shutdown(&self) -> c_int {
         let mut count = lock(&self.count);
         *count -= 1;
         if *count == 0 {
@@ -91,7 +98,9 @@ impl Runtime {
                     break;
                 };
                 // SAFETY: whoever registered `cb` vouched that it may run at
-                // shutdown (`shutdown_register`'s contract).
+                // a shutdown (`shutdown_register`'s contract), and this is
+                // one: the last count was given up, and nothing uses what it
+                // tears down any more (this fn's contract).
                 unsafe { cb() };
             }
         }
@@ -146,8 +155,13 @@ pub fn init_count() -> c_int {
 }
 
 /// Shut the library's runtime down (see [`Runtime::shutdown`]).
-pub fn shutdown() -> c_int {
-    RUNTIME.shutdown()
+///
+/// # Safety
+///
+/// As [`Runtime::shutdown`].
+pub unsafe fn shutdown() -> c_int {
+    // SAFETY: this fn's contract is `Runtime::shutdown`'s.
+    unsafe { RUNTIME.shutdown() }
 }
 
 /// Register a Rust shutdown callback with the library's runtime. A safe
@@ -206,10 +220,13 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// The registered callbacks run; each registrant vouched for its own.
+    /// As [`Runtime::shutdown`]: it pairs with a `git_runtime_init` of the
+    /// caller, and after the last shutdown nothing the registered callbacks
+    /// tear down is used until the next init.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_runtime_shutdown() -> c_int {
-        barrier(shutdown)
+        // SAFETY: this export's contract is `shutdown`'s.
+        barrier(|| unsafe { shutdown() })
     }
 
     /// `git_runtime_shutdown_register`.
@@ -266,9 +283,11 @@ mod tests {
         }
         assert_eq!(INITS.load(Ordering::SeqCst), 1);
         assert_eq!(rt.init_count(), 2);
-        assert_eq!(rt.shutdown(), 1);
+        // SAFETY: this runtime's own counts, which nothing else uses.
+        assert_eq!(unsafe { rt.shutdown() }, 1);
         assert!(ORDER.lock().unwrap().is_empty());
-        assert_eq!(rt.shutdown(), 0);
+        // SAFETY: as above.
+        assert_eq!(unsafe { rt.shutdown() }, 0);
         assert_eq!(*ORDER.lock().unwrap(), [2, 1]);
         // Callbacks are forgotten after they run.
         assert_eq!(rt.init_count(), 0);

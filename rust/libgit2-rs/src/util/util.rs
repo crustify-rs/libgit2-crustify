@@ -1236,12 +1236,19 @@ pub mod ffi {
     ///
     /// `out` is a valid `git_str`; `name` is NUL-terminated.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn git__getenv(out: Option<&mut GitStr>, name: CStrArg<'_>) -> c_int {
+    pub unsafe extern "C" fn git__getenv(out: Option<&mut GitStr>, name: *const c_char) -> c_int {
         barrier(|| {
             let out = git_arg!(out, "out", -1);
+            // C clears `out` first, then reads `name` (which may lie in
+            // `out`'s buffer): so here, copied if so.
+            out.clear();
+            // SAFETY: `name` is NULL or a string readable now that, outside
+            // `out`'s buffer, nothing writes during the call (this export's
+            // contract).
+            let name = unsafe { out.arg_cstr(name) };
             // (C passes NULL to `getenv`, which crashes.)
-            let name = git_arg!(name.get(), "name", -1);
-            status(getenv(out, name))
+            let name = git_arg!(name, "name", -1);
+            status(getenv(out, &name))
         })
     }
 

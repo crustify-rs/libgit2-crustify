@@ -1474,7 +1474,9 @@ impl GitPackFile {
         let buf = Buf(data);
 
         with_inflater("failed to init zlib stream on unpack", |z| {
-            self.inflate_into(z, cursor, position, data, buffer_len, size)
+            // SAFETY: `data` is our allocation of `buffer_len = size + 1`
+            // writable bytes, which nothing else reaches during the call.
+            unsafe { self.inflate_into(z, cursor, position, data, size) }
         })?;
         core::mem::forget(buf);
         // SAFETY: `data` is ours, `size + 1` initialized bytes
@@ -1483,17 +1485,21 @@ impl GitPackFile {
     }
 
     /// The loop of `packfile_unpack_compressed`: inflate exactly `size`
-    /// bytes from `*position` into `data` (`buffer_len = size + 1` bytes),
-    /// then the NUL.
-    fn inflate_into(
+    /// bytes from `*position` into `data`, then the NUL.
+    ///
+    /// # Safety
+    ///
+    /// `data` is valid for writes of `size + 1` bytes (so `size + 1` does
+    /// not overflow), which nothing else reads or writes during the call.
+    unsafe fn inflate_into(
         &self,
         z: ZstreamPtr<'_>,
         cursor: &mut Cursor,
         position: &mut i64,
         data: NonNull<u8>,
-        buffer_len: usize,
         size: usize,
     ) -> Result<()> {
+        let buffer_len = size + 1;
         let mut total = 0usize;
         loop {
             let mut bytes = buffer_len - total;
@@ -1504,8 +1510,8 @@ impl GitPackFile {
             z.set_input(input.as_ptr().cast(), window_len);
             // SAFETY: the input is the window the cursor holds, mapped and
             // unwritten for the call; `data + total` has `bytes` writable
-            // bytes (`total + bytes == buffer_len`), distinct from the input
-            // and the stream.
+            // bytes (`total + bytes == buffer_len`, `data`'s length by this
+            // fn's contract), distinct from the input and the stream.
             let r = unsafe { z.get_output_chunk(data.as_ptr().wrapping_add(total), &mut bytes) };
             cursor.close();
             r?;
@@ -1529,8 +1535,9 @@ impl GitPackFile {
                 "error inflating zlib stream"
             ));
         }
-        // SAFETY: zlib wrote `total == size` bytes; the NUL makes all
-        // `buffer_len` initialized.
+        // SAFETY: byte `size` is within `data`'s `size + 1` writable bytes
+        // (this fn's contract); zlib wrote `total == size` bytes, so the NUL
+        // makes all of them initialized.
         unsafe { data.as_ptr().wrapping_add(size).write(0) };
         Ok(())
     }

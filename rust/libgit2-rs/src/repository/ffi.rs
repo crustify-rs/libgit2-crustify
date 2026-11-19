@@ -1409,26 +1409,19 @@ string_getter!(
 pub unsafe extern "C" fn git_repository_workdir_path(
     out: *mut GitStr,
     repo_: Option<&GitRepository>,
-    path: CStrArg<'_>,
+    path: *const c_char,
 ) -> c_int {
     barrier(|| {
         git_assert_arg!(!out.is_null(), "out", -1);
-        let p = path.to_bytes();
-        // `path` may point into `out`'s buffer: then it is copied first.
-        // SAFETY: a valid `git_str`; only its fields are read.
-        let o_ref = unsafe { &*out };
-        let (base, cap) = (o_ref.as_ptr() as usize, o_ref.capacity());
-        let a = p.as_ptr() as usize;
-        let copy;
-        let p: &[u8] = if a >= base && a < base.wrapping_add(cap) {
-            copy = p.to_vec();
-            &copy
-        } else {
-            p
-        };
-        // SAFETY: a valid `git_str`, not otherwise accessed during the call.
+        // SAFETY: a valid `git_str`, not otherwise accessed during the call
+        // (this export's contract); `path` may lie in its heap buffer, which
+        // the `&mut` does not cover.
         let o = unsafe { &mut *out };
-        with_repo!(repo_, "repo", |r| status(head::workdir_path(o, r, p)))
+        // `path` may point into `out`'s buffer: then it is copied first.
+        // SAFETY: NULL or a string readable now that, outside `out`'s
+        // buffer, nothing writes during the call (this export's contract).
+        let p = unsafe { o.arg_bytes(path) }.unwrap_or_default();
+        with_repo!(repo_, "repo", |r| status(head::workdir_path(o, r, &p)))
     })
 }
 

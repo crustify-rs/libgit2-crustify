@@ -2511,7 +2511,7 @@ pub mod ffi {
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference__normalize_name(
         buf: *mut GitStr,
-        name: CStrArg<'_>,
+        name: *const c_char,
         flags: c_uint,
     ) -> c_int {
         barrier(|| {
@@ -2520,23 +2520,35 @@ pub mod ffi {
             // nothing else uses during the call (this export's contract):
             // the `&mut` covers its header; `name` may point into its heap
             // buffer, which the header only points to.
-            let b = unsafe { buf.as_mut() };
-            // The name may point into `buf`, which normalizing clears and
-            // writes: then it is copied first.
-            let np = name.as_ptr() as usize;
-            let aliased = b.as_deref().is_some_and(|s| {
-                let start = s.as_ptr() as usize;
-                (start..=start + s.capacity()).contains(&np)
-            });
-            let n = name.to_bytes();
-            let copy;
-            let n = if aliased {
-                copy = n.to_vec();
-                &copy[..]
-            } else {
-                n
+            let mut b = unsafe { buf.as_mut() };
+            let in_buf = b.as_deref().is_some_and(|s| s.points_into(name));
+            let validate = flags & GIT_REFERENCE_FORMAT_VALIDATION_DISABLE == 0;
+            let n = match b.as_deref_mut() {
+                Some(s) if in_buf => {
+                    // C checks the leading '/' on the name as given, then
+                    // clears `buf` (which may cut a name that starts at its
+                    // buffer), then reads the name: so here, with a copy.
+                    // SAFETY: `name` is a NUL-terminated string readable now
+                    // (this export's contract); the reference ends with the
+                    // read of its first byte.
+                    let first = unsafe { name.cast::<u8>().read() };
+                    if !(validate && first == b'/') {
+                        s.clear();
+                    }
+                    // SAFETY: as above, read now and copied (it lies in
+                    // `s`'s buffer).
+                    unsafe { s.arg_bytes(name) }
+                }
+                _ => {
+                    // SAFETY: a NUL-terminated string outside `buf`'s buffer,
+                    // which nothing writes during the call (this export's
+                    // contract).
+                    let c: &CStr = unsafe { CStr::from_ptr(name) };
+                    Some(std::borrow::Cow::Borrowed(c.to_bytes()))
+                }
             };
-            status(normalize_name_nul_free(b, NulFree(n), flags))
+            let n = n.unwrap_or_default();
+            status(normalize_name_nul_free(b, NulFree(&n), flags))
         })
     }
 
@@ -3234,14 +3246,16 @@ mod ffi_tests {
                 0
             );
             assert_eq!(valid, 1);
+            // A name inside `buf`'s own buffer is read as C reads it: after
+            // the clear (which empties a name at the start of the buffer).
             let mut s = GitStr::new();
-            s.puts(b"q//w").unwrap();
-            let own = s.as_ptr();
-            assert_eq!(
-                git_reference__normalize_name(&raw mut s, CStrArg::from_ptr(own), 0),
-                0
-            );
+            s.puts(b"xxq//w").unwrap();
+            let own = s.as_ptr().wrapping_add(2);
+            assert_eq!(git_reference__normalize_name(&raw mut s, own, 0), 0);
             assert_eq!(s.as_bytes(), b"q/w");
+            s.sets(b"q//w").unwrap();
+            let own = s.as_ptr();
+            assert!(git_reference__normalize_name(&raw mut s, own, 0) < 0);
             assert_eq!(git_reference__is_branch(c"refs/heads/".into()), 1);
             // The predicates read a bounded head of the name.
             let long = c"refs/heads/a-branch-name-much-longer-than-thirty-two-bytes";

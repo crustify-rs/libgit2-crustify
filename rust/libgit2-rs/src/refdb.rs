@@ -987,30 +987,54 @@ pub mod ffi {
         db.ok_or_else(|| errors::assert_arg_failed("db"))
     }
 
-    /// One load of `db->backend`, checked as `GIT_ASSERT_ARG(<text>)`
-    /// (C loads it again for the call; here the checked pointer is the one
-    /// called, see [`RefdbPtr::slot`]).
-    fn backend_arg(d: RefdbPtr, text: &'static str) -> Result<*mut git_refdb_backend> {
-        let b = d.backend();
-        if b.is_null() {
-            return Err(errors::assert_arg_failed(text));
-        }
-        Ok(b)
-    }
+    mod loaded {
+        use super::*;
 
-    /// The slot `f` of the live, non-null backend `b`; a NULL slot panics
-    /// (C calls it unconditionally: a crash; the barrier makes it an
-    /// error).
-    fn slot_of<T: Copy>(
-        b: *mut git_refdb_backend,
-        f: impl FnOnce(&git_refdb_backend) -> Option<T>,
-    ) -> T {
-        // SAFETY: `b` is a non-null backend loaded from a live database
-        // (the exports' contract: a live database has a live backend),
-        // whose table nothing writes while it is in use; the reference
-        // lives only for `f`.
-        f(unsafe { &*b }).expect("refdb backend slot is NULL")
+        /// One load of a live database's `backend` (C loads it again for
+        /// the call; here the loaded pointer is the one called, see
+        /// [`RefdbPtr::slot`]).
+        ///
+        /// Invariant (its constructors are the only way to make one): a
+        /// non-null backend loaded from a live database during an export
+        /// call, so live, with a table that nothing writes, for the call.
+        #[derive(Clone, Copy)]
+        pub(super) struct LoadedBackend(NonNull<git_refdb_backend>);
+
+        impl LoadedBackend {
+            /// `d`'s backend, checked as `GIT_ASSERT_ARG(<text>)`.
+            pub(super) fn load(d: RefdbPtr, text: &'static str) -> Result<LoadedBackend> {
+                // `RefdbPtr`'s invariant: a live database, whose backend is
+                // NULL or live and not replaced during the call.
+                NonNull::new(d.backend())
+                    .map(LoadedBackend)
+                    .ok_or_else(|| errors::assert_arg_failed(text))
+            }
+
+            /// `d`'s backend, which C dereferences unchecked: a NULL one
+            /// panics (the barrier makes the crash an error).
+            pub(super) fn load_unchecked(d: RefdbPtr) -> LoadedBackend {
+                LoadedBackend(NonNull::new(d.backend()).expect("NULL refdb backend"))
+            }
+
+            /// The pointer, for the slot call.
+            pub(super) fn as_ptr(self) -> *mut git_refdb_backend {
+                self.0.as_ptr()
+            }
+
+            /// The slot `f` of the backend; a NULL slot panics (C calls it
+            /// unconditionally: a crash; the barrier makes it an error).
+            pub(super) fn slot<T: Copy>(
+                self,
+                f: impl FnOnce(&git_refdb_backend) -> Option<T>,
+            ) -> T {
+                // SAFETY: a live backend whose table nothing writes during
+                // the call (the type's invariant); the reference lives only
+                // for `f`.
+                f(unsafe { self.0.as_ref() }).expect("refdb backend slot is NULL")
+            }
+        }
     }
+    use loaded::LoadedBackend;
 
     /// `git_refdb_new`.
     ///
@@ -1153,14 +1177,14 @@ pub mod ffi {
         barrier(|| {
             crate::git_assert_arg!(!exists.is_null(), "exists", -1);
             let d = git_arg!(db, "refdb", -1);
-            let b = match backend_arg(d, "refdb->backend") {
+            let b = match LoadedBackend::load(d, "refdb->backend") {
                 Ok(b) => b,
                 Err(e) => return e.raw(),
             };
-            let f = slot_of(b, |t| t.exists);
+            let f = b.slot(|t| t.exists);
             // SAFETY: the backend's own slot with the backend and C's
             // arguments, passed on as C does (this export's contract).
-            unsafe { f(exists, b, ref_name) }
+            unsafe { f(exists, b.as_ptr(), ref_name) }
         })
     }
 
@@ -1321,7 +1345,7 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             let d = git_arg!(db, "db", -1);
-            let b = match backend_arg(d, "db->backend") {
+            let b = match LoadedBackend::load(d, "db->backend") {
                 Ok(b) => b,
                 Err(e) => return e.raw(),
             };
@@ -1332,10 +1356,10 @@ pub mod ffi {
             // uses during the call (this export's contract); C sets `db`
             // without dropping a count it held.
             unsafe { (*r).db = d.as_ptr() };
-            let f = slot_of(b, |t| t.write);
+            let f = b.slot(|t| t.write);
             // SAFETY: the backend's own slot with the backend and C's
             // arguments, passed on as C does (this export's contract).
-            unsafe { f(b, r, force, who, message, old_id, old_target) }
+            unsafe { f(b.as_ptr(), r, force, who, message, old_id, old_target) }
         })
     }
 
@@ -1358,14 +1382,14 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             let d = git_arg!(db, "db", -1);
-            let b = match backend_arg(d, "db->backend") {
+            let b = match LoadedBackend::load(d, "db->backend") {
                 Ok(b) => b,
                 Err(e) => return e.raw(),
             };
-            let f = slot_of(b, |t| t.rename);
+            let f = b.slot(|t| t.rename);
             // SAFETY: the backend's own slot with the backend and C's
             // arguments, passed on as C does (this export's contract).
-            let r = unsafe { f(out, b, old_name, new_name, force, who, message) };
+            let r = unsafe { f(out, b.as_ptr(), old_name, new_name, force, who, message) };
             if r < 0 {
                 return r;
             }
@@ -1399,14 +1423,14 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             let d = git_arg!(db, "db", -1);
-            let b = match backend_arg(d, "db->backend") {
+            let b = match LoadedBackend::load(d, "db->backend") {
                 Ok(b) => b,
                 Err(e) => return e.raw(),
             };
-            let f = slot_of(b, |t| t.del);
+            let f = b.slot(|t| t.del);
             // SAFETY: the backend's own slot with the backend and C's
             // arguments, passed on as C does (this export's contract).
-            unsafe { f(b, ref_name, old_id, old_target) }
+            unsafe { f(b.as_ptr(), ref_name, old_id, old_target) }
         })
     }
 
@@ -1425,14 +1449,14 @@ pub mod ffi {
     ) -> c_int {
         barrier(|| {
             let d = git_arg!(db, "db", -1);
-            let b = match backend_arg(d, "db->backend") {
+            let b = match LoadedBackend::load(d, "db->backend") {
                 Ok(b) => b,
                 Err(e) => return e.raw(),
             };
-            let f = slot_of(b, |t| t.reflog_read);
+            let f = b.slot(|t| t.reflog_read);
             // SAFETY: the backend's own slot with the backend and C's
             // arguments, passed on as C does (this export's contract).
-            let r = unsafe { f(out, b, name) };
+            let r = unsafe { f(out, b.as_ptr(), name) };
             if r < 0 {
                 return r;
             }
@@ -1619,12 +1643,11 @@ pub mod ffi {
         barrier(|| {
             let d = git_arg!(db, "db", -1);
             // C dereferences a NULL backend: the panic becomes an error.
-            let b = d.backend();
-            assert!(!b.is_null(), "NULL refdb backend");
-            let f = slot_of(b, |t| t.unlock);
+            let b = LoadedBackend::load_unchecked(d);
+            let f = b.slot(|t| t.unlock);
             // SAFETY: the backend's own slot with the backend and C's
             // arguments, passed on as C does (this export's contract).
-            unsafe { f(b, payload, success, update_reflog, r, sig, message) }
+            unsafe { f(b.as_ptr(), payload, success, update_reflog, r, sig, message) }
         })
     }
 

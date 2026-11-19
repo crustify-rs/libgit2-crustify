@@ -187,21 +187,28 @@ impl<'a> ReflogRef<'a> {
         self.len() == 0
     }
 
-    fn entry(p: *mut core::ffi::c_void) -> Option<EntryRef<'a>> {
-        // SAFETY: an element of the reflog's vector: NULL or a live,
+    /// The entry at vector position `i` (`None` past the end or for a NULL
+    /// element).
+    fn entry_at(self, i: usize) -> Option<EntryRef<'a>> {
+        let p = self.raw().entries.get(i)?;
+        // SAFETY: an element of this reflog's vector: NULL or a live,
         // aligned entry, unwritten during `'a` (the type's invariant).
         unsafe { p.cast::<GitReflogEntry>().as_ref() }.map(EntryRef)
     }
 
     /// The entries, oldest first.
     pub fn entries(self) -> impl Iterator<Item = EntryRef<'a>> {
-        self.raw().entries.iter().filter_map(Self::entry)
+        (0..self.len()).filter_map(move |i| self.entry_at(i))
     }
 
     /// The entry at API index `idx` (0 is the newest), or `None`
     /// (`git_reflog_entry_byindex`).
     pub fn entry_byindex(self, idx: usize) -> Option<EntryRef<'a>> {
-        self.entry_raw(idx).and_then(|e| Self::entry(e.cast()))
+        let n = self.len();
+        if idx >= n {
+            return None;
+        }
+        self.entry_at(inverse(idx, n))
     }
 
     /// The element at API index `idx` as the vector holds it (with the

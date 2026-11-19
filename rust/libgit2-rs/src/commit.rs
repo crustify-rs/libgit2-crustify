@@ -214,17 +214,33 @@ impl<'a> CommitRef<'a> {
         unsafe { self.committer().as_ref() }
     }
 
-    /// A signature of the commit as the safe API's view (empty for NULL).
-    pub fn signature_ref(sig: Option<&'a GitSignature>) -> crate::signature::SignatureRef<'a> {
+    /// The author as the safe API's view (empty for NULL).
+    pub fn author_view(self) -> crate::signature::SignatureRef<'a> {
+        // SAFETY: the commit's own author (the type's invariant).
+        unsafe { Self::view(self.author_ref()) }
+    }
+
+    /// The committer as the safe API's view (empty for NULL).
+    pub fn committer_view(self) -> crate::signature::SignatureRef<'a> {
+        // SAFETY: the commit's own committer (the type's invariant).
+        unsafe { Self::view(self.committer_ref()) }
+    }
+
+    /// The view of `sig`.
+    ///
+    /// # Safety
+    ///
+    /// `sig` is NULL or a signature whose `name` and `email` are NULL or
+    /// NUL-terminated strings, live and unwritten for `'a`.
+    unsafe fn view(sig: Option<&'a GitSignature>) -> crate::signature::SignatureRef<'a> {
         match sig {
             None => crate::signature::SignatureRef::new(
                 b"",
                 b"",
                 crate::signature::Time::from_raw(GitTime::default()),
             ),
-            // SAFETY: one of a commit's signatures (`author_ref`,
-            // `committer_ref`), whose strings are NUL-terminated (or NULL),
-            // live and unwritten for `'a` (the invariant).
+            // SAFETY: its strings are NULL or NUL-terminated, live and
+            // unwritten for `'a` (this fn's contract).
             Some(s) => unsafe { crate::signature::SignatureRef::from_raw(s) },
         }
     }
@@ -2572,15 +2588,19 @@ pub mod ffi {
     /// # Safety
     ///
     /// `out` NULL or a valid `git_buf`; `commit` NULL or a live commit;
-    /// `field` NULL or NUL-terminated.
+    /// `field` NULL or NUL-terminated, possibly in `out`'s buffer (read, as
+    /// in C, after `out` is sanitized), and otherwise unwritten during the
+    /// call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_commit_header_field(
         out: *mut GitBuf,
         commit: Option<CommitRef<'_>>,
-        field: CStrArg<'_>,
+        field: *const c_char,
     ) -> c_int {
         barrier(|| {
-            let f = |s: &mut GitStr| header_field_of(s, commit, field);
+            // SAFETY: `field` as `header_field_of` requires (this export's
+            // contract).
+            let f = |s: &mut GitStr| unsafe { header_field_of(s, commit, field) };
             // SAFETY: `out` NULL or a valid `git_buf` (this export's
             // contract), which `f` does not reach.
             unsafe { wrap_buf(out, f) }
@@ -2588,14 +2608,23 @@ pub mod ffi {
     }
 
     /// The header field of a commit for the exports.
-    fn header_field_of(
+    ///
+    /// # Safety
+    ///
+    /// `field` is NULL or a string readable now that, unless it lies in
+    /// `out`'s buffer, nothing writes during the call.
+    unsafe fn header_field_of(
         out: &mut GitStr,
         commit: Option<CommitRef<'_>>,
-        field: CStrArg<'_>,
+        field: *const c_char,
     ) -> Result<()> {
         let commit = commit.ok_or_else(|| errors::assert_arg_failed("commit"))?;
+        // `field` may lie in `out`'s buffer, which the search writes: read
+        // now (after the sanitize, as C) and copied if so.
+        // SAFETY: this fn's contract is `arg_bytes`'s.
+        let field = unsafe { out.arg_bytes(field) }.unwrap_or_default();
         // (A quick-parsed commit has no header: `""`.)
-        header_field_arg(commit.raw_header_arg(), field.to_bytes(), out)
+        header_field_arg(commit.raw_header_arg(), &field, out)
     }
 
     /// `git_commit__header_field`.
@@ -2603,16 +2632,19 @@ pub mod ffi {
     /// # Safety
     ///
     /// `out` NULL or a valid `git_str`, not in the commit's header;
-    /// `commit` NULL or a live commit; `field` NULL or NUL-terminated.
+    /// `commit` NULL or a live commit; `field` NULL or NUL-terminated,
+    /// possibly in `out`'s buffer, and otherwise unwritten during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_commit__header_field(
         out: Option<&mut GitStr>,
         commit: Option<CommitRef<'_>>,
-        field: CStrArg<'_>,
+        field: *const c_char,
     ) -> c_int {
         barrier(|| {
             let out = git_arg!(out, "out", -1);
-            code(header_field_of(out, commit, field))
+            // SAFETY: `field` as `header_field_of` requires (this export's
+            // contract).
+            code(unsafe { header_field_of(out, commit, field) })
         })
     }
 
@@ -2629,7 +2661,7 @@ pub mod ffi {
         signed_data_out: *mut GitBuf,
         repo: Option<&git_repository>,
         commit_id: Option<&Oid>,
-        field: CStrArg<'_>,
+        field: *const c_char,
     ) -> c_int {
         barrier(|| {
             let mut signature = GitStr::new();
@@ -2678,7 +2710,7 @@ pub mod ffi {
         signed_data: *mut GitStr,
         repo: Option<&git_repository>,
         commit_id: Option<&Oid>,
-        field: CStrArg<'_>,
+        field: *const c_char,
     ) -> c_int {
         barrier(|| {
             git_assert_arg!(!signature.is_null(), "signature", -1);
@@ -2690,7 +2722,19 @@ pub mod ffi {
             let sd = unsafe { &mut *signed_data };
             sig.clear();
             sd.clear();
-            let field = field.get().map(CStr::to_bytes).unwrap_or(b"gpgsig");
+            // Read after the clears, as C: copied if it lies in either
+            // output's buffer (which the extraction writes).
+            let field = if sd.points_into(field) {
+                // SAFETY: `field` is a string readable now (this export's
+                // contract), in `sd`'s buffer: `arg_bytes` copies it.
+                unsafe { sd.arg_bytes(field) }
+            } else {
+                // SAFETY: `field` is NULL or a string readable now that,
+                // outside the outputs' buffers, nothing writes during the
+                // call (this export's contract); in `sig`'s, it is copied.
+                unsafe { sig.arg_bytes(field) }
+            };
+            let field = field.as_deref().unwrap_or(b"gpgsig");
             // `git_repository_odb__weakptr`'s check.
             let repo = git_arg!(repo, "repo", -1);
             let odb = match crate::object::repo_odb_weak(repo) {
@@ -2746,15 +2790,16 @@ pub mod ffi {
     ///
     /// # Safety
     ///
-    /// As [`git_commit__create_buffer`] (`out` aside).
+    /// As [`git_commit__create_buffer`] (`out` aside): the strings may lie
+    /// in `out`'s buffer.
     #[allow(clippy::too_many_arguments)]
     unsafe fn create_buffer(
         out: Option<&mut GitStr>,
         repo: Option<&git_repository>,
         author: Option<&GitSignature>,
         committer: Option<&GitSignature>,
-        message_encoding: CStrArg<'_>,
-        message: CStrArg<'_>,
+        message_encoding: *const c_char,
+        message: *const c_char,
         tree: Option<&GitTree>,
         parent_count: usize,
         parents: *const *mut GitCommit,
@@ -2766,6 +2811,14 @@ pub mod ffi {
             -1
         );
         let out = git_arg!(out, "out", -1);
+        // The strings may lie in `out`'s buffer, which the buffer is built
+        // in: read now, copied if so (C reads them later, while writing
+        // `out`, which clobbers such a string: rust/DEFECTS.md).
+        // SAFETY: NULL or strings readable now that, outside `out`'s
+        // buffer, nothing writes during the call (this fn's contract).
+        let message = unsafe { out.arg_bytes(message) };
+        // SAFETY: as above.
+        let message_encoding = unsafe { out.arg_bytes(message_encoding) };
         let tree_id = tree_id_of(tree);
         // SAFETY: `parent_count` readable pointers to live commits (or
         // NULL), for the call (the contract).
@@ -2782,9 +2835,9 @@ pub mod ffi {
             author: unsafe { sig_out(author) },
             // SAFETY: as for the author.
             committer: unsafe { sig_out(committer) },
-            message: message.get().map(CStr::to_bytes),
+            message: message.as_deref(),
             tree: tree_id,
-            encoding: message_encoding.get().map(CStr::to_bytes),
+            encoding: message_encoding.as_deref(),
             headers: Ok(Vec::new()),
             update_ref: None,
             validate: true,
@@ -2803,8 +2856,8 @@ pub mod ffi {
         repo: Option<&git_repository>,
         author: Option<&GitSignature>,
         committer: Option<&GitSignature>,
-        message_encoding: CStrArg<'_>,
-        message: CStrArg<'_>,
+        message_encoding: *const c_char,
+        message: *const c_char,
         tree: Option<&GitTree>,
         parent_count: usize,
         parents: *const *mut GitCommit,
@@ -2845,8 +2898,8 @@ pub mod ffi {
         repo: Option<&git_repository>,
         author: Option<&GitSignature>,
         committer: Option<&GitSignature>,
-        message_encoding: CStrArg<'_>,
-        message: CStrArg<'_>,
+        message_encoding: *const c_char,
+        message: *const c_char,
         tree: Option<&GitTree>,
         parent_count: usize,
         parents: *const *mut GitCommit,

@@ -5,6 +5,7 @@ use crate::util::cabi::{CStrArg, Out};
 use crate::util::export::{barrier, status};
 use crate::util::hashmap::{CStrKey, GitHashSetStr};
 use crate::util::pool::GitPool;
+use core::ffi::c_char;
 use core::ptr::NonNull;
 
 /// An fd-returning result as C's `int`.
@@ -35,19 +36,21 @@ pub unsafe extern "C" fn git_futils_mkpath2file(path: CStrArg<'_>, mode: mode_t)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_futils_mktmp(
     path_out: *mut GitStr,
-    filename: CStrArg<'_>,
+    filename: *const c_char,
     mode: mode_t,
 ) -> c_int {
     barrier(|| {
-        // Copied first: it may lie in `path_out`'s buffer, which `mktmp`
-        // rewrites.
-        let f = filename.to_bytes().to_vec();
         // SAFETY: `path_out` is NULL or a valid `git_str` that nothing else
         // accesses during the call (this export's contract); `filename`
-        // is not read again.
+        // may lie in its heap buffer, which the `&mut` does not cover.
         let Some(out) = (unsafe { path_out.as_mut() }) else {
             return -1;
         };
+        // Copied if it lies in `out`'s buffer, which `mktmp` rewrites.
+        // SAFETY: `filename` is NULL or a string readable now that, outside
+        // `out`'s buffer, nothing writes during the call (this export's
+        // contract).
+        let f = unsafe { out.arg_bytes(filename) }.unwrap_or_default();
         fd_status(mktmp(out, &f, mode))
     })
 }
@@ -186,23 +189,22 @@ pub unsafe extern "C" fn git_futils_readbuffer_fd_full(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_futils_readbuffer_updated(
     out: Option<&mut GitStr>,
-    path: CStrArg<'_>,
+    path: *const c_char,
     checksum: Option<&mut [u8; crate::util::hash::SHA256_SIZE]>,
     updated: Option<&mut c_int>,
 ) -> c_int {
     barrier(|| {
         let out = crate::git_arg!(out, "out", -1);
-        let Some(p) = path.get().filter(|p| !p.is_empty()) else {
+        // A `path` in `out`'s buffer is copied: the call frees that buffer
+        // (C's swap and dispose); C reads it before.
+        // SAFETY: `path` is NULL or a string readable now that, outside
+        // `out`'s buffer, nothing writes during the call (this export's
+        // contract).
+        let path = unsafe { out.arg_cstr(path) };
+        let Some(p) = path.as_deref().filter(|p| !p.is_empty()) else {
             let _ = errors::assert_arg_failed("path && *path");
             return -1;
         };
-        // A `path` in `out`'s buffer is copied: the call frees that buffer
-        // (C's swap and dispose) while the `&CStr` it borrows is live.
-        let start = out.as_ptr() as usize;
-        let copy = (out.capacity() > 0
-            && (start..start + out.capacity()).contains(&(p.as_ptr() as usize)))
-        .then(|| p.to_owned());
-        let p = copy.as_deref().unwrap_or(p);
         status(readbuffer_updated(out, p, checksum, updated))
     })
 }
@@ -215,7 +217,7 @@ pub unsafe extern "C" fn git_futils_readbuffer_updated(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn git_futils_readbuffer(
     buf: Option<&mut GitStr>,
-    path: CStrArg<'_>,
+    path: *const c_char,
 ) -> c_int {
     // SAFETY: `buf` and `path` are this export's arguments, under the same
     // contract; `None` is a valid `checksum` and `updated`.

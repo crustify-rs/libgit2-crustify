@@ -348,7 +348,7 @@ pub fn create_from_paths(
     let content_path: &CStr = match content_path {
         Some(c) => c,
         None => {
-            let hp = CStrArg::from(hint_path);
+            let hp = CStrArg::from(hint_path).as_ptr();
             // SAFETY: `repo` is NULL or a live repository, `path` a valid
             // `git_str` (`&raw mut` of a local), `hp` NULL or a string.
             if unsafe { p::git_repository_workdir_path(&raw mut path, repo, hp) } < 0 {
@@ -629,11 +629,14 @@ impl GitBlobFilterOptions {
 ///
 /// # Safety
 ///
-/// `blob` is a live blob of a repository; `out` a valid `git_buf`.
+/// `blob` is a live blob of a repository; `out` a valid `git_buf`; `path`
+/// NULL or a string, possibly in `out`'s buffer, readable and unwritten
+/// until the filters are loaded (it is read only then, before `out` is
+/// written, as C reads it).
 pub unsafe fn filter(
     out: *mut GitBuf,
     blob: NonNull<GitBlob>,
-    path: &CStr,
+    path: *const c_char,
     opts: &GitBlobFilterOptions,
 ) -> Result<()> {
     // SAFETY: a live blob.
@@ -653,6 +656,10 @@ pub unsafe fn filter(
         fo.attr_commit_id = opts.attr_commit_id;
     }
     let o = blob.as_ptr().cast::<c_void>();
+    // SAFETY: `path` is NULL or a string read here only, before `out` (in
+    // whose buffer it may lie) is written: it is unwritten until then (this
+    // fn's contract); `path` (a `&CStr`) is not used after the load.
+    let path = unsafe { CStrArg::from_ptr(path) }.or_empty();
     // SAFETY: the blob's live repository and the blob.
     let fl = unsafe {
         FilterList::load_ext(
@@ -786,7 +793,7 @@ impl<'repo> Blob<'repo> {
         }
         let mut out = GitBuf::new();
         // SAFETY: a live blob of a repository and a valid `git_buf`.
-        let mut run = || unsafe { filter(&raw mut out, self.0.as_ptr().cast(), &path, &o) };
+        let mut run = || unsafe { filter(&raw mut out, self.0.as_ptr().cast(), path.as_ptr(), &o) };
         match self.0.owner() {
             // The filters read attributes, which C may read from the index.
             Some(repo) => crate::index::api::with_repository_index_locked(repo, &mut run)?,
@@ -1250,18 +1257,19 @@ pub mod ffi {
     ///
     /// `out` is NULL or a valid `git_buf` that nothing else uses during the
     /// call; `blob` NULL or a live blob of a live repository; `path` NULL or
-    /// NUL-terminated; `given_opts` NULL or readable, unwritten during the
-    /// call.
+    /// NUL-terminated, possibly in `out`'s buffer (read, as in C, only
+    /// while the filters load); `given_opts` NULL or readable, unwritten
+    /// during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_blob_filter(
         out: *mut GitBuf,
         blob: *mut GitBlob,
-        path: CStrArg<'_>,
+        path: *const c_char,
         given_opts: Option<&GitBlobFilterOptions>,
     ) -> c_int {
         barrier(|| {
             let blob = git_arg!(NonNull::new(blob), "blob", -1);
-            let path = git_arg!(path.get(), "path", -1);
+            git_assert_arg!(!path.is_null(), "path", -1);
             git_assert_arg!(!out.is_null(), "out", -1);
             // (`version` is the options' first member, an `int` C checks
             // as `unsigned int`.)

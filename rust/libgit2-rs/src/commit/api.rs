@@ -230,12 +230,12 @@ impl<'r> Commit<'r> {
 
     /// `git_commit_author`.
     pub fn author(&self) -> SignatureRef<'_> {
-        CommitRef::signature_ref(self.c().author_ref())
+        self.c().author_view()
     }
 
     /// `git_commit_committer`.
     pub fn committer(&self) -> SignatureRef<'_> {
-        CommitRef::signature_ref(self.c().committer_ref())
+        self.c().committer_view()
     }
 
     /// `git_commit_time`: the committer's time, in seconds.
@@ -407,7 +407,7 @@ impl Commit<'_> {
                 &raw mut signed,
                 Some(repo.raw()),
                 Some(id),
-                CStrArg::from(field.as_deref()),
+                CStrArg::from(field.as_deref()).as_ptr(),
             )
         })?;
         Ok((sig.as_bytes().to_vec(), signed.as_bytes().to_vec()))

@@ -320,6 +320,66 @@ impl GitStr {
         self.owned()
     }
 
+    /// A C string argument `p` of an operation that writes `self`, as C
+    /// reads it at this point: after the writes of `self` so far (C reads a
+    /// `const char *` where it uses it, e.g. after `git_buf_tostr`
+    /// sanitized the output). If it lies in `self`'s allocation it is
+    /// copied, so that writing `self` afterwards neither changes nor frees
+    /// what the caller holds; otherwise it is borrowed for `'a`. `None` for
+    /// NULL.
+    ///
+    /// # Safety
+    ///
+    /// `p` is NULL, or a NUL-terminated string readable now; if it does not
+    /// lie in `self`'s allocation, it also stays readable and unwritten for
+    /// `'a`.
+    pub(crate) unsafe fn arg_cstr<'a>(
+        &self,
+        p: *const c_char,
+    ) -> Option<std::borrow::Cow<'a, CStr>> {
+        if p.is_null() {
+            return None;
+        }
+        if self.points_into(p) {
+            // SAFETY: a NUL-terminated string readable now (the contract),
+            // which nothing writes during this read; the reference ends
+            // with the copy.
+            let s = unsafe { CStr::from_ptr(p) };
+            Some(std::borrow::Cow::Owned(s.to_owned()))
+        } else {
+            // SAFETY: outside `self`'s allocation, the string is readable
+            // and unwritten for `'a` (the contract).
+            let s: &'a CStr = unsafe { CStr::from_ptr(p) };
+            Some(std::borrow::Cow::Borrowed(s))
+        }
+    }
+
+    /// [`arg_cstr`](Self::arg_cstr) as bytes (without the NUL).
+    ///
+    /// # Safety
+    ///
+    /// As [`arg_cstr`](Self::arg_cstr).
+    pub(crate) unsafe fn arg_bytes<'a>(
+        &self,
+        p: *const c_char,
+    ) -> Option<std::borrow::Cow<'a, [u8]>> {
+        // SAFETY: this fn's contract.
+        unsafe { self.arg_cstr(p) }.map(|c| match c {
+            std::borrow::Cow::Borrowed(b) => std::borrow::Cow::Borrowed(b.to_bytes()),
+            std::borrow::Cow::Owned(o) => std::borrow::Cow::Owned(o.into_bytes()),
+        })
+    }
+
+    /// Whether `p` lies in this string's own allocation (only addresses are
+    /// compared).
+    #[inline]
+    pub(crate) fn points_into(&self, p: *const c_char) -> bool {
+        self.owned() && {
+            let start = self.ptr as usize;
+            (start..start.wrapping_add(self.asize)).contains(&(p as usize))
+        }
+    }
+
     /// The contents; empty for an out-of-memory string.
     #[inline]
     pub fn as_bytes(&self) -> &[u8] {
