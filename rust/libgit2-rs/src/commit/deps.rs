@@ -34,7 +34,7 @@ pub type GitCommitParentCallback =
     Option<unsafe extern "C" fn(idx: usize, payload: *mut c_void) -> *const Oid>;
 
 pub use crate::grafts::ffi::git_grafts_get;
-pub use crate::object::ffi::{git_object__is_valid, git_object_lookup};
+pub use crate::object::ffi::git_object_lookup;
 pub use crate::signature::ffi::{git_signature_default, git_signature_free};
 
 /// `git_commit_lookup`.
@@ -48,11 +48,11 @@ pub unsafe fn git_commit_lookup(
     repo: *mut git_repository,
     id: Option<&Oid>,
 ) -> c_int {
-    // SAFETY: `out` is NULL or writable (as the call below requires), and no reference to it is
-    // live.
+    // SAFETY: `out` is NULL or writable, with no reference to it live
+    // (this fn's contract, the export's).
     let out_out = unsafe { Out::from_ptr(out.cast()) };
-    // SAFETY: `repo` is NULL or a live repository (as the call below requires), only read through
-    // `&` (its state is interior-mutable).
+    // SAFETY: `repo` is NULL or a live repository (this fn's contract, the
+    // export's), only read through `&` (its state is interior-mutable).
     let repo_ref = unsafe { repo.as_ref() };
     // SAFETY: the caller's contract.
     unsafe { crate::object_api::ffi::git_commit_lookup(out_out, repo_ref, id) }
@@ -76,8 +76,8 @@ pub unsafe fn git_commit_free(commit: *mut GitCommit) {
 ///
 /// `out` is NULL or writable; `source` NULL or a live commit.
 pub unsafe fn git_commit_dup(out: *mut *mut GitCommit, source: *mut GitCommit) -> c_int {
-    // SAFETY: `out` is NULL or writable (as the call below requires), and no reference to it is
-    // live.
+    // SAFETY: `out` is NULL or writable, with no reference to it live
+    // (this fn's contract, the export's).
     let out_out = unsafe { Out::from_ptr(out.cast()) };
     // SAFETY: forwarded (the caller's contract).
     unsafe { crate::object_api::ffi::git_commit_dup(out_out, source.cast()) }
@@ -94,11 +94,11 @@ pub unsafe fn git_tree_lookup(
     repo: *mut git_repository,
     id: Option<&Oid>,
 ) -> c_int {
-    // SAFETY: `out` is NULL or writable (as the call below requires), and no reference to it is
-    // live.
+    // SAFETY: `out` is NULL or writable, with no reference to it live
+    // (this fn's contract, the export's).
     let out_out = unsafe { Out::from_ptr(out.cast()) };
-    // SAFETY: `repo` is NULL or a live repository (as the call below requires), only read through
-    // `&` (its state is interior-mutable).
+    // SAFETY: `repo` is NULL or a live repository (this fn's contract, the
+    // export's), only read through `&` (its state is interior-mutable).
     let repo_ref = unsafe { repo.as_ref() };
     // SAFETY: the caller's contract.
     unsafe { crate::object_api::ffi::git_tree_lookup(out_out, repo_ref, id) }
@@ -122,8 +122,8 @@ pub unsafe fn git_tree_free(tree: *mut GitTree) {
 ///
 /// `out` is NULL or writable; `source` NULL or a live tree.
 pub unsafe fn git_tree_dup(out: *mut *mut GitTree, source: *mut GitTree) -> c_int {
-    // SAFETY: `out` is NULL or writable (as the call below requires), and no reference to it is
-    // live.
+    // SAFETY: `out` is NULL or writable, with no reference to it live
+    // (this fn's contract, the export's).
     let out_out = unsafe { Out::from_ptr(out.cast()) };
     // SAFETY: forwarded (the caller's contract).
     unsafe { crate::object_api::ffi::git_tree_dup(out_out, source.cast()) }

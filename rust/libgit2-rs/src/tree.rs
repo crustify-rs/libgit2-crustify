@@ -542,13 +542,19 @@ unsafe fn check_entry(
     if id.is_zero() {
         return Err(tree_error("failed to insert entry: invalid null OID", f));
     }
-    // SAFETY: `repo` is live, only read through `&` (its state is
-    // interior-mutable).
+    // SAFETY: `repo` is NULL or live (this fn's contract), only read
+    // through `&` (its state is interior-mutable).
     let repo_ref = unsafe { repo.as_ref() };
-    if filemode != FILEMODE_COMMIT
-        // SAFETY: `repo` is live (this fn's contract).
-        && !unsafe { pend::git_object__is_valid(repo_ref, Some(id), otype_from_mode(filemode)) }
-    {
+    // (A NULL repository fails as `git_object__is_valid`'s check would.)
+    let is_valid = || match repo_ref {
+        Some(r) => crate::object::is_valid(r, id, otype_from_mode(filemode)),
+        None if !crate::object::strict_input_validation() => true,
+        None => {
+            let _ = errors::assert_arg_failed("repo");
+            false
+        }
+    };
+    if filemode != FILEMODE_COMMIT && !is_valid() {
         return Err(tree_error(
             "failed to insert entry: invalid object specified",
             f,

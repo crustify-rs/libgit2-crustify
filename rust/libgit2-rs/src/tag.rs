@@ -647,7 +647,11 @@ pub fn delete(repo: &git_repository, tag_name: &[u8]) -> Result<()> {
     // refs module through `&` only); `as_c` is a NUL-terminated name that
     // `refname` keeps for the call.
     ErrorCode::check(unsafe {
-        p::git_reference_lookup(&raw mut r.0, repo_raw(repo), as_c(&refname))
+        p::git_reference_lookup(
+            Out::from(&mut r.0),
+            repo_raw(repo),
+            refname.as_c_str().unwrap_or(c"").into(),
+        )
     })?;
     // SAFETY: the reference just looked up (non-NULL on success), live
     // until `r` drops.

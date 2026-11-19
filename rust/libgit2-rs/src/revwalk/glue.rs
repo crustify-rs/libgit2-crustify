@@ -94,13 +94,11 @@ impl Object {
 
     /// `git_object_id`.
     pub fn id(&self) -> Oid {
-        // SAFETY: `self.0` is NULL or a live object (as the call below requires), whose header is
-        // not written once shared but for its atomic count.
-        let obj_ref = unsafe { self.0.as_ptr().as_ref() };
-        // SAFETY: a live object.
-        let id = unsafe { p::git_object_id(obj_ref) };
-        // SAFETY: its id lives as long as it does, and is copied now.
-        unsafe { *id }
+        // SAFETY: an object this value owns (`from_raw`'s contract), live
+        // while `&self` is; its header is not written once shared but for
+        // its atomic count.
+        let obj = unsafe { self.0.cast::<crate::object::GitObject>().as_ref() };
+        obj.cached.oid
     }
 
     /// `git_object_peel`.
@@ -118,8 +116,8 @@ impl Object {
 /// `git_object_lookup`.
 pub fn object_lookup(repo: Repo, id: &Oid, kind: c_int) -> Result<Object> {
     let mut out = ptr::null_mut();
-    // SAFETY: `repo.0` is NULL or a live repository (as the call below requires), only read
-    // through `&` (its state is interior-mutable).
+    // SAFETY: `repo.0` is NULL or a live repository (`Repo`'s invariant),
+    // only read through `&` (its state is interior-mutable).
     let repo_0_ref = unsafe { repo.0.as_ref() };
     // SAFETY: `out` writable; `repo` NULL or live (the invariant); `id`
     // readable.

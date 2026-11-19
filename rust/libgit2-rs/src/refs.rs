@@ -1162,11 +1162,16 @@ pub fn symbolic_create_matching(
     )
 }
 
-/// The repository of a reference (`ref->db->repo`).
+/// The repository of a reference (`ref->db->repo`), for use while the
+/// reference is.
 pub fn owner(r: RefView<'_>) -> Result<RepoPtr> {
     let db = NonNull::new(r.db()).ok_or(ErrorCode::GENERIC)?;
-    // SAFETY: the reference holds a count on its database, which keeps it
-    // live while `r` is (only `db->repo`, fixed at creation, is read).
+    // SAFETY: `RefdbPtr::new`'s conditions, for the uses of the result
+    // while `r` is used: the reference holds a count on its database (so
+    // it and its backend are live: only `db->repo`, fixed at creation, is
+    // read); its repository, if set, is live too, because a reference is
+    // not used after its repository is freed (`git_repository_free`'s
+    // contract for the objects it spawned, which `RefView`'s carries).
     let db = unsafe { RefdbPtr::new(db) };
     db.repo().ok_or(ErrorCode::GENERIC)
 }
@@ -1799,9 +1804,9 @@ pub mod ffi {
     /// As [`git_reference_lookup_resolved`].
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_lookup(
-        ref_out: *mut *mut GitReference,
+        ref_out: Out<'_, *mut GitReference>,
         repo: *mut git_repository,
-        name: *const c_char,
+        name: CStrArg<'_>,
     ) -> c_int {
         // SAFETY: this export's contract is `git_reference_lookup_resolved`'s.
         unsafe { git_reference_lookup_resolved(ref_out, repo, name, 0) }
@@ -1816,17 +1821,11 @@ pub mod ffi {
     /// during the call.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn git_reference_lookup_resolved(
-        ref_out: *mut *mut GitReference,
+        ref_out: Out<'_, *mut GitReference>,
         repo: *mut git_repository,
-        name: *const c_char,
+        name: CStrArg<'_>,
         max_nesting: c_int,
     ) -> c_int {
-        // SAFETY: `ref_out` NULL or writable, with no reference to `*ref_out`
-        // (this export's contract).
-        let ref_out = unsafe { Out::from_ptr(ref_out) };
-        // SAFETY: `name` NULL or a string unwritten during the call (as
-        // above).
-        let name = unsafe { CStrArg::from_ptr(name) };
         barrier(|| {
             crate::git_assert_arg!(!ref_out.is_null(), "ref_out", -1);
             crate::git_assert_arg!(!repo.is_null(), "repo", -1);

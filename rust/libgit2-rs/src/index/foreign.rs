@@ -217,8 +217,7 @@ pub fn type_from_filemode(mode: u32) -> c_int {
 
 /// `git_object__is_valid`.
 pub fn object_is_valid(repo: Repo, id: &Oid, expected_type: c_int) -> bool {
-    // SAFETY: `repo` live (`Repo`); `id` a reference.
-    unsafe { crate::object::ffi::git_object__is_valid(Some(repo.get()), Some(id), expected_type) }
+    crate::object::is_valid(repo.get(), id, expected_type)
 }
 
 // ---------------------------------------------------------------------------

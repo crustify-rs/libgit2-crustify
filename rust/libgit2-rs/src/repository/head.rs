@@ -52,7 +52,7 @@ pub(crate) fn lookup<'r>(repo: &'r GitRepository, name: &CStr) -> Result<Referen
     let mut out = ptr::null_mut();
     // SAFETY: a live repository, a NUL-terminated name, a local out.
     check(unsafe {
-        crate::refs::ffi::git_reference_lookup(&raw mut out, rp(repo), name.as_ptr())
+        crate::refs::ffi::git_reference_lookup(Out::from(&mut out), rp(repo), name.into())
     })?;
     // SAFETY: the reference C returned to us.
     unsafe { Reference::from_raw(out) }.ok_or(ErrorCode::GENERIC)
@@ -63,7 +63,12 @@ fn lookup_resolved<'r>(repo: &'r GitRepository, name: &CStr) -> Result<Reference
     let mut out = ptr::null_mut();
     // SAFETY: as `lookup`.
     check(unsafe {
-        crate::refs::ffi::git_reference_lookup_resolved(&raw mut out, rp(repo), name.as_ptr(), -1)
+        crate::refs::ffi::git_reference_lookup_resolved(
+            Out::from(&mut out),
+            rp(repo),
+            name.into(),
+            -1,
+        )
     })?;
     // SAFETY: as `lookup`.
     unsafe { Reference::from_raw(out) }.ok_or(ErrorCode::GENERIC)
@@ -113,12 +118,9 @@ fn reference_symbolic_create(
 /// `git_object_lookup`.
 fn object_lookup<'r>(repo: &'r GitRepository, id: &Oid, t: c_int) -> Result<Object<'r>> {
     let mut out = ptr::null_mut();
-    // SAFETY: `rp(repo)` is NULL or a live repository (as the call below requires), only read
-    // through `&` (its state is interior-mutable).
-    let rp_repo_ref = unsafe { rp(repo).as_ref() };
-    // SAFETY: a live repository, a valid id, a local out.
+    // SAFETY: a live repository (a reference), a valid id, a local out.
     check(unsafe {
-        crate::object::ffi::git_object_lookup(Out::from(&mut out), rp_repo_ref, Some(id), t)
+        crate::object::ffi::git_object_lookup(Out::from(&mut out), Some(repo), Some(id), t)
     })?;
     let out = NonNull::new(out).ok_or(ErrorCode::GENERIC)?;
     // SAFETY: the object the lookup returned to us, of `repo`.
@@ -920,14 +922,12 @@ pub(crate) fn commit_parents(
             // SAFETY: C's valid id.
             let oid = unsafe { &*oid };
             let mut commit: *mut crate::object::GitObject = ptr::null_mut();
-            // SAFETY: `rp(data.repo)` is NULL or a live repository (as the call below requires),
-            // only read through `&` (its state is interior-mutable).
-            let rp_data_repo_ref = unsafe { rp(data.repo).as_ref() };
-            // SAFETY: a live repository, a valid id, a local out.
+            // SAFETY: a live repository (a reference), a valid id, a local
+            // out.
             if unsafe {
                 crate::object_api::ffi::git_commit_lookup(
                     Out::from(&mut commit),
-                    rp_data_repo_ref,
+                    Some(data.repo),
                     Some(oid),
                 )
             } < 0

@@ -36,10 +36,7 @@ pub mod configmap {
     pub const FSYNCOBJECTFILES: c_int = crate::repository::GIT_CONFIGMAP_FSYNCOBJECTFILES;
 }
 
-pub use crate::object::ffi::{
-    git_object__is_valid, git_object_dup, git_object_free, git_object_id, git_object_lookup,
-    git_object_peel, git_object_type,
-};
+pub use crate::object::ffi::{git_object_dup, git_object_free, git_object_lookup, git_object_peel};
 pub use crate::signature::ffi::{
     git_signature__parse, git_signature__writebuf, git_signature_default, git_signature_dup,
     git_signature_free, git_signature_new, git_signature_now,
@@ -358,40 +355,39 @@ impl Drop for SigBox {
 }
 
 /// An owned `git_object`, freed with `git_object_free`.
+///
+/// Invariant (its constructors): the pointer is a live object this value
+/// holds a reference to.
 pub struct ObjBox(NonNull<git_object>);
 
 impl ObjBox {
+    /// The object.
+    fn obj(&self) -> &crate::object::GitObject {
+        // SAFETY: a live object this value holds a reference to (the
+        // invariant), so live while `&self` is; its header is not written
+        // once the object is shared but for its atomic count.
+        unsafe { self.0.cast::<crate::object::GitObject>().as_ref() }
+    }
+
     /// `git_object_lookup(repo, id, kind)`.
     pub fn lookup(repo: RepoPtr, id: &Oid, kind: c_int) -> Result<ObjBox> {
         let mut out = core::ptr::null_mut();
-        // SAFETY: `repo` is NULL or a live repository (as the call below requires), only read
-        // through `&` (its state is interior-mutable).
-        let repo_ref = unsafe { repo.as_ptr().as_ref() };
-        // SAFETY: a live repository; `id` valid for the call; `out` writable.
+        // SAFETY: a live repository (`RepoPtr`'s invariant); `id` valid for
+        // the call; `out` a writable local.
         ErrorCode::check(unsafe {
-            git_object_lookup(Out::from(&mut out), repo_ref, Some(id), kind)
+            git_object_lookup(Out::from(&mut out), Some(repo.get()), Some(id), kind)
         })?;
         NonNull::new(out).map(ObjBox).ok_or(ErrorCode::GENERIC)
     }
 
     /// `git_object_type`.
     pub fn kind(&self) -> c_int {
-        // SAFETY: `self.0` is NULL or a live object (as the call below requires), whose header is
-        // not written once shared but for its atomic count.
-        let obj_ref = unsafe { self.0.as_ptr().as_ref() };
-        // SAFETY: a live object.
-        unsafe { git_object_type(obj_ref) }
+        self.obj().raw_kind()
     }
 
     /// `git_object_id`.
     pub fn id(&self) -> Oid {
-        // SAFETY: `self.0` is NULL or a live object (as the call below requires), whose header is
-        // not written once shared but for its atomic count.
-        let obj_ref = unsafe { self.0.as_ptr().as_ref() };
-        // SAFETY: a live object.
-        let id = unsafe { git_object_id(obj_ref) };
-        // SAFETY: the object's id, alive as long as it.
-        unsafe { *id }
+        self.obj().cached.oid
     }
 
     /// `git_tag_target_id` of a tag object.
@@ -441,11 +437,7 @@ impl Drop for ObjBox {
 
 /// `git_object__is_valid(repo, id, kind)`.
 pub fn object_is_valid(repo: RepoPtr, id: &Oid, kind: c_int) -> bool {
-    // SAFETY: `repo` is NULL or a live repository (as the call below requires), only read through
-    // `&` (its state is interior-mutable).
-    let repo_ref = unsafe { repo.as_ptr().as_ref() };
-    // SAFETY: a live repository; `id` valid for the call.
-    unsafe { git_object__is_valid(repo_ref, Some(id), kind) }
+    crate::object::is_valid(repo.get(), id, kind)
 }
 
 /// An owned `git_commit` (looked up and freed through object_api.c,

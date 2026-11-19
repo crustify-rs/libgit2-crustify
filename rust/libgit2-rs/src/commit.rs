@@ -1213,9 +1213,7 @@ pub(crate) type ParentSource<'a> = &'a mut dyn FnMut(usize) -> Option<Oid>;
 /// validation).
 fn object_is_valid(repo: Option<&git_repository>, id: &Oid, t: c_int) -> bool {
     match repo {
-        // SAFETY: a live repository (a reference, only read through `&`);
-        // `id` readable.
-        Some(r) => unsafe { pend::git_object__is_valid(Some(r), Some(id), t) },
+        Some(r) => crate::object::is_valid(r, id, t),
         None if !crate::object::strict_input_validation() => true,
         None => {
             let _ = errors::assert_arg_failed("repo");
@@ -1391,9 +1389,9 @@ pub(crate) fn create_internal(
         // `update_ref` a NUL-terminated string (a `CStr`).
         let e = unsafe {
             crate::refs::ffi::git_reference_lookup_resolved(
-                &raw mut r#ref,
+                Out::from(&mut r#ref),
                 repo_raw(repo),
-                update_ref.as_ptr(),
+                update_ref,
                 10,
             )
         };
@@ -2178,9 +2176,9 @@ pub mod ffi {
                 // export rejects) or live; `update_ref` NUL-terminated.
                 let e = unsafe {
                     crate::refs::ffi::git_reference_lookup_resolved(
-                        &raw mut r#ref,
+                        Out::from(&mut r#ref),
                         repo_raw(repo),
-                        update_ref.as_ptr(),
+                        update_ref,
                         5,
                     )
                 };

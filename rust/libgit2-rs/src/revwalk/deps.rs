@@ -17,7 +17,7 @@ pub use crate::refs::GitReference as git_reference;
 pub use crate::repository::GitRepository as git_repository;
 pub use crate::tree::{GitTree as git_tree, GitTreeEntry as git_tree_entry};
 
-pub use crate::object::ffi::{git_object_free, git_object_id, git_object_lookup, git_object_peel};
+pub use crate::object::ffi::{git_object_free, git_object_lookup, git_object_peel};
 
 /// `git_commit_lookup`.
 ///
@@ -30,11 +30,11 @@ pub unsafe fn git_commit_lookup(
     repo: *mut git_repository,
     id: Option<&Oid>,
 ) -> c_int {
-    // SAFETY: `out` is NULL or writable (as the call below requires), and no reference to it is
-    // live.
+    // SAFETY: `out` is NULL or writable, with no reference to it live
+    // (this fn's contract, the export's).
     let out_out = unsafe { Out::from_ptr(out.cast()) };
-    // SAFETY: `repo` is NULL or a live repository (as the call below requires), only read through
-    // `&` (its state is interior-mutable).
+    // SAFETY: `repo` is NULL or a live repository (this fn's contract, the
+    // export's), only read through `&` (its state is interior-mutable).
     let repo_ref = unsafe { repo.as_ref() };
     // SAFETY: the caller's contract.
     unsafe { crate::object_api::ffi::git_commit_lookup(out_out, repo_ref, id) }
