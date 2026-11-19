@@ -661,9 +661,14 @@ pub unsafe extern "C" fn git_odb_read_prefix(
     len: usize,
 ) -> c_int {
     barrier(|| {
-        let short_id = git_arg!(short_id, "short_id", -1);
         git_assert_arg!(!out.is_null(), "out", -1);
         let db = git_arg!(db, "db", -1);
+        // C's checks come first; it reads `short_id` only after the length
+        // check (and crashes on NULL there: here an invalid argument).
+        if len < crate::oid::GIT_OID_MINPREFIXLEN {
+            return crate::odb::error_ambiguous(b"prefix length too short").raw();
+        }
+        let short_id = git_arg!(short_id, "short_id", -1);
         match db.read_prefix(short_id, len) {
             Ok(o) => {
                 out.write(o.as_ptr());
@@ -932,9 +937,9 @@ pub unsafe extern "C" fn git_odb_open_rstream(
     oid: Option<&Oid>,
 ) -> c_int {
     barrier(|| {
-        let oid = git_arg!(oid, "oid", -1);
         git_assert_arg!(!stream.is_null(), "stream", -1);
         let db = git_arg!(db, "db", -1);
+        // (`oid` is checked where a backend would read it, as C reaches it.)
         match db.open_rstream(oid) {
             // C: 0, with `*stream` as the backend left it (untouched).
             Ok(None) => 0,

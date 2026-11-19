@@ -1805,18 +1805,11 @@ pub unsafe extern "C" fn git_repository__shallow_roots_write(
 ) -> c_int {
     barrier(|| {
         with_repo!(repo_, "repo", |r| {
-            let Some(roots) = roots else {
-                return errors::assert_arg_failed("roots").raw();
-            };
-            let ids: &[Oid] = if roots.count == 0 {
-                &[]
-            } else {
-                // SAFETY: a valid array (this export's contract): `count`
-                // readable ids (align 1) at `ids`, unwritten during the
-                // call; `count * size_of::<Oid>()` is the size of a live
-                // allocation, so `<= isize::MAX`.
-                unsafe { core::slice::from_raw_parts(roots.ids, roots.count) }
-            };
+            // SAFETY: NULL, or a valid array (this export's contract):
+            // `count` readable ids (align 1) at `ids` (NULL with 0 allowed),
+            // unwritten during the call.
+            let ids: Option<&[Oid]> =
+                roots.map(|a| unsafe { crate::util::cabi::slice(a.ids, a.count) });
             // SAFETY: nothing else uses the repository's grafts during
             // the call (this export's contract), as `shallow_roots_write`
             // requires.

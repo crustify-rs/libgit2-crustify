@@ -2010,7 +2010,7 @@ impl GitOdb {
     /// returns 0 and writes nothing then).
     pub(crate) fn open_rstream(
         &self,
-        oid: &Oid,
+        oid: Option<&Oid>,
     ) -> Result<Option<(NonNull<GitOdbStream>, usize, git_object_t)>> {
         let mut reads = 0usize;
         let mut error = ErrorCode::GENERIC.raw();
@@ -2025,6 +2025,11 @@ impl GitOdb {
                 }
                 let b = bi.backend.as_ptr();
                 if let Some(readstream) = bi.table().readstream {
+                    // C hands a NULL id to the backend, which crashes: here
+                    // C's argument error at that point.
+                    let Some(oid) = oid else {
+                        return Err(crate::util::errors::assert_arg_failed("oid"));
+                    };
                     reads += 1;
                     // SAFETY: as in `exists_1`; the out-parameters are
                     // writable.

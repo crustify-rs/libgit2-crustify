@@ -1172,7 +1172,11 @@ pub mod ffi {
         idx: usize,
         insert_len: usize,
     ) -> c_int {
-        barrier(|| status(git_arg!(vec, "v", -1).insert_null(idx, insert_len)))
+        barrier(|| {
+            // C's first check reads no vector.
+            crate::git_assert_arg!(insert_len > 0, "insert_len > 0", -1);
+            status(git_arg!(vec, "v", -1).insert_null(idx, insert_len))
+        })
     }
 
     /// `git_vector_remove_range`.

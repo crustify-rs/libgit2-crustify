@@ -375,7 +375,7 @@ impl<'r> Odb<'r> {
     /// A stream to read an object, its size and type
     /// (`git_odb_open_rstream`).
     pub fn reader(&self, id: &Oid) -> ApiResult<(OdbReader<'_>, usize, ObjectType)> {
-        let Some((stream, len, t)) = self.inner().open_rstream(id).map_err(err)? else {
+        let Some((stream, len, t)) = self.inner().open_rstream(Some(id)).map_err(err)? else {
             return Err(Error::with(
                 ErrorCode::GENERIC,
                 ErrorClass::ODB,

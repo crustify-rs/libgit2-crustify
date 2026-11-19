@@ -825,8 +825,9 @@ pub unsafe extern "C" fn git_index__fill(
     source_entries: Option<&GitVector>,
 ) -> c_int {
     barrier(|| {
-        let source_entries = git_arg!(source_entries, "source_entries", -1);
         let ix = git_arg!(index, "index", -1);
+        // (C dereferences a NULL `source_entries` next.)
+        let source_entries = git_arg!(source_entries, "source_entries", -1);
         let v: Vec<*const GitIndexEntry> = source_entries
             .iter()
             .map(|p| p.cast::<GitIndexEntry>().cast_const())

@@ -3118,9 +3118,8 @@ pub mod ffi {
             git_assert_arg!(config.is_some(), "config", -1);
             // SAFETY: `name` as `with_value_into` requires (this export's
             // contract).
-            let r = unsafe {
-                with_value_into(out, config, name, |out, v| out.puts(v.unwrap_or(b"")))
-            };
+            let r =
+                unsafe { with_value_into(out, config, name, |out, v| out.puts(v.unwrap_or(b""))) };
             crate::util::export::status(r)
         })
     }

@@ -1902,9 +1902,13 @@ pub mod ffi {
         id: Option<&Oid>,
     ) -> *const GitTreeEntry {
         barrier(|| {
-            let id = git_arg!(id, "id", core::ptr::null());
             let tree = git_arg!(tree, "tree", ptr::null());
-            let id = *id;
+            if tree.entries.as_slice().is_empty() {
+                // C compares no entry with `id`: NULL, no error.
+                return ptr::null();
+            }
+            // (C dereferences a NULL `id` at the first entry.)
+            let id = *git_arg!(id, "id", ptr::null());
             tree.entries
                 .as_slice()
                 .iter()

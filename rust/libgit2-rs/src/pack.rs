@@ -2649,12 +2649,13 @@ pub mod ffi {
         len: usize,
     ) -> c_int {
         barrier(|| {
+            git_assert_arg!(!p.is_null(), "p", -1);
+            // (C dereferences a NULL `short_oid` next.)
             git_assert_arg!(!short_oid.is_null(), "short_oid", -1);
             // SAFETY: `short_oid` is non-null, so a readable, aligned id
             // (this export's contract), copied before `e` is written; no
             // reference to it is kept.
             let short_oid = &unsafe { short_oid.read() };
-            git_assert_arg!(!p.is_null(), "p", -1);
             // SAFETY: a live pack (this export's contract; not NULL, checked
             // above), only read through `&` (`GitPackFile` is `Sync` with
             // interior mutability).
